@@ -1,0 +1,105 @@
+name: Build Distributable
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: macos-latest
+            name: macOS
+            os_name: macos
+            arch: arm64
+          - os: windows-latest
+            name: Windows
+            os_name: windows
+            arch: x86_64
+          - os: ubuntu-latest
+            name: Linux
+            os_name: linux
+            arch: x86_64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set VERSION
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            echo "VERSION=${{ github.ref_name }}" >> $GITHUB_ENV
+          else
+            echo "VERSION=dev" >> $GITHUB_ENV
+          fi
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.0.0
+
+      - name: Cache BirdNET checkpoints
+        uses: actions/cache@v5
+        with:
+          path: scripts/.birdnet-checkpoints
+          key: birdnet-checkpoints-${{ hashFiles('uv.lock') }}
+
+      # pywebview on Linux uses GTK3 + WebKit2GTK, which have no pre-built wheels
+      # and require system libraries to be present at build time.
+      - name: Install GTK+ build dependencies (Linux only)
+        if: matrix.name == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-3-dev libwebkit2gtk-4.1-dev \
+            libglib2.0-dev libpango1.0-dev libcairo2-dev \
+            gir1.2-webkit2-4.1
+
+      - name: Build distributable
+        run: uv run --script scripts/build.py
+
+      - name: Zip macOS app
+        if: matrix.name == 'macOS'
+        run: |
+          cd scripts/dist
+          zip -r pam-analyzer.zip pam-analyzer.app
+          rm -rf pam-analyzer.app
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist-${{ matrix.name }}
+          path: scripts/dist/
+          if-no-files-found: error
+
+      - name: Upload release assets
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd scripts/dist
+          zip_name="pam-analyzer-${{ matrix.os_name }}-${{ matrix.arch }}.zip"
+          if [[ "${{ matrix.name }}" == "macOS" ]]; then
+            mv "pam-analyzer.zip" "$zip_name"
+          elif [[ "${{ matrix.name }}" == "Windows" ]]; then
+            versioned="pam-analyzer-${VERSION}-${{ matrix.os_name }}-${{ matrix.arch }}.exe"
+            mv "pam-analyzer.exe" "$versioned"
+            zip "$zip_name" "$versioned"
+          else
+            versioned="pam-analyzer-${VERSION}-${{ matrix.os_name }}-${{ matrix.arch }}"
+            mv "pam-analyzer" "$versioned"
+            zip "$zip_name" "$versioned"
+          fi
+          gh release upload "${{ github.ref_name }}" "$zip_name" --clobber

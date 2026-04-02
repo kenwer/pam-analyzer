@@ -1,0 +1,22 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Packaging build artifacts
+scripts/.venv-*
+scripts/.birdnet*
+scripts/build/
+scripts/dist/
+scripts/splash.png
+scripts/app.ico
+scripts/app.icns
+
+# Misc
+.DS_Store
