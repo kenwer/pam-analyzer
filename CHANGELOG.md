@@ -1,5 +1,9 @@
 # Changelog
 
+## unreleased
+### Fixed
+- Fix windows build
+
 ## [0.1.0] - 2026-04-02
 ### Added
 - Initial release with MVP functionality.

@@ -294,7 +294,7 @@ success "Pushed to remote"
 
 echo ""
 info "Waiting for CI to complete..."
-REPO_PATH=$(echo "$REMOTE_URL" | sed 's/.*://; s/\.git$//')
+REPO_PATH=$(echo "$REMOTE_URL" | sed 's|.*github\.com[:/]||; s/\.git$//')
 COMMIT_SHA=$(git rev-parse HEAD)
 API_URL="https://api.github.com/repos/${REPO_PATH}/actions/runs?head_sha=${COMMIT_SHA}"
 info "Checking: curl -s '${API_URL}' | jq -r '.workflow_runs[0].status'"
@@ -373,7 +373,7 @@ echo ""
 success "Tag v${NEW_VERSION} pushed!"
 echo ""
 info "Next steps:"
-echo " - Watch the release workflow: https://github.com/$(git remote get-url origin | sed 's/.*://; s/\.git$//')/actions"
-echo " - Once complete, check the tag: https://github.com/$(git remote get-url origin | sed 's/.*://; s/\.git$//')/releases/tag/v${NEW_VERSION}"
-echo " - You may want to create a release from the tag: https://github.com/$(git remote get-url origin | sed 's/.*://; s/\.git$//')/releases/new?tag=v${NEW_VERSION}"
+echo " - Watch the release workflow: https://github.com/$(git remote get-url origin | sed 's|.*github\.com[:/]||; s/\.git$//')/actions"
+echo " - Once complete, check the tag: https://github.com/$(git remote get-url origin | sed 's|.*github\.com[:/]||; s/\.git$//')/releases/tag/v${NEW_VERSION}"
+echo " - You may want to create a release from the tag: https://github.com/$(git remote get-url origin | sed 's|.*github\.com[:/]||; s/\.git$//')/releases/new?tag=v${NEW_VERSION}"
 echo ""

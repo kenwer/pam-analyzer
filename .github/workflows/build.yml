@@ -83,8 +83,8 @@ jobs:
           path: scripts/dist/
           if-no-files-found: error
 
-      - name: Upload release assets
-        if: github.event_name == 'release'
+      - name: Upload release assets (macOS and Linux)
+        if: github.event_name == 'release' && matrix.name != 'Windows'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -93,13 +93,22 @@ jobs:
           zip_name="pam-analyzer-${{ matrix.os_name }}-${{ matrix.arch }}.zip"
           if [[ "${{ matrix.name }}" == "macOS" ]]; then
             mv "pam-analyzer.zip" "$zip_name"
-          elif [[ "${{ matrix.name }}" == "Windows" ]]; then
-            versioned="pam-analyzer-${VERSION}-${{ matrix.os_name }}-${{ matrix.arch }}.exe"
-            mv "pam-analyzer.exe" "$versioned"
-            zip "$zip_name" "$versioned"
           else
             versioned="pam-analyzer-${VERSION}-${{ matrix.os_name }}-${{ matrix.arch }}"
             mv "pam-analyzer" "$versioned"
             zip "$zip_name" "$versioned"
           fi
           gh release upload "${{ github.ref_name }}" "$zip_name" --clobber
+
+      - name: Upload release assets (Windows)
+        if: github.event_name == 'release' && matrix.name == 'Windows'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd scripts/dist
+          $zip_name = "pam-analyzer-${{ matrix.os_name }}-${{ matrix.arch }}.zip"
+          $versioned = "pam-analyzer-${env:VERSION}-${{ matrix.os_name }}-${{ matrix.arch }}.exe"
+          Rename-Item "pam-analyzer.exe" $versioned
+          Compress-Archive -Path $versioned -DestinationPath $zip_name
+          gh release upload "${{ github.ref_name }}" $zip_name --clobber
