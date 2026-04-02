@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.1.0] - 2026-04-02
 ### Added
 - Initial release with MVP functionality.
 - Project management: create, load, save, and reopen recent projects (`.pamproj` format).
