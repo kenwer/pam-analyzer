@@ -1,6 +1,6 @@
 # Changelog
 
-## unreleased
+## [0.1.1] - 2026-04-02
 ### Fixed
 - Fix windows build
 
