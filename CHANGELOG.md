@@ -1,6 +1,6 @@
 # Changelog
 
-## unreleased
+## [0.1.2] - 2026-04-07
 ### Added
 - Linux arm64 build.
 ### Changed
