@@ -9,21 +9,25 @@ Passive Acoustic Monitoring for Bird Species Detection
   - [Project](#project)
   - [Campaign](#campaign)
   - [ARU (Autonomous Recording Unit)](#aru-autonomous-recording-unit)
+- [Usage](#usage)
 - [Workflow](#workflow)
   - [Project Settings](#project-settings)
   - [Campaigns](#campaigns)
   - [Import Audio](#import-audio)
   - [BirdNET](#birdnet)
   - [Examine Detections](#examine-detections)
-- [Usage](#usage)
-  - [Keyboard shortcuts](#keyboard-shortcuts)
+- [Keyboard shortcuts](#keyboard-shortcuts)
 - [Changelog](#changelog)
 - [License](#license)
 
 <!--TOC-->
 
+
 ## About
 PAM Analyzer is a desktop application designed for processing Autonomous Recording Unit (ARU) field recordings to **detect bird species**. It covers the full workflow: importing SD card contents, running BirdNET species detection, reviewing and annotating detections, and exporting results. Data is organized into hierarchical projects and campaigns.
+
+![Image](https://github.com/user-attachments/assets/93e71617-445c-47ed-ba3d-a3c279d3468c)
+
 
 ## Download
 Pre-built binaries are available for the following platforms:
@@ -34,12 +38,14 @@ Pre-built binaries are available for the following platforms:
 
 Note: On any supported OS you can also easily run PAM Analyzer from source using `uv run pam-analyzer`
 
+
 ## Features
-* **Project & campaign management**: organise monitoring deployments into projects (`.pamproj`) and campaigns, each with its own species filter (location-based or custom species list).
-* **SD card import**: detects inserted ARU SD cards matching the configured volume name pattern and copies audio into a `campaign/ARU/week` directory layout, with deduplication and conflict resolution.
-* **BirdNET analysis**: run BirdNET-Analyzer per campaign or across all campaigns, with configurable confidence threshold and overlap. Produces per-ARU and summary CSVs.
-* **Detection review**: tabular view of detections with sorting, filtering, inline annotation (verified status, corrected species, comments), and audio playback per detection.
-* **Export**: export filtered detections to CSV and extract audio snippets with annotation values embedded in output filenames.
+* **Project & campaign management**: Organizes monitoring deployments into projects (`.pamproj`) and campaigns, each supporting independent species filters (via geographic coordinates or custom species lists).
+* **SD card import**: Automatically detects ARU SD cards matching a configured volume name pattern and imports audio into a structured `campaign/ARU/week` directory layout with built-in deduplication and conflict resolution.
+* **BirdNET analysis**: Integrates BirdNET for per-campaign or batch processing across all campaigns, with configurable confidence threshold and segment overlap. Generates per-ARU and summary CSV outputs.
+* **Detection review**: Provides a tabular interface for detections with multi-column sorting, filtering, inline annotation (verification status, species correction, comments), and integrated audio playback.
+* **Data export**: Supports exporting filtered detections to CSV format and extracting annotated audio snippets with metadata embedded in filenames.
+
 
 ## Core Concepts
 ### Project
@@ -100,6 +106,12 @@ Example:
 ```
 
 
+## Usage
+Download and execute the binary for your platform from the [Download](#download) section. No installation is required.
+
+Upon first launch, use `New Project` to initialize a project and configure the audio root and output paths. Use `File -> Save Project` (or `⌘S` / `Ctrl+S`) to persist this configuration as a `.pamproj` file. Then create at least one campaign in the `Campaigns` panel, import audio from SD cards in the `Import` panel, run analysis in the `BirdNET` panel, and review detections in the `Examine` panel.
+
+
 ## Workflow
 The application is organized into five panels that map to the steps of a typical PAM analysis workflow.
 
@@ -134,13 +146,7 @@ When exporting audio snippets, annotation values are reflected in the output fil
 Both suffixes can appear together, e.g. `…_corrected_confirmed.wav`.
 
 
-## Usage
-Download and execute the binary for your platform from the [Download](#download) section. No installation is required.
-
-Upon first launch, use `New Project` to initialize a project and configure the audio root and output paths. Use `File -> Save Project` (or `⌘S` / `Ctrl+S`) to persist this configuration as a `.pamproj` file. Then create at least one campaign in the `Campaigns` panel, import audio from SD cards in the `Import` panel, run analysis in the `BirdNET` panel, and review detections in the `Examine` panel.
-
-
-### Keyboard shortcuts
+## Keyboard shortcuts
 | Windows/Linux | macOS | Action | Description |
 | --- | --- | --- | --- |
 | Ctrl+N        | ⌘N   | **New Project**         | Create a new empty in-memory project |
@@ -150,8 +156,10 @@ Upon first launch, use `New Project` to initialize a project and configure the a
 | Ctrl+W        | ⌘W   | **Close Project**       | Close the current project and return to the welcome screen |
 | Ctrl+Q        | ⌘Q   | **Quit**                | Exit the application |
 
+
 ## Changelog
 The changelog can be found at the [CHANGELOG page](CHANGELOG.md).
+
 
 ## License
 This project is licensed under the AGPL-3.0 license. See the LICENSE file for the full text.
