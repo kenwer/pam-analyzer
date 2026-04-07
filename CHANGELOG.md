@@ -1,9 +1,15 @@
 # Changelog
 
+## unreleased
+### Added
+- Linux arm64 build.
+### Changed
+- Release artifact names use upper case naming.
+- [Dev] Upgrade dependencies.
+
 ## [0.1.1] - 2026-04-02
 ### Fixed
 - Fix windows build
-
 ## [0.1.0] - 2026-04-02
 ### Added
 - Initial release with MVP functionality.

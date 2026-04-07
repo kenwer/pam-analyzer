@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
+    inputs:
+      upload_release_assets:
+        description: 'Release tag to upload assets to (e.g. v0.1.1)'
+        required: false
+        default: ''
   release:
     types: [published]
 
@@ -21,30 +26,50 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            name: macOS
+            name: macOS (arm64)
             os_name: macos
             arch: arm64
+            archive_ext: zip
+          # macOS Intel (x86_64) is disabled because TensorFlow dropped macOS x86_64
+          # wheels starting with 2.21.0, and birdnet-analyzer requires tensorflow>=2.20.
+          # Re-enable if TensorFlow resumes x86_64 macOS support or birdnet-analyzer
+          # drops the TensorFlow dependency.
+          # - os: macos-15-intel
+          #   name: macOS (x86_64)
+          #   os_name: macos
+          #   arch: x86_64
+          #   archive_ext: zip
           - os: windows-latest
             name: Windows
             os_name: windows
             arch: x86_64
+            archive_ext: zip
           - os: ubuntu-latest
-            name: Linux
+            name: Linux (x86_64)
             os_name: linux
             arch: x86_64
+            archive_ext: tar.gz
+          - os: ubuntu-24.04-arm
+            name: Linux (arm64)
+            os_name: linux
+            arch: arm64
+            archive_ext: tar.gz
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Set VERSION
+      - name: Set VERSION and ARCHIVE_NAME
         shell: bash
         run: |
           if [[ "${{ github.event_name }}" == "release" ]]; then
             echo "VERSION=${{ github.ref_name }}" >> $GITHUB_ENV
+          elif [[ -n "${{ inputs.upload_release_assets }}" ]]; then
+            echo "VERSION=${{ inputs.upload_release_assets }}" >> $GITHUB_ENV
           else
             echo "VERSION=dev" >> $GITHUB_ENV
           fi
+          echo "ARCHIVE_NAME=PAM-Analyzer-${{ matrix.os_name }}-${{ matrix.arch }}.${{ matrix.archive_ext }}" >> $GITHUB_ENV
 
       - name: Install uv
         uses: astral-sh/setup-uv@v8.0.0
@@ -58,7 +83,7 @@ jobs:
       # pywebview on Linux uses GTK3 + WebKit2GTK, which have no pre-built wheels
       # and require system libraries to be present at build time.
       - name: Install GTK+ build dependencies (Linux only)
-        if: matrix.name == 'Linux'
+        if: matrix.os_name == 'linux'
         run: |
           sudo apt-get update -q
           sudo apt-get install -y --no-install-recommends \
@@ -69,12 +94,26 @@ jobs:
       - name: Build distributable
         run: uv run --script scripts/build.py
 
-      - name: Zip macOS app
-        if: matrix.name == 'macOS'
+      - name: Package archive
+        shell: bash
         run: |
           cd scripts/dist
-          zip -r pam-analyzer.zip pam-analyzer.app
-          rm -rf pam-analyzer.app
+          versioned="pam-analyzer-${VERSION}-${{ matrix.os_name }}-${{ matrix.arch }}"
+          case "${{ matrix.os_name }}" in
+            macos)
+              mv pam-analyzer.app "${versioned}.app"
+              zip -r "$ARCHIVE_NAME" "${versioned}.app"
+              rm -rf "${versioned}.app"
+              ;;
+            windows)
+              mv pam-analyzer.exe "${versioned}.exe"
+              7z a "$ARCHIVE_NAME" "${versioned}.exe"
+              ;;
+            linux)
+              mv pam-analyzer "$versioned"
+              tar -czf "$ARCHIVE_NAME" "$versioned"
+              ;;
+          esac
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
@@ -83,32 +122,9 @@ jobs:
           path: scripts/dist/
           if-no-files-found: error
 
-      - name: Upload release assets (macOS and Linux)
-        if: github.event_name == 'release' && matrix.name != 'Windows'
+      - name: Upload release asset
+        if: github.event_name == 'release' || inputs.upload_release_assets != ''
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          cd scripts/dist
-          zip_name="pam-analyzer-${{ matrix.os_name }}-${{ matrix.arch }}.zip"
-          if [[ "${{ matrix.name }}" == "macOS" ]]; then
-            mv "pam-analyzer.zip" "$zip_name"
-          else
-            versioned="pam-analyzer-${VERSION}-${{ matrix.os_name }}-${{ matrix.arch }}"
-            mv "pam-analyzer" "$versioned"
-            zip "$zip_name" "$versioned"
-          fi
-          gh release upload "${{ github.ref_name }}" "$zip_name" --clobber
-
-      - name: Upload release assets (Windows)
-        if: github.event_name == 'release' && matrix.name == 'Windows'
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          cd scripts/dist
-          $zip_name = "pam-analyzer-${{ matrix.os_name }}-${{ matrix.arch }}.zip"
-          $versioned = "pam-analyzer-${env:VERSION}-${{ matrix.os_name }}-${{ matrix.arch }}.exe"
-          Rename-Item "pam-analyzer.exe" $versioned
-          Compress-Archive -Path $versioned -DestinationPath $zip_name
-          gh release upload "${{ github.ref_name }}" $zip_name --clobber
+        run: gh release upload "$VERSION" "scripts/dist/$ARCHIVE_NAME" --clobber
