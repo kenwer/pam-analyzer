@@ -72,9 +72,12 @@ class AllCampaignsResult:
     all_campaigns_csv: Path
 
 
+_AUDIO_EXTENSIONS = {'.wav', '.flac', '.mp3', '.ogg', '.m4a', '.wma', '.aiff', '.aif'}  # mirrors birdnet_analyzer ALLOWED_FILETYPES
+
+
 def count_wav_files(campaign_dir: Path) -> int:
-    """Count WAV files (case-insensitive) recursively under campaign_dir."""
-    return sum(1 for f in campaign_dir.rglob('*') if f.is_file() and f.suffix.lower() == '.wav')
+    """Count all BirdNET-supported audio files recursively under campaign_dir."""
+    return sum(1 for f in campaign_dir.rglob('*') if f.is_file() and f.suffix.lower() in _AUDIO_EXTENSIONS)
 
 
 def _week_from_path(path: Path) -> int | None:

@@ -1,6 +1,8 @@
 # Changelog
 
 ## unreleased
+### Added
+- Add support for `.flac`, `.mp3`, `.ogg`, `.m4a`, `.wma`, `.aiff`, `.aif` audio file formats.
 ### Fixed
 - BirdNET result CSVs containing non-UTF-8 file paths (e.g. from older runs on Windows with cp1252 encoding) are now parsed correctly via a latin-1 fallback.
 ### Changed
