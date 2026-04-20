@@ -3,12 +3,24 @@
 Encapsulates column definitions, grid construction, and column visibility state.
 """
 
+import asyncio
 from collections.abc import Callable
 from pathlib import Path
 
 from nicegui import ui
 
 from pam_analyzer.core.detections_io import NUMERIC_FIELDS
+
+# Chunk size for grid row updates. Chosen to stay under WebSocket/WebView2
+# message size limits (~1-2 MB) while minimizing round-trips for large datasets.
+CHUNK_SIZE = 20000
+
+# Delay after hiding container to let the browser process the visibility change
+# before the heavy grid update starts. Prevents flicker of partial data.
+CHUNKED_LOAD_DELAY = 0.5
+
+# Delay between chunks to keep UI responsive and heartbeats healthy.
+CHUNK_INTERVAL_DELAY = 0.1
 
 # Columns hidden from the grid by default (internal / run-context fields)
 HIDDEN_FIELDS: frozenset[str] = frozenset(
@@ -38,15 +50,18 @@ _COLUMN_OVERRIDES: dict[str, dict] = {
     },
 }
 
-# Play button column prepended to every grid
+# Play button column prepended to every grid.
+# Uses valueGetter instead of field so the ♪ symbol is computed client-side
+# from the row data — no server-side annotation or extra payload needed.
 _PLAY_COL = {
     'headerName': '',
-    'field': '_play',
+    'colId': '_play',
     'width': 30,
     'maxWidth': 30,
     'filter': False,
     'sortable': False,
     'resizable': False,
+    'valueGetter': 'data.File ? "♪" : ""',
 }
 
 
@@ -83,7 +98,7 @@ def _column_defs(
 
     defs: list[dict] = [_PLAY_COL]
     for name in fieldnames:
-        if name == '_play':
+        if name == '_play' or name.startswith('_'):  # Skip internal display fields
             continue
         col: dict = {
             'field': name,
@@ -113,6 +128,12 @@ class DetectionsGrid:
         self._container: ui.column | None = None
         self._last_fieldnames: list[str] = []
         self.hidden_extra: set[str] = set(HIDDEN_FIELDS)
+        # Generation counter that is incremented each time _set_rows starts.
+        # Used to guard against stale updates from concurrent or cancelled loads.
+        self._set_rows_gen: int = 0
+        # Generation that last hid the container.
+        # Used to restore visibility only when the most recent load finishes.
+        self._container_hide_gen: int | None = None
 
     def attach(self, container: ui.column) -> None:
         """Store the container that the grid will be built inside."""
@@ -122,21 +143,30 @@ class DetectionsGrid:
     def exists(self) -> bool:
         return self._aggrid is not None
 
-    def refresh(
+    async def refresh(
         self,
         display_rows: list[dict],
         fieldnames: list[str],
         species_options: list[str],
         on_cell_click: Callable,
         on_cell_value_changed: Callable,
+        grid_context: dict | None = None,
+        on_progress: Callable[[float, int], None] | None = None,
+        on_grid_rendered: Callable | None = None,
     ) -> None:
         """Create or update the AG Grid with new data.
 
         If the schema (fieldnames) is unchanged, only row data is refreshed,
         preserving user filter, sort, and column visibility state.
+        Large datasets are loaded in chunks to avoid blocking the UI.
         """
         if self._aggrid is not None and fieldnames == self._last_fieldnames:
-            self._aggrid.run_grid_method('setGridOption', 'rowData', display_rows)
+            if grid_context:
+                # Fire-and-forget: context is metadata for cell renderers,
+                # slight delay is harmless. Avoids TimeoutError on Windows
+                # where file_durations dict can be large.
+                self._fire_and_forget(self._aggrid, 'setGridOption', 'context', grid_context)
+            await self._set_rows(display_rows, on_progress)
             return
 
         self._last_fieldnames = list(fieldnames)
@@ -152,24 +182,124 @@ class DetectionsGrid:
             self._aggrid = ui.aggrid(
                 {
                     'columnDefs': _column_defs(fieldnames, species_options, self.hidden_extra),
-                    'rowData': display_rows,
+                    'rowData': [],
+                    'context': grid_context or {},
                     'defaultColDef': {
                         'minWidth': 90,
                         'filter': True,
                         'floatingFilter': True,
                     },
                     'rowBuffer': 20,
+                    'pagination': False,
                 },
                 theme='balham',
                 auto_size_columns=False,
             ).classes('w-full h-full')
             self._aggrid.on('cellClicked', on_cell_click)
             self._aggrid.on('cellValueChanged', on_cell_value_changed)
+            if on_grid_rendered:
+                self._aggrid.on('renderedGridChanged', on_grid_rendered)
+
             if name_col_ids:
                 self._aggrid.on(
                     'gridReady',
                     lambda _: self._aggrid.run_grid_method('autoSizeColumns', name_col_ids),
                 )
+            await self._set_rows(display_rows, on_progress)
+
+    async def _set_rows(self, rows: list[dict], on_progress: Callable[[float, int], None] | None = None) -> None:
+        """Update grid data using chunked transactions for large datasets.
+
+        Standard NiceGUI row updates send the entire dataset as a single JSON payload,
+        which can stall the UI or exceed WebSocket/WebView2 message size limits on Windows
+        for hundreds of thousands of rows. This method uses chunked 'applyTransaction'
+        calls to stay under those limits and yields to the event loop between chunks
+        to keep the UI responsive and heartbeats healthy.
+
+        run_grid_method is intentionally NOT awaited for row updates: this fire-and-forget
+        path sends the message without waiting for a JS response, avoiding TimeoutErrors
+        on large payloads. Socket.IO guarantees message ordering.
+        """
+        aggrid = self._aggrid
+        if not aggrid:
+            return
+
+        self._set_rows_gen += 1
+        gen = self._set_rows_gen
+        num_rows = len(rows)
+
+        if on_progress:
+            on_progress(0.0, num_rows)
+
+        if num_rows <= CHUNK_SIZE:
+            # Small sets: update rowData directly. Fire-and-forget to avoid timeout.
+            self._fire_and_forget(aggrid, 'setGridOption', 'rowData', rows)
+            if on_progress:
+                on_progress(1.0, num_rows)
+            return
+
+        # Hide container while chunked loading to avoid flicker.
+        # Use generation-based tracking so visibility is restored only when
+        # the load that hid the container finishes (not by a newer load).
+        self._container_hide_gen = gen
+        if self._container:
+            self._container.set_visibility(False)
+
+        try:
+            # Give the browser time to process the visibility change before
+            # the heavy grid update starts. Prevents flicker of partial data.
+            await asyncio.sleep(CHUNKED_LOAD_DELAY)
+
+            # Check if this load was superseded before starting heavy work
+            if self._set_rows_gen != gen:
+                return
+
+            # Send first chunk immediately (fire-and-forget)
+            self._fire_and_forget(aggrid, 'setGridOption', 'rowData', rows[:CHUNK_SIZE])
+
+            await self._send_remaining_chunks(aggrid, gen, rows, CHUNK_SIZE, on_progress, num_rows)
+        finally:
+            # Restore visibility only if this is still the active generation
+            if self._container and self._container_hide_gen == gen:
+                self._container.set_visibility(True)
+                self._container_hide_gen = None
+
+    def _fire_and_forget(self, aggrid: ui.aggrid, method: str, *args) -> None:
+        """Send a grid method call without waiting for a response.
+
+        This avoids TimeoutErrors on large payloads. Socket.IO guarantees
+        message ordering, so calls arrive in the correct sequence.
+        """
+        aggrid.run_grid_method(method, *args)
+
+    async def _send_remaining_chunks(
+        self,
+        aggrid: ui.aggrid,
+        gen: int,
+        rows: list[dict],
+        chunk_size: int,
+        on_progress: Callable[[float, int], None] | None,
+        num_rows: int,
+    ) -> None:
+        """Send remaining chunks after the first one has been dispatched."""
+        total_chunks = (num_rows + chunk_size - 1) // chunk_size
+        for chunk_idx in range(1, total_chunks):
+            if self._set_rows_gen != gen:
+                return
+
+            start_idx = chunk_idx * chunk_size
+            chunk = rows[start_idx:start_idx + chunk_size]
+            self._fire_and_forget(aggrid, 'applyTransaction', {'add': chunk})
+
+            if on_progress:
+                on_progress(chunk_idx / total_chunks, num_rows)
+            await asyncio.sleep(CHUNK_INTERVAL_DELAY)
+
+        # Finalize only if this load is still active
+        if self._set_rows_gen == gen:
+            self._fire_and_forget(aggrid, 'redrawRows')
+            if on_progress:
+                on_progress(1.0, num_rows)
 
     def populate_cols_menu(self, menu_container: ui.column, fieldnames: list[str]) -> None:
         """Fill the column-visibility menu with checkboxes."""

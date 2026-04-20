@@ -23,7 +23,7 @@ from pam_analyzer.panels.project import (
     project_settings,
 )
 
-_MAX_ROWS = 100_000  # AG Grid client-side row limit; beyond this JSON transfer stalls the UI
+_MAX_ROWS = 500_000  # AG Grid limit; optimized via chunked transfer and minimal data payload
 
 
 class ExaminePanel:
@@ -35,7 +35,9 @@ class ExaminePanel:
         # UI refs
         self._campaign_select: ui.select | None = None
         self._status_label: ui.label | None = None
+        self._progress_bar: ui.linear_progress | None = None
         self._cols_menu_container: ui.column | None = None
+        self._action_buttons: list = []  # [padding_btn, cols_btn, export_btn]
 
         # Max detections per ARU/species filter
         self._max_detections_per_aru_and_species: int = 0
@@ -69,11 +71,14 @@ class ExaminePanel:
 
         ui.separator().classes('my-2')
 
-        # Table bar: status label, padding/columns/export actions
+        # Table bar: status label, progress bar, padding/columns/export actions
         with ui.row().classes('items-center w-full mb-1'):
-            self._status_label = ui.label('').classes('text-caption text-grey self-center')
+            self._status_label = ui.label('Loading...').classes('text-caption text-grey self-center')
+            self._progress_bar = ui.linear_progress(value=0, show_value=False).classes('flex-1 mx-4')
             ui.space()
-            with ui.button(icon='tune').props('flat dense round'):
+            _padding_btn = ui.button(icon='tune').props('flat dense round')
+            _padding_btn.disable()
+            with _padding_btn:
                 ui.tooltip('Playback padding')
                 with ui.menu():
                     with ui.column().classes('p-4 gap-3'):
@@ -90,16 +95,21 @@ class ExaminePanel:
                             min=0, step=0.5, format='%.1f',
                             on_change=lambda e: _on_setting_change('snippet_padding_after', e.value),
                         ).classes('w-36').props('outlined dense')
-            with ui.button(icon='view_column').props('flat dense round') as _cols_btn:
+            _cols_btn = ui.button(icon='view_column').props('flat dense round')
+            _cols_btn.disable()
+            with _cols_btn:
                 ui.tooltip('Visible Columns')
                 with ui.menu():
                     self._cols_menu_container = ui.column().classes('p-4 gap-1')
             _cols_btn.on('click', self._populate_cols_menu)
-            with ui.button(icon='download').props('flat dense round'):
+            _export_btn = ui.button(icon='download').props('flat dense round')
+            _export_btn.disable()
+            with _export_btn:
                 ui.tooltip('Export')
                 with ui.menu():
                     ui.menu_item('Export CSV', on_click=self._export_csv)
                     ui.menu_item('Export audio snippets', on_click=self._export_audio_snippets)
+            self._action_buttons = [_padding_btn, _cols_btn, _export_btn]
 
         container = ui.column().classes('w-full flex-1')
         self._grid.attach(container)
@@ -135,7 +145,7 @@ class ExaminePanel:
         if not rows:
             self._set_empty('CSV is empty, no detections')
             return
-        self._show_detections(rows, fieldnames)
+        await self._show_detections(rows, fieldnames)
 
     async def _load_all_campaigns(self) -> None:
         """Load the project-level combined detections CSV."""
@@ -150,9 +160,9 @@ class ExaminePanel:
         if not rows:
             self._set_empty('No detections found. Run BirdNET first.')
             return
-        self._show_detections(rows, fieldnames)
+        await self._show_detections(rows, fieldnames)
 
-    def _show_detections(self, rows: list[dict], fieldnames: list[str]) -> None:
+    async def _show_detections(self, rows: list[dict], fieldnames: list[str]) -> None:
         """Store rows and display in the grid."""
         truncated = self._data.set_detections(rows, fieldnames, _MAX_ROWS)
         if truncated > 0:
@@ -161,7 +171,10 @@ class ExaminePanel:
                 type='warning',
                 timeout=10000,
             )
-        self._show_aggrid(fieldnames)
+        self._progress_bar.set_visibility(True)
+        self._progress_bar.set_value(0)
+        self._status_label.set_text(f'Loading {len(rows):,} detections... 0%')
+        await self._show_aggrid(fieldnames)
 
     def _ensure_media_route(self) -> None:
         """Register the audio recordings directory as a media route (once)."""
@@ -172,51 +185,68 @@ class ExaminePanel:
             app.add_media_files('/media', audio_root)
             self._media_route_added = True
 
-    def _show_aggrid(self, fieldnames: list[str]) -> None:
+    async def _show_aggrid(self, fieldnames: list[str]) -> None:
         """Create or update the AG Grid with loaded detections."""
         self._ensure_media_route()
 
         # Filter rows based on max detections per ARU/species setting
         display_rows = self._data.filter_max_per_aru_species(self._max_detections_per_aru_and_species)
 
-        # Shallow-copy display rows and annotate with display-only fields for the _play and File
-        # cell renderers. _start_fraction is computed server-side from the WAV header (via sf.info,
-        # cached) so the slider shows the correct initial position without the browser loading audio upfront.
         audio_root = Path(project_settings.audio_recordings_path) if project_settings.audio_recordings_path else None
         pad_before = float(project_settings.snippet_padding_before or 0)
 
-        # _annotate produces all four display-only fields:
-        # 1) _play,                                    consumed by the _play column renderer (♪ marker)
-        # 2) _audio_url, _play_start, _start_fraction, consumed by the _AUDIOFILE_CELL_RENDERER in the File column
-        def _annotate(row: dict) -> dict:
-            file_path = row.get('File', '')
+        # Pre-compute file durations once per unique file (server-side from WAV header).
+        # Path resolution is done client-side in the JS cell renderer to keep row data
+        # minimal and avoid sending _rel_file annotations over WebSocket.
+        unique_files = {row.get('File') for row in display_rows if row.get('File')}
+        file_durations: dict[str, float] = {}
+        for file_path in unique_files:
             rel = resolve_audio_path(file_path, audio_root)
-            audio_url = f'/media/{rel.as_posix()}' if rel else ''
-            abs_path = audio_root / rel if rel else None
-            play_start = max(0.0, float(row.get('Start_Time') or 0) - pad_before)
-            duration = audio_duration(abs_path) if abs_path else 0.0
-            return {
-                **row,
-                '_play': '♪' if file_path else '',
-                '_audio_url': audio_url,
-                '_play_start': play_start,
-                '_start_fraction': play_start / duration if duration else 0.0,
-            }
+            rel_path = rel.as_posix() if rel else file_path
+            if rel_path not in file_durations:
+                # Durations are computed server-side from WAV header (via sf.info, cached)
+                abs_path = audio_root / rel if rel else None
+                file_durations[rel_path] = audio_duration(abs_path) if abs_path else 0.0
 
-        display_rows = [_annotate(row) for row in display_rows]
-        n = len(display_rows)
-        status_text = f'{n:,} detection{"s" if n != 1 else ""}'
-        if self._max_detections_per_aru_and_species > 0:
-            status_text += f' (max {self._max_detections_per_aru_and_species} per ARU/species)'
-        self._status_label.set_text(status_text)
+        grid_context = {
+            'audio_root': '/media/',
+            'pad_before': pad_before,
+            'file_durations': file_durations,
+        }
 
-        self._grid.refresh(
+        await self._grid.refresh(
             display_rows,
             fieldnames,
             self._data.species_options,
             self._on_cell_click,
             self._on_cell_value_changed,
+            grid_context=grid_context,
+            on_progress=self._update_progress,
         )
+
+    def _update_progress(self, val: float, n: int) -> None:
+        """Update the progress bar and status label during chunked grid loading.
+
+        This callback is invoked from the async event loop, so direct UI calls
+        are safe. However, we guard against None refs in case the panel is
+        destroyed mid-load.
+        """
+        if self._progress_bar is not None:
+            self._progress_bar.set_value(val)
+
+        if val >= 1.0:
+            if self._progress_bar is not None:
+                self._progress_bar.set_visibility(False)
+            for btn in self._action_buttons:
+                btn.enable()
+            status_text = f'{n:,} detection{"s" if n != 1 else ""}'
+            if self._max_detections_per_aru_and_species > 0:
+                status_text += f' (max {self._max_detections_per_aru_and_species} per ARU/species)'
+            if self._status_label is not None:
+                self._status_label.set_text(status_text)
+        else:
+            if self._status_label is not None:
+                self._status_label.set_text(f'Loading {n:,} detections... {int(val*100)}%')
 
     def _populate_cols_menu(self) -> None:
         if not self._data.fieldnames or self._cols_menu_container is None:
@@ -228,13 +258,17 @@ class ExaminePanel:
         if e.args.get('colId') != '_play':
             return
         row = e.args.get('data', {})
-        end = row.get('End_Time', 0)
-        url = row.get('_audio_url', '')
-        if not url:
+        file_path = row.get('File')
+        if not file_path:
             return
-        play_start = row.get('_play_start', 0.0)  # _play_start already incorporates snippet_padding_before (computed in _annotate)
+
+        url = f'/media/{file_path}'
+        pad_before = float(project_settings.snippet_padding_before or 0)
+        play_start = max(0.0, float(row.get('Start_Time') or 0) - pad_before)
+        end = float(row.get('End_Time', 0))
         pad_after = float(project_settings.snippet_padding_after or 0)
         total_ms = int((end + pad_after - play_start) * 1000)
+
         js_url = json.dumps(url)
         ui.run_javascript(f"""
             let audio = document.getElementById('examine-audio');
@@ -384,23 +418,26 @@ class ExaminePanel:
         else:
             ui.notify(f'Exported {len(rows)} snippets to {output_dir.name}', type='positive')
 
-    def _on_padding_before_change(self, e) -> None:
+    async def _on_padding_before_change(self, e) -> None:
         """Persist the new padding-before value and refresh the grid (updates _play_start/_start_fraction)."""
         _on_setting_change('snippet_padding_before', e.value)
-        self._refresh_row_data()
+        await self._refresh_row_data()
 
-    def _refresh_row_data(self) -> None:
+    async def _refresh_row_data(self) -> None:
         """Recompute annotated row data and push to the grid (e.g. after padding change)."""
         if self._data.detections:
-            self._show_aggrid(self._data.fieldnames)
+            await self._show_aggrid(self._data.fieldnames)
 
-    def _on_max_detections_per_aru_and_species_change(self, e) -> None:
+    async def _on_max_detections_per_aru_and_species_change(self, e) -> None:
         """Handle dropdown change for max detections per ARU/species filter."""
         self._max_detections_per_aru_and_species = 0 if e.value == 'All' else int(e.value)
-        self._refresh_row_data()
+        await self._refresh_row_data()
 
     def _set_empty(self, message: str) -> None:
         """Clear the grid and show a status message."""
         self._data.clear()
+        self._progress_bar.set_visibility(False)
         self._status_label.set_text(message)
+        for btn in self._action_buttons:
+            btn.disable()
         self._grid.clear()

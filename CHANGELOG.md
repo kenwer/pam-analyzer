@@ -6,8 +6,10 @@
 ### Fixed
 - BirdNET result CSVs containing non-UTF-8 file paths (e.g. from older runs on Windows with cp1252 encoding) are now parsed correctly via a latin-1 fallback.
 - The app now restores the previously active tab in case of a WebView reconnect and re-displays BirdNET analysis progress if a run was in progress.
+- Improved handling of larger datasets by reducing data chunk size to 20k rows and increasing WebSocket reconnection timeouts in `ui.run`.
 ### Changed
 - BirdNET progress bar switches to an indeterminate "Finalizing..." state once all per-file result CSVs are written.
+- Examine panel handles expensive row computations (audio URLs, playback start times) in the frontend and reducing WebSocket payload size.
 - [Dev] Upgrade dependencies.
 
 

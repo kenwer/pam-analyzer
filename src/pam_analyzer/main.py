@@ -42,6 +42,19 @@ from pam_analyzer.panels.project import (  # noqa: E402
     save_project_as,
 )
 
+_NICEGUI_WINDOW_TITLE = 'PAM Analyzer'
+
+# Initial size of the main app window at startup
+_NICEGUI_WINDOW_WIDTH = 1400
+_NICEGUI_WINDOW_HEIGHT = 900
+
+# Extended reconnect timeout (e.g. for the agrid data table the frontent JS may take longer on slow machines)
+_NICEGUI_RECONNECT_TIMEOUT = 60.0
+
+# WebSocket message history length. Sufficient for large dataset transfers
+# (500k rows sent in 20k chunks) without excessive memory usage.
+_NICEGUI_MESSAGE_HISTORY_LENGTH = 100
+
 # Persists the active tab name across WebView reconnects so the UI restores
 # the user's last position rather than always resetting to the Project tab.
 _active_tab_name: str = ''
@@ -336,8 +349,10 @@ def main() -> None:
         root=build_ui,
         native=True,
         reload=False,
-        title='PAM Analyzer',
-        window_size=(1400, 900),
+        title=_NICEGUI_WINDOW_TITLE,
+        window_size=(_NICEGUI_WINDOW_WIDTH, _NICEGUI_WINDOW_HEIGHT),
+        reconnect_timeout=_NICEGUI_RECONNECT_TIMEOUT,
+        message_history_length=_NICEGUI_MESSAGE_HISTORY_LENGTH,
     )
 
 
