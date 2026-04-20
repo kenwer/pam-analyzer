@@ -42,6 +42,10 @@ from pam_analyzer.panels.project import (  # noqa: E402
     save_project_as,
 )
 
+# Persists the active tab name across WebView reconnects so the UI restores
+# the user's last position rather than always resetting to the Project tab.
+_active_tab_name: str = ''
+
 
 class KeyboardShortcuts:
     """Registers keyboard shortcuts and generates platform-aware display labels.
@@ -236,6 +240,8 @@ def build_main_content() -> None:
             examine_panel = ExaminePanel()
 
             async def _on_tab_change(e) -> None:
+                global _active_tab_name
+                _active_tab_name = e.value
                 # Re-discover campaigns when navigating to a panel that depends on them
                 if e.value == 'Campaigns':
                     campaigns_panel.refresh_campaigns()
@@ -246,7 +252,15 @@ def build_main_content() -> None:
                 elif e.value == 'Examine':
                     await examine_panel.refresh()
 
-            with ui.tab_panels(tabs, value=project_tab, on_change=_on_tab_change).props('vertical').classes('flex-1 h-full'):
+            tab_map = {
+                'Campaigns': campaigns_tab,
+                'Import': import_audio,
+                'BirdNET': run_birdnet,
+                'Examine': examine_data,
+            }
+            initial_tab = tab_map.get(_active_tab_name, project_tab)
+
+            with ui.tab_panels(tabs, value=initial_tab, on_change=_on_tab_change).props('vertical').classes('flex-1 h-full'):
                 with ui.tab_panel(project_tab):
                     ProjectPanel().build()
                 with ui.tab_panel(campaigns_tab):
@@ -257,6 +271,16 @@ def build_main_content() -> None:
                     birdnet_panel.build()
                 with ui.tab_panel(examine_data):
                     examine_panel.build()
+
+            # On reconnect, _on_tab_change doesn't fire for the initial tab, so
+            # trigger the same refresh that would have fired on a normal tab switch.
+            if _active_tab_name == 'Campaigns':
+                campaigns_panel.refresh_campaigns()
+            elif _active_tab_name == 'Import':
+                import_panel.refresh_campaigns()
+            elif _active_tab_name == 'Examine':
+                ui.timer(0, examine_panel.refresh, once=True)
+            # BirdNET: birdnet_panel.build() already calls refresh_campaigns() unconditionally.
 
 
 def build_ui() -> None:

@@ -1,4 +1,5 @@
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from nicegui import run, ui
@@ -23,6 +24,24 @@ from pam_analyzer.panels.project import (
 )
 
 _ALL_CAMPAIGNS = 'all'  # sentinel value used as the campaign select key for "run all campaigns"
+
+
+@dataclass
+class _RunState:
+    """Module-level state that survives WebView reconnects during a BirdNET run."""
+    output_dir: Path | None
+    total_wavs: int
+    start_time: float
+    multi_progress: object = None  # MultiRunProgress | None (imported lazily inside methods)
+
+
+# Set when analysis starts, cleared when it stops. Lets a new BirdNETPanel
+# instance (created on WebView reconnect) restore the progress UI.
+_run_state: _RunState | None = None
+
+# The most recently built BirdNETPanel. Used to cancel a stale panel's poll
+# timer when the WebView reconnects and builds a fresh panel.
+_current_panel: 'BirdNETPanel | None' = None
 
 
 def _get_available_locales() -> list[str]:
@@ -121,7 +140,20 @@ class BirdNETPanel:
         self._results_col = ui.column().classes('gap-0 mt-3')
         self._results_col.set_visibility(False)
 
+        # Register this panel as the current one. Cancel the previous panel's
+        # poll timer (from an earlier reconnect) to avoid duplicate polling.
+        global _current_panel
+        if _current_panel is not None and _current_panel is not self:
+            if _current_panel._poll_timer:
+                _current_panel._poll_timer.cancel()
+                _current_panel._poll_timer = None
+        _current_panel = self
+
         self.refresh_campaigns()
+
+        # Restore progress UI if analysis was running before the WebView reconnected.
+        if _run_state is not None:
+            self._restore_progress()
 
     # Campaign management:
     # - Discover campaigns in the recordings directory
@@ -306,7 +338,19 @@ class BirdNETPanel:
     # - _start/_stop_progress show/hide the progress bar and manage a polling timer
     # - _poll_progress counts freshly written CSV files to track completion and compute ETA
     # - _show_results builds the post-run summary UI with detection counts, elapsed time, and CSV buttons
+    def _restore_progress(self) -> None:
+        """Re-attach progress UI to a running analysis after a WebView reconnect."""
+        self._output_dir = _run_state.output_dir
+        self._total_wavs = _run_state.total_wavs
+        self._run_start_time = _run_state.start_time
+        self._multi_progress = _run_state.multi_progress
+        self._set_running(True)
+        self._results_col.set_visibility(False)
+        self._progress_col.set_visibility(True)
+        self._poll_timer = ui.timer(2.0, self._poll_progress)
+
     def _start_progress(self, label: str) -> None:
+        global _run_state
         self._set_running(True)
         self._results_col.set_visibility(False)
         self._progress_bar.set_value(0)
@@ -315,8 +359,16 @@ class BirdNETPanel:
         self._progress_col.set_visibility(True)
         self._run_start_time = time.time()
         self._poll_timer = ui.timer(2.0, self._poll_progress)
+        _run_state = _RunState(
+            output_dir=self._output_dir,
+            total_wavs=self._total_wavs,
+            start_time=self._run_start_time,
+            multi_progress=self._multi_progress,
+        )
 
     def _stop_progress(self) -> None:
+        global _run_state
+        _run_state = None  # Signal any reconnected panel's poll timer that the run is done
         if self._poll_timer:
             self._poll_timer.cancel()
             self._poll_timer = None
@@ -327,6 +379,11 @@ class BirdNETPanel:
             pass  # client was closed while analysis was running
 
     def _poll_progress(self) -> None:
+        # If the run finished on the original connection (e.g. after a reconnect),
+        # the old panel's _stop_progress clears _run_state. Detect that here.
+        if _run_state is None and self._running:
+            self._stop_progress()
+            return
         if not self._output_dir or not self._output_dir.exists():
             return
         done = sum(1 for p in self._output_dir.rglob('*.BirdNET.results.csv') if p.stat().st_mtime >= self._run_start_time)
