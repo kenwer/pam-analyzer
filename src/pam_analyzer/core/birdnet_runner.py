@@ -178,8 +178,14 @@ def _parse_result_csv(
     preferred_lang_map: dict[str, str] | None = None,
 ) -> list[dict]:
     """Parse one BirdNET result CSV into normalised detection dicts."""
-    with open(result_csv, newline='', encoding='utf-8') as f:
-        file_rows = list(csv.DictReader(f))
+    # BirdNET on Windows may write paths with system encoding (e.g. cp1252) rather than UTF-8.
+    # latin-1 decodes any byte sequence without error and correctly maps 0x80-0xFF to Unicode.
+    try:
+        with open(result_csv, newline='', encoding='utf-8') as f:
+            file_rows = list(csv.DictReader(f))
+    except UnicodeDecodeError:
+        with open(result_csv, newline='', encoding='latin-1') as f:
+            file_rows = list(csv.DictReader(f))
 
     # Rank each detection within its segment by descending confidence
     seg_groups: dict[tuple, list] = defaultdict(list)

@@ -331,16 +331,28 @@ class BirdNETPanel:
             return
         done = sum(1 for p in self._output_dir.rglob('*.BirdNET.results.csv') if p.stat().st_mtime >= self._run_start_time)
         total = self._total_wavs
-        fraction = (done / total) if total else 0.0
+        # Cap "done" at total because multi-threaded BirdNET can create result files faster
+        # than all WAVs are fully processed, so done may transiently exceed total.
+        # Cap fraction at 0.99 so 100% is never shown while analysis is still running.
+        display_done = min(done, total)
+        finalizing = total > 0 and done >= total
         try:
-            self._progress_bar.set_value(fraction)
-            elapsed = time.time() - self._run_start_time
-            self._eta_label.set_text(format_eta(done, total, elapsed))
-            if self._multi_progress and self._multi_progress.total_campaigns:
-                p = self._multi_progress
-                self._progress_label.set_text(f'Campaign {p.campaign_index}/{p.total_campaigns}: {p.current_campaign}  ·  {done} / {total} files')
+            if finalizing:
+                # All WAV result files written; still in post-processing (parsing, writing summaries).
+                # Switch to indeterminate to avoid freezing at "N/N files" while work continues.
+                self._progress_bar.props('indeterminate')
+                self._eta_label.set_text('')
+                self._progress_label.set_text('Finalizing...')
             else:
-                self._progress_label.set_text(f'{done} / {total} files')
+                self._progress_bar.props(remove='indeterminate')
+                self._progress_bar.set_value((display_done / total) if total else 0.0)
+                elapsed = time.time() - self._run_start_time
+                self._eta_label.set_text(format_eta(display_done, total, elapsed))
+                if self._multi_progress and self._multi_progress.total_campaigns:
+                    p = self._multi_progress
+                    self._progress_label.set_text(f'Campaign {p.campaign_index}/{p.total_campaigns}: {p.current_campaign}  ·  {display_done} / {total} files')
+                else:
+                    self._progress_label.set_text(f'{display_done} / {total} files')
         except RuntimeError:
             pass  # client was closed while analysis was running
 
