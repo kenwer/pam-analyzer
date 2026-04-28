@@ -1,0 +1,242 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ProjectPanel</class>
+ <widget class="QWidget" name="ProjectPanel">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>900</width>
+    <height>600</height>
+   </rect>
+  </property>
+  <layout class="QVBoxLayout" name="root_layout">
+   <property name="leftMargin">
+    <number>16</number>
+   </property>
+   <property name="topMargin">
+    <number>16</number>
+   </property>
+   <property name="rightMargin">
+    <number>16</number>
+   </property>
+   <property name="bottomMargin">
+    <number>16</number>
+   </property>
+   <property name="spacing">
+    <number>16</number>
+   </property>
+   <item>
+    <widget class="QLabel" name="title_label">
+     <property name="text">
+      <string>Project Settings</string>
+     </property>
+     <property name="styleSheet">
+      <string>font-size: 18px; font-weight: 600;</string>
+     </property>
+    </widget>
+   </item>
+
+   <!-- Audio recordings path -->
+   <item>
+    <widget class="QGroupBox" name="audio_group">
+     <property name="title">
+      <string>Audio recordings root path</string>
+     </property>
+     <layout class="QVBoxLayout" name="audio_layout">
+      <item>
+       <layout class="QHBoxLayout" name="audio_row">
+        <item>
+         <widget class="QLineEdit" name="audio_path_edit">
+          <property name="placeholderText">
+           <string>/path/to/audio-recordings</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QToolButton" name="audio_browse_button">
+          <property name="text">
+           <string>Browse…</string>
+          </property>
+          <property name="toolTip">
+           <string>Pick a directory</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <widget class="QLabel" name="audio_warning_label">
+        <property name="text">
+         <string>⚠ Path does not exist</string>
+        </property>
+        <property name="styleSheet">
+         <string>color: #d69100;</string>
+        </property>
+        <property name="visible">
+         <bool>false</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="audio_caption_label">
+        <property name="text">
+         <string>Import destination, or an existing directory of WAV subdirectories. The Import panel can be skipped if files are already in place.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+        <property name="styleSheet">
+         <string>color: gray;</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+
+   <!-- Detections output path -->
+   <item>
+    <widget class="QGroupBox" name="output_group">
+     <property name="title">
+      <string>Detections output path</string>
+     </property>
+     <layout class="QVBoxLayout" name="output_layout">
+      <item>
+       <layout class="QHBoxLayout" name="output_row">
+        <item>
+         <widget class="QLineEdit" name="output_path_edit">
+          <property name="placeholderText">
+           <string>(defaults to {audio root}/{project}-detections)</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QToolButton" name="output_browse_button">
+          <property name="text">
+           <string>Browse…</string>
+          </property>
+          <property name="toolTip">
+           <string>Pick a directory</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <widget class="QLabel" name="output_caption_label">
+        <property name="text">
+         <string>Where detection CSVs are written. Leave empty to use the default location next to the audio recordings.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+        <property name="styleSheet">
+         <string>color: gray;</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+
+   <!-- SD card name pattern -->
+   <item>
+    <widget class="QGroupBox" name="sdcard_group">
+     <property name="title">
+      <string>SD card name pattern (regex)</string>
+     </property>
+     <layout class="QVBoxLayout" name="sdcard_layout">
+      <item>
+       <layout class="QHBoxLayout" name="sdcard_row">
+        <item>
+         <widget class="QLineEdit" name="sdcard_pattern_edit">
+          <property name="placeholderText">
+           <string>^MSD-</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="regex_indicator_label">
+          <property name="text">
+           <string>● valid</string>
+          </property>
+          <property name="styleSheet">
+           <string>color: #2e7d32;</string>
+          </property>
+          <property name="minimumWidth">
+           <number>80</number>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <widget class="QLabel" name="sdcard_caption_label">
+        <property name="text">
+         <string>Regex matched against SD card volume names, e.g. ^MSD-</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+        <property name="styleSheet">
+         <string>color: gray;</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+
+   <!-- Preferred species language -->
+   <item>
+    <widget class="QGroupBox" name="lang_group">
+     <property name="title">
+      <string>Preferred species language</string>
+     </property>
+     <layout class="QVBoxLayout" name="lang_layout">
+      <item>
+       <widget class="QComboBox" name="species_lang_combo">
+        <property name="editable">
+         <bool>true</bool>
+        </property>
+        <property name="maximumWidth">
+         <number>240</number>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="lang_caption_label">
+        <property name="text">
+         <string>Language used for the Species column in all outputs. ISO 639-1 code (e.g. en, de, es).</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+        <property name="styleSheet">
+         <string>color: gray;</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+
+   <item>
+    <spacer name="bottom_spacer">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>40</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

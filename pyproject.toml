@@ -1,0 +1,76 @@
+[project]
+name = "pam-analyzer"
+version = "0.1.0"
+description = "Passive Acoustic Monitoring analyzer — review BirdNET detections from ARU field recordings."
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "PySide6>=6.11.0",
+    "birdnet-analyzer>=2.4.0",
+    "platformdirs>=4.3.0",
+    "psutil>=6.0.0",
+    "guano>=1.0.16",
+    "soundfile>=0.12.1",
+    "numpy>=1.26",
+    "scipy>=1.12",
+    "tomli-w>=1.2",
+    "polars>=1.0",
+]
+
+[project.scripts]
+pam-analyzer = "pam_analyzer.app.__main__:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-qt>=4.4",
+    "ruff>=0.6",
+    "poethepoet>=0.29",
+    "py-spy>=0.3",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pam_analyzer"]
+
+# Run ruff using uvx:
+#  uvx ruff check src/pam_analyzer/
+#  uvx ruff check src/pam_analyzer/ --fix
+[tool.ruff]
+line-length = 120
+extend-exclude = [
+    "**/ui_*.py",
+    "**/*_rc.py",
+]
+
+[tool.ruff.lint]
+# Never enforce `E501` (line length violations).
+ignore = ["E501"]
+# Select specific error codes to enforce
+select = [
+    "F",    # Pyflakes (basic Python errors)
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "I",    # Import sorting
+    "C4",   # Flake8 Comprehensions
+    "B",    # Flake8 Bugbear (security and design checks)
+    "UP",   # Pyupgrade (modernize Python code)
+]
+
+[tool.poe.tasks]
+compile-ui = { cmd = "python scripts/compile_ui.py", help = "Compile Qt Designer .ui files to ui_*.py modules" }
+compile-qrc = { cmd = "python scripts/compile_qrc.py", help = "Compile Qt resource files to *_rc.py modules" }
+run-app = "python -m pam_analyzer"
+run = { sequence = ["compile-ui", "compile-qrc", "run-app"], help = "Compile UI/resources, then run the app" }
+profile = { cmd = "py-spy record -o spectrogram_profile.svg -- python -m pam_analyzer", help = "Record a py-spy flame graph; navigate the app then Ctrl+C to write spectrogram_profile.svg (Windows: run as Administrator)" }
+test = "pytest"
+lint = "ruff check src tests"
+fmt = "ruff format src tests"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -q"
+qt_api = "pyside6"

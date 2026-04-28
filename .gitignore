@@ -1,0 +1,22 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# PyQt/PySide generated files
+ui_*.py
+*_rc.py
+
+# Packaging build artifacts
+dist/
+
+# Misc
+.DS_Store
+*.md
+!README.md
+!CHANGELOG.md
+!ARCHITECTURE.md
