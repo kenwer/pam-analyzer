@@ -1,6 +1,6 @@
 # Changelog
 
-## unreleased
+## [0.1.3] - 2026-05-08
 ### Added
 - Add support for `.flac`, `.mp3`, `.ogg`, `.m4a`, `.wma`, `.aiff`, `.aif` audio file formats.
 ### Fixed

@@ -1,6 +1,6 @@
 [project]
 name = "pam-analyzer"
-version = "0.1.2"
+version = "0.1.3"
 description = "Passive Acoustic Monitoring for Bird Species Detection"
 readme = "README.md"
 requires-python = ">=3.13,<3.14" # use Python 3.13 because tensorflow v2.21.0 only has wheels for cp313
