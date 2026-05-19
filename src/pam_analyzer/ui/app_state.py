@@ -1,6 +1,6 @@
 """Shared, observable application state.
 
-A single instance is created in `bootstrap.py` and injected into every panel.
+A single instance is created in bootstrap and injected into every panel.
 Replaces the module-level globals from the original NiceGUI app.
 """
 
@@ -60,9 +60,7 @@ class AppState(QObject):
         except Exception as exc:
             self.errorOccurred.emit(f"Failed to open {path.name}: {exc}")
             return
-        self._project = project
-        self._set_dirty(False)
-        self.projectChanged.emit(project)
+        self._apply_project(project, dirty=False)
         self.refresh_campaigns()
         self.statusMessage.emit(f"Opened {path.name}")
 
@@ -72,25 +70,20 @@ class AppState(QObject):
         except Exception as exc:
             self.errorOccurred.emit(f"Failed to create {path.name}: {exc}")
             return
-        self._project = project
-        self._set_dirty(False)
-        self.projectChanged.emit(project)
+        self._apply_project(project, dirty=False)
         self.refresh_campaigns()
         self.statusMessage.emit(f"Created {path.name}")
 
     def update_project(self, project: Project) -> None:
-        """Replace the in-memory project (e.g. after the user edits settings).
+        """Replace the in-memory project after a user edit. Marks dirty, does not persist.
 
-        Emits projectChanged and marks the project dirty. Does not persist.
-        Callers must invoke save_project() (or File / Save) to flush to disk.
-        Re-discovers campaigns when the audio root changes.
+        Re-discovers campaigns when the audio root or output base changes.
+        Callers must invoke save_project() to flush to disk.
         """
-        if project == self._project:
-            return
         previous = self._project
-        self._project = project
-        self._set_dirty(True)
-        self.projectChanged.emit(project)
+        if project == previous:
+            return
+        self._apply_project(project, dirty=True)
         if (
             previous is None
             or previous.audio_recordings_path != project.audio_recordings_path
@@ -109,6 +102,25 @@ class AppState(QObject):
         self._set_dirty(False)
         self.statusMessage.emit(f"Saved {self._project.path.name}")
 
+    def save_project_as(self, new_path: Path) -> None:
+        if self._project is None:
+            return
+        try:
+            project = self._project_repo.save_as(self._project, new_path)
+        except Exception as exc:
+            self.errorOccurred.emit(f"Save failed: {exc}")
+            return
+        self._apply_project(project, dirty=False)
+        self.statusMessage.emit(f"Saved as {new_path.name}")
+
+    def close_project(self) -> None:
+        """Drop the in-memory project. Does not prompt about unsaved edits.
+        The caller is responsible for confirming with the user."""
+        if self._project is None:
+            return
+        self._apply_project(None, dirty=False)
+        self.refresh_campaigns()
+
     def update_birdnet_settings(
         self,
         *,
@@ -116,7 +128,7 @@ class AppState(QObject):
         overlap: float | None = None,
         locales: tuple[str, ...] | None = None,
     ) -> None:
-        """Auto-save BirdNET settings into the project (like update_padding)."""
+        """Persist BirdNET settings immediately without marking the project dirty."""
         if self._project is None:
             return
         fields: dict = {}
@@ -131,17 +143,17 @@ class AppState(QObject):
         updated = replace(self._project, **fields)
         if updated == self._project:
             return
-        self._project = updated
+        self._set_project_silent(updated)
         try:
             self._project_repo.save(updated)
         except Exception as exc:
             self.errorOccurred.emit(f"Failed to save BirdNET settings: {exc}")
 
     def update_padding(self, before: float, after: float) -> None:
-        """Persist new playback-padding values to the in-memory project and
-        write them to disk immediately. Skips the projectChanged broadcast,
-        since only the audio player cares about padding and the panel updates
-        it directly.
+        """Persist playback-padding values immediately without marking the project dirty.
+
+        Skips the projectChanged broadcast because only the audio player cares
+        about padding and the panel updates its own spinboxes directly.
         """
         if self._project is None:
             return
@@ -152,40 +164,11 @@ class AppState(QObject):
         )
         if updated == self._project:
             return
-        self._project = updated
+        self._set_project_silent(updated)
         try:
             self._project_repo.save(updated)
         except Exception as exc:
             self.errorOccurred.emit(f"Failed to save padding: {exc}")
-
-    def close_project(self) -> None:
-        """Drop the in-memory project. Does not prompt about unsaved edits.
-        The caller is responsible for confirming with the user."""
-        if self._project is None:
-            return
-        self._project = None
-        self._set_dirty(False)
-        self.projectChanged.emit(None)
-        self.refresh_campaigns()
-
-    def save_project_as(self, new_path: Path) -> None:
-        if self._project is None:
-            return
-        try:
-            project = self._project_repo.save_as(self._project, new_path)
-        except Exception as exc:
-            self.errorOccurred.emit(f"Save failed: {exc}")
-            return
-        self._project = project
-        self._set_dirty(False)
-        self.projectChanged.emit(project)
-        self.statusMessage.emit(f"Saved as {new_path.name}")
-
-    def _set_dirty(self, value: bool) -> None:
-        if value == self._dirty:
-            return
-        self._dirty = value
-        self.projectDirtyChanged.emit(value)
 
     def set_current_campaign(self, campaign: Campaign | None) -> None:
         if campaign is self._current_campaign:
@@ -194,10 +177,30 @@ class AppState(QObject):
         self.currentCampaignChanged.emit(campaign)
 
     def refresh_campaigns(self) -> None:
-        if self._project is None:
-            self._campaigns = []
-        else:
-            self._campaigns = self._campaign_repo.discover(self._project.audio_recordings_path)
-        self.campaignsChanged.emit(self._campaigns)
-        # Reset selection when project changes
+        campaigns = (
+            self._campaign_repo.discover(self._project.audio_recordings_path)
+            if self._project is not None
+            else []
+        )
+        self._apply_campaigns(campaigns)
+
+    def _apply_project(self, project: Project | None, *, dirty: bool = False) -> None:
+        self._project = project
+        self.projectChanged.emit(project)
+        self._set_dirty(dirty)
+
+    def _apply_campaigns(self, campaigns: list[Campaign]) -> None:
+        self._campaigns = campaigns
+        self.campaignsChanged.emit(list(campaigns))
         self.set_current_campaign(None)
+
+    def _set_project_silent(self, project: Project) -> None:
+        """Replace the in-memory project without broadcasting signals.
+        Used for auto-save operations that must not trigger a full UI refresh."""
+        self._project = project
+
+    def _set_dirty(self, value: bool) -> None:
+        if value == self._dirty:
+            return
+        self._dirty = value
+        self.projectDirtyChanged.emit(value)
