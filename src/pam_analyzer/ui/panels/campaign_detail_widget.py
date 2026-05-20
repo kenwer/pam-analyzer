@@ -68,6 +68,7 @@ class CampaignDetailWidget(QWidget):
     deleteConfirmRequested = Signal(object)
     # User backed out of new/confirm in a way that should drop the selection.
     cancelled = Signal()
+    editingChanged = Signal(bool)
 
     def __init__(
         self,
@@ -164,6 +165,7 @@ class CampaignDetailWidget(QWidget):
         self._mode = "empty"
         self._campaign = None
         self.ui.stack.setCurrentWidget(self.ui.empty_page)
+        self.editingChanged.emit(False)
 
     def open_view(
         self,
@@ -179,6 +181,7 @@ class CampaignDetailWidget(QWidget):
         self.ui.stack.setCurrentWidget(self.ui.view_page)
         self._refresh_inventory()
         self._apply_import_state()
+        self.editingChanged.emit(False)
 
     def open_new(self, existing_names: list[str]) -> None:
         self._mode = "new"
@@ -191,6 +194,7 @@ class CampaignDetailWidget(QWidget):
         self.ui.stack.setCurrentWidget(self.ui.form_page)
         QTimer.singleShot(0, self._map.clear)
         self.ui.name_edit.setFocus()
+        self.editingChanged.emit(True)
 
     def open_edit(
         self,
@@ -206,6 +210,7 @@ class CampaignDetailWidget(QWidget):
         self._reset_form(campaign, species_text)
         self._on_mode_toggled()
         self.ui.stack.setCurrentWidget(self.ui.form_page)
+        self.editingChanged.emit(True)
 
         if campaign.species_filter_mode == FilterMode.LOCATION and campaign.location:
             loc = campaign.location

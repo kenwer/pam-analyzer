@@ -38,6 +38,9 @@ class CampaignsPanel(QWidget):
         # Set true while we revert a selection programmatically so the
         # selectionChanged handler ignores the synthetic event.
         self._reverting_selection = False
+        # Set true while the edit or new form is open; disables the list and
+        # new button so the user cannot switch campaigns mid-edit.
+        self._list_locked = False
 
         self._detail = CampaignDetailWidget(
             app_state,
@@ -62,6 +65,7 @@ class CampaignsPanel(QWidget):
         self.ui.campaign_list.customContextMenuRequested.connect(self._on_context_menu)
         self.ui.campaign_list.clicked.connect(self._on_list_clicked)
 
+        self._detail.editingChanged.connect(self._set_list_locked)
         self._detail.createRequested.connect(self._on_create_requested)
         self._detail.updateRequested.connect(self._on_update_requested)
         self._detail.deleteRequested.connect(self._on_delete_requested)
@@ -98,7 +102,8 @@ class CampaignsPanel(QWidget):
     # new / selection
 
     def _on_new(self) -> None:
-        # Creating a new campaign navigates away from the currently watched one.
+        if self._list_locked:
+            return
         if not self._confirm_stop_watching_if_busy():
             return
         self._detail.request_shutdown()  # no-op when idle
@@ -197,7 +202,7 @@ class CampaignsPanel(QWidget):
     def _on_detail_cancelled(self) -> None:
         # Cancel closes the detail view and deselects the list item,
         # returning to the empty page. Re-clicking the same item re-opens
-        # the edit page via _on_list_clicked.
+        # the view page via _on_list_clicked.
         self.ui.campaign_list.clearSelection()
         self._detail.show_empty()
 
@@ -222,11 +227,15 @@ class CampaignsPanel(QWidget):
         menu.exec(self.ui.campaign_list.viewport().mapToGlobal(pos))
 
     def _on_delete_shortcut(self) -> None:
+        if self._list_locked:
+            return
         campaign = self._selected_campaign()
         if campaign:
             self._show_delete_confirm(campaign)
 
     def _on_rename_shortcut(self) -> None:
+        if self._list_locked:
+            return
         campaign = self._selected_campaign()
         if campaign:
             self._rename_campaign(campaign)
@@ -285,6 +294,11 @@ class CampaignsPanel(QWidget):
         box.setDefaultButton(keep_btn)
         box.exec()
         return box.clickedButton() is switch_btn
+
+    def _set_list_locked(self, locked: bool) -> None:
+        self._list_locked = locked
+        self.ui.campaign_list.setEnabled(not locked)
+        self.ui.new_button.setEnabled(not locked)
 
     # helpers
 
