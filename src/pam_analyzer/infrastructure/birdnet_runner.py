@@ -1,7 +1,42 @@
 """BirdNET infrastructure adapter.
 
 Wraps birdnet_analyzer in the AnalysisRunner port. All birdnet_analyzer
-imports are confined to this module.
+imports are confined to this module so the rest of the codebase stays
+agnostic of the underlying analyzer.
+
+Flow when a user clicks "Run BirdNET" in the UI:
+
+    AnalysisWorker (background QThread, see workers/analysis_worker.py)
+      -> BirdnetAnalyzerRunner.run(...)            # public entry point
+         -> _prewarm_model()                       # once per process
+         -> pre-count files; wrap progress in
+            _RunGlobalProgress so the bar reflects
+            run-wide progress (not per-campaign)
+         -> for each campaign: _run_one(...)
+              -> _emit(phase="preparing")
+              -> _emit(phase="analyzing")          # bar appears at 0/N
+              -> _analyze_with_per_file_progress() # one call per week_dir
+                                                   # (location mode) or one
+                                                   # call for the whole
+                                                   # campaign (list / global)
+                   -> Pool.imap_unordered(
+                          _analyze_file_with_path, flist)
+                        -> _emit("analyzing", k/N) # per finished file
+              -> _emit(phase="parsing")
+              -> _parse_result_csv() per
+                 *.BirdNET.results.csv             # one file per audio input
+              -> _emit(phase="summarizing")
+              -> _write_summary_tables(),
+                 _write_week_tables()              # weeks only in loc. mode
+              -> _emit(phase="done")
+         -> if >1 campaign:
+              -> _write_combined_csv()             # cross-campaign rollup
+              -> _write_project_summaries()        # cross-campaign summary
+
+Cancellation: each campaign boundary, each per-file Pool yield, and each
+result-CSV parse checks progress.is_cancelled(); the Pool loop also calls
+pool.terminate() before raising CancelledError so in-flight workers stop
+immediately instead of draining.
 """
 
 from __future__ import annotations
@@ -13,12 +48,17 @@ import re
 import sys
 import time
 from collections import defaultdict
+from dataclasses import replace
 from datetime import datetime
 from functools import lru_cache
+from multiprocessing import Pool
 from pathlib import Path
 
 import birdnet_analyzer
 import birdnet_analyzer.config as birdnet_cfg
+from birdnet_analyzer.analyze.core import _set_params
+from birdnet_analyzer.analyze.utils import analyze_file as _bn_analyze_file
+from birdnet_analyzer.analyze.utils import save_analysis_params
 
 from ..domain import (
     AnalysisProgress,
@@ -33,6 +73,12 @@ from . import paths
 
 
 def _count_audio_files(campaign_dir: Path) -> int:
+    """Count audio files under a campaign folder.
+
+    Called once at the start of each _run_one to populate files_total on
+    progress snapshots, and also exposed via the public port for the UI's
+    pre-run sanity check.
+    """
     return sum(
         1 for f in campaign_dir.rglob("*")
         if f.is_file() and f.suffix.lower() in paths.AUDIO_EXTENSIONS
@@ -40,6 +86,12 @@ def _count_audio_files(campaign_dir: Path) -> int:
 
 
 def _week_from_path(path: Path) -> int | None:
+    """Extract the ISO week number from a 'week_NN' path segment, or None.
+
+    Location-mode campaigns are organised as <campaign>/<aru>/week_NN/...
+    so we can run birdnet_analyzer per week with the correct seasonal
+    species filter. Returns None when no such segment is present.
+    """
     for part in path.parts:
         if part.startswith("week_"):
             try:
@@ -50,6 +102,12 @@ def _week_from_path(path: Path) -> int | None:
 
 
 def _parse_recording_time(stem: str) -> datetime | None:
+    """Pull a 'YYYYMMDD_HHMMSS' timestamp out of an audio filename.
+
+    ARU filenames produced in the field embed the start time; we surface
+    it on every detection row so downstream analysis has a real datetime
+    rather than just a file path.
+    """
     match = re.search(r"(\d{8}_\d{6})", stem)
     if match:
         try:
@@ -61,6 +119,13 @@ def _parse_recording_time(stem: str) -> datetime | None:
 
 @lru_cache(maxsize=1)
 def _locale_file_map() -> dict[str, Path]:
+    """Map locale code (e.g. 'de', 'fr') to its BirdNET labels file path.
+
+    The list of label files shipped with the model is constant per
+    process, so the directory listing is cached after the first call.
+    Consumed by _load_locale_labels and exposed to the UI via
+    _get_available_locales.
+    """
     labels_dir = Path(birdnet_analyzer.__file__).parent / "labels" / "V2.4"
     prefix = "BirdNET_GLOBAL_6K_V2.4_Labels_"
     return {
@@ -71,6 +136,12 @@ def _locale_file_map() -> dict[str, Path]:
 
 @lru_cache(maxsize=3)
 def _load_locale_labels(locale: str) -> dict[str, str]:
+    """Load a {scientific_name: localized_common_name} mapping for a locale.
+
+    Cached because every detection row in a campaign looks up the same
+    handful of locales; reading the labels file once per locale per
+    process is enough. Returns {} for unknown locales rather than raising.
+    """
     loc_path = _locale_file_map().get(locale)
     if not loc_path:
         return {}
@@ -85,11 +156,18 @@ def _load_locale_labels(locale: str) -> dict[str, str]:
 
 
 def _get_available_locales() -> list[str]:
+    """Return locale codes the language picker in the UI should offer."""
     return list(_locale_file_map())
 
 
 def _prewarm_model() -> None:
-    """Trigger model initialisation before threading to avoid extraction races."""
+    """Force model extraction on the main thread before the worker Pool starts.
+
+    Called once at the top of BirdnetAnalyzerRunner.run. The TFLite model
+    file is unpacked from the wheel on first use; if several Pool workers
+    race that unpack we get sporadic 'file not found' or truncated-file
+    errors. Touching the model once up front sidesteps the race.
+    """
     try:
         from birdnet_analyzer.model import ensure_model_exists  # type: ignore[import]
 
@@ -109,6 +187,17 @@ def _parse_result_csv(
     run_context: dict,
     preferred_lang_map: dict[str, str] | None = None,
 ) -> list[dict]:
+    """Turn one BirdNET per-file results CSV into normalised detection rows.
+
+    Called during the 'parsing' phase of _run_one, once for every
+    '*.BirdNET.results.csv' file that birdnet_analyzer wrote (one per
+    input audio file). The rows it returns are streamed straight into
+    the combined per-campaign detections CSV.
+
+    The function also derives the ARU id from the audio path, computes a
+    per-segment species rank (most confident species at that timestamp =
+    rank 1), and joins in localised common names from locale_maps.
+    """
     try:
         with open(result_csv, newline="", encoding="utf-8") as f:
             file_rows = list(csv.DictReader(f))
@@ -187,6 +276,14 @@ def _write_summary_tables(
     campaign_name: str,
     file_prefix: str | None = None,
 ) -> tuple[Path, Path]:
+    """Write the two per-campaign aggregate CSVs the UI links to.
+
+    Called in the 'summarizing' phase of _run_one, and again from
+    _write_week_tables once per week with a week-scoped file_prefix.
+    Produces:
+      - <prefix>-summary-per-aru.csv:  one row per (ARU, species)
+      - <prefix>-summary-all-arus.csv: one row per species across all ARUs
+    """
     prefix = file_prefix or campaign_name
 
     per_aru: dict[tuple, dict] = defaultdict(
@@ -299,6 +396,14 @@ def _write_week_tables(
     locale_cols: list[str],
     campaign_name: str,
 ) -> list[WeekRunResult]:
+    """Split detections by week and write a per-week detection + summary set.
+
+    Only meaningful for location-mode campaigns (rows then carry a Week
+    column derived from the 'week_NN' path segment). Called from
+    _run_one after _write_summary_tables; the returned WeekRunResult
+    list ends up on CampaignRunResult.week_results so the UI can render
+    a row per week.
+    """
     by_week: dict[int, list[dict]] = defaultdict(list)
     for d in detections:
         w = d.get("Week")
@@ -337,6 +442,12 @@ def _write_combined_csv(
     output_dir: Path,
     project_name: str,
 ) -> Path:
+    """Concatenate every campaign's detections CSV into one project file.
+
+    Called from BirdnetAnalyzerRunner.run only when the user runs more
+    than one campaign in a single click; gives them a single file to
+    feed into downstream tooling.
+    """
     fieldnames: list[str] | None = None
     for _, result in named_results:
         if result.detections_csv.exists():
@@ -369,6 +480,13 @@ def _write_project_summaries(
     project_name: str,
     locale_cols: list[str],
 ) -> tuple[Path, Path]:
+    """Build cross-campaign aggregates from each campaign's per-ARU summary.
+
+    Counterpart to _write_combined_csv for the summary files: only
+    invoked from run() when more than one campaign was processed.
+    Produces a per-(campaign, ARU) table and a global all-campaigns
+    species table.
+    """
     all_rows: list[dict] = []
     fieldnames: list[str] | None = None
     for _, result in named_results:
@@ -445,6 +563,43 @@ def _write_project_summaries(
     return per_campaign_aru_path, all_campaigns_path
 
 
+class _RunGlobalProgress:
+    """Translate per-campaign snapshots from _run_one to run-global counts.
+
+    _run_one reports files_done/files_total scoped to one campaign so it
+    can be reasoned about in isolation. When the user runs more than one
+    campaign at once, that would make the UI bar fill to 100% and snap
+    back to 0% at every campaign boundary. This adapter sits between
+    _run_one and the real AnalysisProgress port and rewrites each
+    snapshot's files_done/files_total to refer to the entire run, while
+    leaving phase, campaign, and phase_detail untouched so the label
+    still tells the user which campaign is active.
+    """
+
+    def __init__(self, inner: AnalysisProgress, run_total: int) -> None:
+        self._inner = inner
+        self._run_total = run_total
+        self._baseline = 0  # files completed in prior campaigns
+
+    def start_campaign(self, files_done_so_far: int) -> None:
+        """Set the offset added to every subsequent snapshot's files_done.
+
+        Called by BirdnetAnalyzerRunner.run just before each _run_one so
+        progress in the new campaign accumulates on top of what earlier
+        campaigns already contributed.
+        """
+        self._baseline = files_done_so_far
+
+    def report(self, snapshot: AnalysisProgressSnapshot) -> None:
+        global_done = min(self._baseline + snapshot.files_done, self._run_total)
+        self._inner.report(
+            replace(snapshot, files_done=global_done, files_total=self._run_total)
+        )
+
+    def is_cancelled(self) -> bool:
+        return self._inner.is_cancelled()
+
+
 def _emit(
     progress: AnalysisProgress,
     *,
@@ -454,7 +609,14 @@ def _emit(
     files_done: int,
     files_total: int,
     phase: str,
+    phase_detail: str | None = None,
 ) -> None:
+    """Build a snapshot and forward it to the AnalysisProgress port.
+
+    Single funnel for every progress report so we can't accidentally
+    omit a field. AnalysisWorker translates the report into a Qt signal
+    that the BirdNetPanel renders on the UI thread.
+    """
     progress.report(
         AnalysisProgressSnapshot(
             campaign=campaign,
@@ -463,8 +625,87 @@ def _emit(
             files_done=files_done,
             files_total=files_total,
             phase=phase,
+            phase_detail=phase_detail,
         )
     )
+
+
+def _analyze_file_with_path(item):
+    """Pool worker shim: run birdnet analyze_file and return the input path.
+
+    birdnet_analyzer's analyze_file returns a dict of output paths, not
+    the input. We need the input filename to update the progress label,
+    so this wrapper hands it back. Top-level so multiprocessing can
+    pickle it under the 'spawn' start method (default on macOS/Windows).
+    """
+    _bn_analyze_file(item)
+    return item[0]
+
+
+def _analyze_with_per_file_progress(
+    audio_input: str,
+    output: str,
+    *,
+    on_file_done,  # callable(file_path_str: str) -> None
+    cancel_check,  # callable() -> bool
+    **analyze_kwargs,
+) -> None:
+    """Drop-in replacement for birdnet_analyzer.analyze with per-file callbacks.
+
+    Why: the upstream analyze() runs Pool.map_async(...).wait(), which
+    blocks for the whole batch and offers no progress hook, so the UI
+    bar sat at 0% for the entire run. This function mirrors the upstream
+    body but uses Pool.imap_unordered so we get one yield per completed
+    file. After each yield we call on_file_done(path) for a progress
+    snapshot and re-check cancel_check() so a Stop click takes effect
+    within one file rather than one campaign.
+
+    When: called from _run_one, once per week_dir in location mode or
+    once for the whole campaign in list / global mode.
+    """
+    flist = _set_params(
+        audio_input=audio_input,
+        output=output,
+        min_conf=analyze_kwargs.get("min_conf", 0.25),
+        custom_classifier=analyze_kwargs.get("classifier"),
+        lat=analyze_kwargs.get("lat", -1),
+        lon=analyze_kwargs.get("lon", -1),
+        week=analyze_kwargs.get("week", -1),
+        slist=analyze_kwargs.get("slist"),
+        sensitivity=analyze_kwargs.get("sensitivity", 1.0),
+        locale=analyze_kwargs.get("locale", "en"),
+        overlap=analyze_kwargs.get("overlap", 0),
+        fmin=analyze_kwargs.get("fmin", 0),
+        fmax=analyze_kwargs.get("fmax", 15000),
+        audio_speed=analyze_kwargs.get("audio_speed", 1.0),
+        bs=analyze_kwargs.get("batch_size", 1),
+        combine_results=False,
+        rtype=analyze_kwargs.get("rtype", "csv"),
+        skip_existing_results=analyze_kwargs.get("skip_existing_results", False),
+        sf_thresh=analyze_kwargs.get("sf_thresh", 0.03),
+        top_n=analyze_kwargs.get("top_n"),
+        merge_consecutive=analyze_kwargs.get("merge_consecutive", 1),
+        threads=analyze_kwargs.get("threads", 8),
+        labels_file=birdnet_cfg.LABELS_FILE,
+        additional_columns=analyze_kwargs.get("additional_columns"),
+        use_perch=False,
+    )
+
+    if birdnet_cfg.CPU_THREADS < 2 or len(flist) < 2:
+        for item in flist:
+            if cancel_check():
+                raise CancelledError()
+            _bn_analyze_file(item)
+            on_file_done(item[0])
+    else:
+        with Pool(birdnet_cfg.CPU_THREADS) as pool:
+            for finished_path in pool.imap_unordered(_analyze_file_with_path, flist):
+                on_file_done(finished_path)
+                if cancel_check():
+                    pool.terminate()
+                    raise CancelledError()
+
+    save_analysis_params(os.path.join(birdnet_cfg.OUTPUT_PATH, birdnet_cfg.ANALYSIS_PARAMS_FILENAME))
 
 
 def _run_one(
@@ -477,6 +718,25 @@ def _run_one(
     campaign_index: int,
     total_campaigns: int,
 ) -> CampaignRunResult:
+    """Run a single campaign through every phase and return its result row.
+
+    Sequencing:
+      1. preparing      - resolve species filter mode (location vs list vs
+                          global) and write the species list file when
+                          the user provided one.
+      2. analyzing      - delegate to _analyze_with_per_file_progress;
+                          this is the long phase the user mostly waits on.
+      3. parsing        - read every *.BirdNET.results.csv birdnet wrote
+                          and stream rows into <campaign>-detections.csv.
+      4. summarizing    - per-ARU and all-ARUs aggregates; per-week
+                          tables in location mode; geographic species
+                          lists when lat/lon are set.
+      5. done           - terminal snapshot so the bar reaches 100%.
+
+    Called once per campaign by BirdnetAnalyzerRunner.run. Raises
+    CancelledError when progress.is_cancelled() flips to True at any
+    of the checked points.
+    """
     campaign_name = ci.name
     t0 = time.monotonic()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -521,6 +781,38 @@ def _run_one(
         "locale": "en",  # birdnet_analyzer outputs English labels; non-English locales are mapped post-hoc
     }
 
+    done_counter = {"n": 0}
+
+    def _on_file_done(fpath: str) -> None:
+        done_counter["n"] += 1
+        finished = Path(fpath)
+        # Path relative to the campaign root surfaces the ARU and (in
+        # location mode) the week folder, e.g. "MSD-109/week_08/x.wav".
+        try:
+            detail = finished.relative_to(ci.folder).as_posix()
+        except ValueError:
+            detail = finished.name
+        _emit(
+            progress,
+            campaign=campaign_name,
+            campaign_index=campaign_index,
+            total_campaigns=total_campaigns,
+            files_done=done_counter["n"],
+            files_total=wav_count,
+            phase="analyzing",
+            phase_detail=detail,
+        )
+
+    _emit(
+        progress,
+        campaign=campaign_name,
+        campaign_index=campaign_index,
+        total_campaigns=total_campaigns,
+        files_done=0,
+        files_total=wav_count,
+        phase="analyzing",
+    )
+
     if week_dirs:
         for week_dir in week_dirs:
             if progress.is_cancelled():
@@ -528,47 +820,35 @@ def _run_one(
             dir_week = _week_from_path(week_dir)
             if dir_week is None:
                 continue
-            _emit(
-                progress,
-                campaign=campaign_name,
-                campaign_index=campaign_index,
-                total_campaigns=total_campaigns,
-                files_done=0,
-                files_total=wav_count,
-                phase="analyzing",
-            )
             week_out = output_dir / week_dir.relative_to(ci.folder)
             week_out.mkdir(parents=True, exist_ok=True)
-            birdnet_analyzer.analyze(str(week_dir), output=str(week_out), week=dir_week, **analyze_kwargs)
-            _emit(
-                progress,
-                campaign=campaign_name,
-                campaign_index=campaign_index,
-                total_campaigns=total_campaigns,
-                files_done=wav_count,
-                files_total=wav_count,
-                phase="parsing",
+            _analyze_with_per_file_progress(
+                str(week_dir),
+                str(week_out),
+                on_file_done=_on_file_done,
+                cancel_check=progress.is_cancelled,
+                week=dir_week,
+                **analyze_kwargs,
             )
     else:
-        _emit(
-            progress,
-            campaign=campaign_name,
-            campaign_index=campaign_index,
-            total_campaigns=total_campaigns,
-            files_done=0,
-            files_total=wav_count,
-            phase="analyzing",
+        _analyze_with_per_file_progress(
+            str(ci.folder),
+            str(output_dir),
+            on_file_done=_on_file_done,
+            cancel_check=progress.is_cancelled,
+            week=week,
+            **analyze_kwargs,
         )
-        birdnet_analyzer.analyze(str(ci.folder), output=str(output_dir), week=week, **analyze_kwargs)
-        _emit(
-            progress,
-            campaign=campaign_name,
-            campaign_index=campaign_index,
-            total_campaigns=total_campaigns,
-            files_done=wav_count,
-            files_total=wav_count,
-            phase="parsing",
-        )
+
+    _emit(
+        progress,
+        campaign=campaign_name,
+        campaign_index=campaign_index,
+        total_campaigns=total_campaigns,
+        files_done=wav_count,
+        files_total=wav_count,
+        phase="parsing",
+    )
 
     result_csvs = sorted(output_dir.rglob("*.BirdNET.results.csv"))
 
@@ -717,12 +997,20 @@ def _run_one(
 
 
 class BirdnetAnalyzerRunner:
-    """AnalysisRunner port implementation backed by birdnet_analyzer."""
+    """AnalysisRunner port implementation backed by birdnet_analyzer.
+
+    The only object the rest of the application sees from this module.
+    It is constructed once in the composition root and handed to the
+    AnalysisWorker that runs on a background QThread. Tests substitute
+    a FakeRunner that satisfies the same structural protocol.
+    """
 
     def count_audio_files(self, campaign_dir: Path) -> int:
+        """UI-facing file count used before a run starts."""
         return _count_audio_files(campaign_dir)
 
     def available_locales(self) -> list[str]:
+        """Locale codes the language picker should offer."""
         return _get_available_locales()
 
     def run(
@@ -736,15 +1024,34 @@ class BirdnetAnalyzerRunner:
         audio_root: Path,
         progress: AnalysisProgress,
     ) -> AnalysisRunResult:
+        """Execute every campaign sequentially and roll up the results.
+
+        Called by AnalysisWorker.run on the worker QThread. Pre-counts
+        audio files across all campaigns and wraps the inbound progress
+        port in _RunGlobalProgress so the bar shows whole-run progress
+        rather than per-campaign progress, then iterates _run_one per
+        campaign. After the loop, only when more than one campaign was
+        given, writes the project-level combined CSV and summaries.
+        Raises CancelledError if the user cancels between campaigns or
+        from within _run_one.
+        """
         _prewarm_model()
         output_base.mkdir(parents=True, exist_ok=True)
         t0 = time.monotonic()
 
+        # Pre-count audio files so the bar reflects whole-run progress
+        # instead of resetting at every campaign boundary.
+        per_campaign_totals = [_count_audio_files(ci.folder) for ci in campaigns]
+        run_total = sum(per_campaign_totals)
+        run_progress = _RunGlobalProgress(progress, run_total)
+
         results: list[CampaignRunResult] = []
         total = len(campaigns)
-        for i, ci in enumerate(campaigns, start=1):
+        files_completed = 0
+        for i, (ci, ci_total) in enumerate(zip(campaigns, per_campaign_totals, strict=True), start=1):
             if progress.is_cancelled():
                 raise CancelledError()
+            run_progress.start_campaign(files_completed)
             camp_out = output_base / ci.name
             result = _run_one(
                 ci,
@@ -752,11 +1059,12 @@ class BirdnetAnalyzerRunner:
                 settings,
                 preferred_lang,
                 audio_root,
-                progress,
+                run_progress,
                 i,
                 total,
             )
             results.append(result)
+            files_completed += ci_total
 
         combined_csv = per_campaign_aru_csv = all_campaigns_csv = None
         if len(results) > 1:

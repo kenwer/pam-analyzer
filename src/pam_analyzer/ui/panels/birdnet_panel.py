@@ -300,7 +300,12 @@ class BirdNetPanel(QWidget):
             if snap.total_campaigns > 1
             else snap.campaign
         )
-        self.ui.progress_label.setText(f"{prefix}  ·  {snap.phase}")
+        parts = [prefix, snap.phase]
+        if snap.files_total > 0 and snap.phase == "analyzing":
+            parts.append(f"{snap.files_done}/{snap.files_total}")
+        if snap.phase_detail:
+            parts.append(snap.phase_detail)
+        self.ui.progress_label.setText("  ·  ".join(parts))
 
     def _on_succeeded(self, result: AnalysisRunResult) -> None:
         self._teardown_worker()

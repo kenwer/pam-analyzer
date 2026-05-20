@@ -24,6 +24,8 @@ class AnalysisProgressSnapshot:
 
     phase is one of: 'preparing', 'analyzing', 'parsing', 'summarizing', 'done'.
     files_total may be 0 before counting completes.
+    phase_detail carries an optional extra string (e.g. current file basename)
+    that the UI may render alongside the phase.
     """
 
     campaign: str
@@ -32,6 +34,7 @@ class AnalysisProgressSnapshot:
     files_done: int
     files_total: int
     phase: str
+    phase_detail: str | None = None
 
 
 class AnalysisProgress(Protocol):
