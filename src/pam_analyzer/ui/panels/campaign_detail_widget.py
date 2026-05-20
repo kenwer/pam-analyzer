@@ -127,7 +127,7 @@ class CampaignDetailWidget(QWidget):
         self._inventory_model = AudioInventoryTreeModel(self)
         self.ui.inventory_tree.setModel(self._inventory_model)
         header = self.ui.inventory_tree.header()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
 
@@ -377,7 +377,15 @@ class CampaignDetailWidget(QWidget):
             f"{cards} card{'s' if cards != 1 else ''}"
         )
         self._inventory_model.set_campaign(campaign_inv)
-        self.ui.inventory_tree.expandToDepth(0)
+        tree = self.ui.inventory_tree
+        # Expand everything invisibly so resizeColumnToContents measures file
+        # rows (depth 2), which are wider than card/week labels due to indentation.
+        tree.setUpdatesEnabled(False)
+        tree.expandAll()
+        tree.resizeColumnToContents(0)
+        tree.collapseAll()
+        tree.expandToDepth(0)
+        tree.setUpdatesEnabled(True)
 
     # import lifecycle (formerly ImportAudioPanel)
 
