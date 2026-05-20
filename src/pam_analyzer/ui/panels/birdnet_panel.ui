@@ -235,8 +235,27 @@
     <layout class="QHBoxLayout" name="run_row">
      <item>
       <widget class="QPushButton" name="run_button">
+       <property name="styleSheet">
+        <string notr="true">QPushButton {
+  background-color: #5a8dee;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 14px;
+  font-weight: 600;
+}
+QPushButton:hover { background-color: #4a7dd0; }
+QPushButton:pressed { background-color: #3d6cb8; }
+QPushButton:checked { background-color: #e53935; }
+QPushButton:checked:hover { background-color: #d32f2f; }
+QPushButton:checked:pressed { background-color: #c62828; }
+QPushButton:disabled { background-color: #c0c0c0; color: #f5f5f5; }</string>
+       </property>
        <property name="text">
         <string>Run BirdNET</string>
+       </property>
+       <property name="checkable">
+        <bool>true</bool>
        </property>
       </widget>
      </item>

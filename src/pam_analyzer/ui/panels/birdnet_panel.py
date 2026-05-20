@@ -269,7 +269,8 @@ class BirdNetPanel(QWidget):
         self._set_status_page(_StatusPage.PROGRESS)
         self.ui.progress_bar.setRange(0, 0)  # indeterminate while preparing
         self.ui.progress_label.setText("Preparing…")
-        self.ui.run_button.setText("Stop")
+        self.ui.run_button.setText("Stop BirdNET")
+        self.ui.run_button.setChecked(True)
         self._set_settings_enabled(False)
         self.ui.run_button.setEnabled(True)  # keep Stop enabled
         self._app_state.analysisStarted.emit()
@@ -363,6 +364,7 @@ class BirdNetPanel(QWidget):
             self._worker.deleteLater()
             self._worker = None
         self.ui.run_button.setText("Run BirdNET")
+        self.ui.run_button.setChecked(False)
         self._set_settings_enabled(True)
         self.ui.run_button.setEnabled(self._can_run())
 
