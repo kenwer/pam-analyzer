@@ -11,10 +11,20 @@ from pathlib import Path
 from typing import Literal
 
 from PySide6.QtCore import QSignalBlocker, QTimer, Signal
-from PySide6.QtWidgets import QFileDialog, QPlainTextEdit, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QHeaderView,
+    QLabel,
+    QPlainTextEdit,
+    QTreeView,
+    QVBoxLayout,
+    QWidget,
+)
 
-from ...domain import Campaign, FilterMode, LatLon
+from ...domain import AudioInventory, Campaign, FilterMode, LatLon
 from ...widgets import MapPickerWidget
+from ..app_state import AppState
+from ..models.audio_inventory_tree_model import AudioInventoryTreeModel, format_bytes
 from .ui_campaign_detail_widget import Ui_CampaignDetailWidget
 
 _Mode = Literal["empty", "new", "edit", "confirm"]
@@ -29,11 +39,12 @@ class CampaignDetailWidget(QWidget):
     deleteRequested = Signal(object)
     cancelled = Signal()
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, app_state: AppState, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.ui = Ui_CampaignDetailWidget()
         self.ui.setupUi(self)
 
+        self._app_state = app_state
         self._campaign: Campaign | None = None
         self._existing_names: set[str] = set()
         self._mode: _Mode = "empty"
@@ -45,6 +56,7 @@ class CampaignDetailWidget(QWidget):
         map_layout.addWidget(self._map)
 
         self._setup_spinboxes()
+        self._build_inventory_section()
         self._wire_signals()
         self.show_empty()
 
@@ -55,6 +67,32 @@ class CampaignDetailWidget(QWidget):
         self.ui.lon_spin.setRange(-180.0, 180.0)
         self.ui.lon_spin.setDecimals(6)
         self.ui.lon_spin.setSingleStep(0.1)
+
+    def _build_inventory_section(self) -> None:
+        """Add a read-only audio inventory tree below the form, before the footer row.
+
+        Lives inside form_page so it's visible while editing an existing
+        campaign (mode='edit'). Hidden for mode='new' and on the non-form
+        stack pages (empty/confirm).
+        """
+        self._inventory_label = QLabel(self.ui.form_page)
+        self._inventory_model = AudioInventoryTreeModel(self)
+        self._inventory_tree = QTreeView(self.ui.form_page)
+        self._inventory_tree.setModel(self._inventory_model)
+        self._inventory_tree.setRootIsDecorated(True)
+        self._inventory_tree.setUniformRowHeights(True)
+        self._inventory_tree.setAlternatingRowColors(True)
+        header = self._inventory_tree.header()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+
+        layout = self.ui.form_layout
+        # Insert just before the footer (last item) so the Save/Cancel buttons
+        # keep their place at the bottom.
+        insert_at = layout.count() - 1
+        layout.insertWidget(insert_at, self._inventory_label)
+        layout.insertWidget(insert_at + 1, self._inventory_tree)
 
     def _wire_signals(self) -> None:
         self._map.locationPicked.connect(self._on_map_location_picked)
@@ -74,6 +112,8 @@ class CampaignDetailWidget(QWidget):
         self.ui.delete_button.clicked.connect(self._on_delete)
         self.ui.confirm_cancel_button.clicked.connect(self.cancelled.emit)
 
+        self._app_state.audioInventoryChanged.connect(self._on_audio_inventory_changed)
+
         _attach_text_drop_handler(self.ui.species_text, self._on_text_dropped)
 
     # state transitions
@@ -82,6 +122,7 @@ class CampaignDetailWidget(QWidget):
         self._mode = "empty"
         self._campaign = None
         self.ui.stack.setCurrentWidget(self.ui.empty_page)
+        self._refresh_inventory()
 
     def open_new(self, existing_names: list[str]) -> None:
         self._mode = "new"
@@ -93,6 +134,7 @@ class CampaignDetailWidget(QWidget):
         self.ui.stack.setCurrentWidget(self.ui.form_page)
         QTimer.singleShot(0, self._map.clear)
         self.ui.name_edit.setFocus()
+        self._refresh_inventory()
 
     def open_edit(
         self,
@@ -113,6 +155,7 @@ class CampaignDetailWidget(QWidget):
             QTimer.singleShot(0, lambda: self._map.set_location(loc.latitude, loc.longitude))
         else:
             QTimer.singleShot(0, self._map.clear)
+        self._refresh_inventory()
 
     def show_delete_confirm(self, campaign: Campaign, audio_count: int) -> None:
         self._mode = "confirm"
@@ -201,6 +244,37 @@ class CampaignDetailWidget(QWidget):
     def _on_delete(self) -> None:
         if self._campaign is not None:
             self.deleteRequested.emit(self._campaign)
+
+    # inventory display
+
+    def _on_audio_inventory_changed(self, _inventory: AudioInventory) -> None:
+        # Repaint the tree whenever the global inventory changes (e.g. after
+        # an import finishes). We always re-query rather than diff because the
+        # slice we display is small and the cost is negligible.
+        self._refresh_inventory()
+
+    def _refresh_inventory(self) -> None:
+        if self._mode != "edit" or self._campaign is None:
+            self._inventory_label.setVisible(False)
+            self._inventory_tree.setVisible(False)
+            self._inventory_model.set_campaign(None)
+            return
+        campaign_inv = self._app_state.audio_inventory.for_campaign(self._campaign.name)
+        self._inventory_label.setVisible(True)
+        self._inventory_tree.setVisible(True)
+        if campaign_inv is None or campaign_inv.file_count == 0:
+            self._inventory_label.setText("Audio inventory:  (no files imported yet)")
+            self._inventory_model.set_campaign(None)
+            return
+        n = campaign_inv.file_count
+        size = format_bytes(campaign_inv.total_bytes)
+        cards = len(campaign_inv.cards)
+        self._inventory_label.setText(
+            f"Audio inventory:  {n:,} files  ·  {size}  ·  "
+            f"{cards} card{'s' if cards != 1 else ''}"
+        )
+        self._inventory_model.set_campaign(campaign_inv)
+        self._inventory_tree.expandToDepth(0)
 
     # validation
 

@@ -111,3 +111,45 @@ class AnalysisRunResult:
     # than from a fresh BirdNET run. The UI uses this to show a different
     # headline ("Loaded previous results" vs "Run finished").
     from_disk: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class WeekInventory:
+    week: int  # BirdNET-style week number; -1 for files outside any week_NN folder
+    files: tuple[Path, ...]
+    total_bytes: int
+
+
+@dataclass(frozen=True, slots=True)
+class CardInventory:
+    name: str  # the card folder name as it appears on disk
+    folder: Path
+    weeks: tuple[WeekInventory, ...]
+    file_count: int
+    total_bytes: int
+
+
+@dataclass(frozen=True, slots=True)
+class CampaignInventory:
+    name: str
+    folder: Path
+    cards: tuple[CardInventory, ...]
+    file_count: int
+    total_bytes: int
+
+
+@dataclass(frozen=True, slots=True)
+class AudioInventory:
+    """What audio is on disk under a project's audio_recordings_path.
+
+    The empty inventory (campaigns=()) is the natural 'no project loaded' value
+    and also the state before discovery runs.
+    """
+
+    campaigns: tuple[CampaignInventory, ...] = ()
+
+    def for_campaign(self, name: str) -> CampaignInventory | None:
+        for c in self.campaigns:
+            if c.name == name:
+                return c
+        return None

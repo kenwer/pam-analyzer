@@ -1,6 +1,7 @@
 from .analysis_discovery import discover_analysis_result
 from .audio_extractor import SoundfileAudioExtractor
 from .audio_import import AudioImporter
+from .audio_inventory_discovery import discover_audio_inventory
 from .birdnet_runner import BirdnetAnalyzerRunner
 from .csv_detection_repo import CsvDetectionRepository
 from .psutil_sdcard_scanner import PsutilSdCardScanner
@@ -16,4 +17,5 @@ __all__ = [
     "TomlCampaignRepository",
     "TomlProjectRepository",
     "discover_analysis_result",
+    "discover_audio_inventory",
 ]

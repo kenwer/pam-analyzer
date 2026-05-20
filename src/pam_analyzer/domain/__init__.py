@@ -18,10 +18,14 @@ from .audio_import import (
 from .detections import filter_top_per_aru_species
 from .entities import (
     AnalysisRunResult,
+    AudioInventory,
     Campaign,
+    CampaignInventory,
     CampaignRunResult,
+    CardInventory,
     Detection,
     Project,
+    WeekInventory,
     WeekRunResult,
 )
 from .enums import FilterMode, VerifiedState
@@ -33,11 +37,14 @@ __all__ = [
     "AnalysisRunner",
     "AnalysisRunResult",
     "AnalysisSettings",
+    "AudioInventory",
     "CampaignRunInput",
     "CancelledError",
     "Campaign",
+    "CampaignInventory",
     "CampaignRunResult",
     "CardImportResult",
+    "CardInventory",
     "CardQueue",
     "ConflictChoice",
     "ConflictReport",
@@ -50,6 +57,7 @@ __all__ = [
     "filter_top_per_aru_species",
     "Project",
     "VerifiedState",
+    "WeekInventory",
     "WeekRunResult",
     "birdnet_week",
 ]

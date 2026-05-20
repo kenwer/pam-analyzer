@@ -34,7 +34,7 @@ class CampaignsPanel(QWidget):
         self._service = campaign_repo
         self._model = QStandardItemModel(self)
 
-        self._detail = CampaignDetailWidget(self.ui.detail_container)
+        self._detail = CampaignDetailWidget(app_state, self.ui.detail_container)
         self.ui.detail_layout.addWidget(self._detail)
 
         self.ui.campaign_list.setModel(self._model)

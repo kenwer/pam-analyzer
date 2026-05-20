@@ -77,6 +77,61 @@ def test_selecting_campaign_opens_edit_form(qtbot, panel: CampaignsPanel):
     assert panel._detail.ui.name_edit.text() == "alpha"
 
 
+def test_inventory_tree_reflects_imported_files(
+    qtbot, panel: CampaignsPanel, state: AppState, project_with_campaign
+):
+    """The inventory tree under the form should populate from disk content."""
+    _proj, campaign = project_with_campaign
+
+    # Drop some files into the campaign folder, then ask AppState to rescan.
+    card = campaign.folder / "MSD-TEST"
+    (card / "week_01").mkdir(parents=True)
+    (card / "week_01" / "20240101_120000.WAV").write_bytes(b"\x00" * 2048)
+    (card / "week_01" / "20240102_120000.WAV").write_bytes(b"\x00" * 1024)
+    state.refresh_audio_inventory()
+
+    # Select the campaign so the detail enters edit mode (which is when the
+    # inventory section is visible in step 1's UI placement).
+    index = panel._model.index(0, 0)
+    panel.ui.campaign_list.setCurrentIndex(index)
+    qtbot.waitUntil(
+        lambda: panel._detail.ui.stack.currentWidget() is panel._detail.ui.form_page,
+        timeout=1000,
+    )
+
+    model = panel._detail._inventory_model
+    assert model.rowCount() == 1  # one card
+    card_item = model.item(0, 0)
+    assert card_item.text() == "MSD-TEST"
+    # One week under the card; under that week, two files.
+    assert card_item.rowCount() == 1
+    assert card_item.child(0, 0).text() == "Week 01"
+    assert card_item.child(0, 0).rowCount() == 2
+
+    # Headline label mentions file count and card count.
+    text = panel._detail._inventory_label.text()
+    assert "2" in text
+    assert "card" in text
+
+
+def test_inventory_clears_when_project_switches(
+    qtbot, panel: CampaignsPanel, state: AppState, project_with_campaign, tmp_path: Path
+):
+    _proj, campaign = project_with_campaign
+    (campaign.folder / "MSD-X" / "week_01").mkdir(parents=True)
+    (campaign.folder / "MSD-X" / "week_01" / "a.WAV").write_bytes(b"\x00" * 16)
+    state.refresh_audio_inventory()
+    assert state.audio_inventory.for_campaign("alpha") is not None
+
+    other_audio = tmp_path / "audio2"
+    other_audio.mkdir()
+    other = Project(path=tmp_path / "other.pamproj", audio_recordings_path=other_audio)
+    TomlProjectRepository().save(other)
+    state.load_project(other.path)
+
+    assert state.audio_inventory.campaigns == ()
+
+
 def test_new_button_clears_selection_and_shows_form(qtbot, panel: CampaignsPanel):
     panel.ui.new_button.click()
     assert panel._detail.ui.stack.currentWidget() is panel._detail.ui.form_page

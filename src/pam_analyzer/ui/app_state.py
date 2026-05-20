@@ -9,11 +9,18 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
 
-from ..domain import AnalysisRunResult, Campaign, CardImportResult, Project
+from ..domain import (
+    AnalysisRunResult,
+    AudioInventory,
+    Campaign,
+    CardImportResult,
+    Project,
+)
 from ..infrastructure import (
     TomlCampaignRepository,
     TomlProjectRepository,
     discover_analysis_result,
+    discover_audio_inventory,
 )
 
 
@@ -29,6 +36,7 @@ class AppState(QObject):
     analysisFinished = Signal(object)  # AnalysisRunResult | None
     lastAnalysisResultChanged = Signal(object)  # AnalysisRunResult | None
     importResultsChanged = Signal(list)  # list[CardImportResult]
+    audioInventoryChanged = Signal(object)  # AudioInventory
 
     def __init__(
         self,
@@ -45,6 +53,7 @@ class AppState(QObject):
         self._current_campaign: Campaign | None = None
         self._last_analysis_result: AnalysisRunResult | None = None
         self._import_results: list[CardImportResult] = []
+        self._audio_inventory: AudioInventory = AudioInventory()
 
     @property
     def project(self) -> Project | None:
@@ -70,6 +79,10 @@ class AppState(QObject):
     def import_results(self) -> list[CardImportResult]:
         return list(self._import_results)
 
+    @property
+    def audio_inventory(self) -> AudioInventory:
+        return self._audio_inventory
+
     def load_project(self, path: Path) -> None:
         try:
             project = self._project_repo.load(path)
@@ -78,6 +91,7 @@ class AppState(QObject):
             return
         self._apply_project(project, dirty=False)
         self.refresh_campaigns()
+        self.refresh_audio_inventory()
         discovered = discover_analysis_result(project.output_base, project.name)
         if discovered is not None:
             self.set_last_analysis_result(discovered)
@@ -198,6 +212,21 @@ class AppState(QObject):
     def append_import_result(self, result: CardImportResult) -> None:
         self._import_results.append(result)
         self.importResultsChanged.emit(list(self._import_results))
+        # An import finished (success or error): files may have landed, so the
+        # on-disk inventory probably changed. Re-scan rather than trying to
+        # mutate the cached snapshot, since the diff is small and correctness
+        # matters more than the rescan cost here.
+        self.refresh_audio_inventory()
+
+    def refresh_audio_inventory(self) -> None:
+        if self._project is None:
+            self._set_audio_inventory(AudioInventory())
+            return
+        self._set_audio_inventory(discover_audio_inventory(self._project.audio_recordings_path))
+
+    def _set_audio_inventory(self, inventory: AudioInventory) -> None:
+        self._audio_inventory = inventory
+        self.audioInventoryChanged.emit(inventory)
 
     def set_current_campaign(self, campaign: Campaign | None) -> None:
         if campaign is self._current_campaign:
@@ -224,6 +253,9 @@ class AppState(QObject):
         if self._import_results:
             self._import_results = []
             self.importResultsChanged.emit([])
+        if self._audio_inventory.campaigns:
+            self._audio_inventory = AudioInventory()
+            self.audioInventoryChanged.emit(self._audio_inventory)
         self.projectChanged.emit(project)
         self._set_dirty(dirty)
 
