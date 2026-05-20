@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...domain import Campaign, FilterMode, LatLon
-from ...infrastructure import TomlCampaignRepository
+from ...infrastructure import AudioImporter, PsutilSdCardScanner, TomlCampaignRepository
 from ..app_state import AppState
 from .campaign_detail_widget import CampaignDetailWidget
 from .ui_campaigns_panel import Ui_CampaignsPanel
@@ -23,6 +23,8 @@ class CampaignsPanel(QWidget):
         self,
         app_state: AppState,
         campaign_repo: TomlCampaignRepository,
+        audio_importer: AudioImporter,
+        sdcard_scanner: PsutilSdCardScanner,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -33,8 +35,16 @@ class CampaignsPanel(QWidget):
         self._app_state = app_state
         self._service = campaign_repo
         self._model = QStandardItemModel(self)
+        # Set true while we revert a selection programmatically so the
+        # selectionChanged handler ignores the synthetic event.
+        self._reverting_selection = False
 
-        self._detail = CampaignDetailWidget(app_state, self.ui.detail_container)
+        self._detail = CampaignDetailWidget(
+            app_state,
+            audio_importer,
+            sdcard_scanner,
+            self.ui.detail_container,
+        )
         self.ui.detail_layout.addWidget(self._detail)
 
         self.ui.campaign_list.setModel(self._model)
@@ -88,15 +98,31 @@ class CampaignsPanel(QWidget):
     # new / selection
 
     def _on_new(self) -> None:
+        # Creating a new campaign navigates away from the currently watched one.
+        if not self._confirm_stop_watching_if_busy():
+            return
+        self._detail.request_shutdown()  # no-op when idle
         self.ui.campaign_list.clearSelection()
         self._detail.open_new(self._existing_names())
 
-    def _on_selection_changed(self, current, _) -> None:
-        campaign = self._campaign_at(current)
-        if campaign is None:
+    def _on_selection_changed(self, current, previous) -> None:
+        if self._reverting_selection:
+            return
+        new_campaign = self._campaign_at(current)
+        if new_campaign is not None and self._detail.is_busy():
+            if not self._confirm_stop_watching():
+                self._reverting_selection = True
+                try:
+                    self.ui.campaign_list.setCurrentIndex(previous)
+                finally:
+                    self._reverting_selection = False
+                return
+            self._detail.request_shutdown()
+
+        if new_campaign is None:
             self._detail.show_empty()
         else:
-            self._open_view(campaign)
+            self._open_view(new_campaign)
 
     def _open_view(self, campaign: Campaign) -> None:
         species_text = self._species_text_for(campaign)
@@ -231,6 +257,34 @@ class CampaignsPanel(QWidget):
             return
         self._app_state.refresh_campaigns()
         self._select_by_name(new_name)
+
+    # busy/cancel API (used by MainWindow's cancel-on-switch gate)
+
+    def is_busy(self) -> bool:
+        return self._detail.is_busy()
+
+    def busy_label(self) -> str | None:
+        return self._detail.busy_label()
+
+    def request_shutdown(self) -> None:
+        self._detail.request_shutdown()
+
+    def _confirm_stop_watching_if_busy(self) -> bool:
+        if not self._detail.is_busy():
+            return True
+        return self._confirm_stop_watching()
+
+    def _confirm_stop_watching(self) -> bool:
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle("Switch campaign?")
+        label = self._detail.busy_label() or "background task"
+        box.setText(f"An {label} is running. Switching campaigns will stop it.")
+        switch_btn = box.addButton("Switch campaign", QMessageBox.ButtonRole.DestructiveRole)
+        keep_btn = box.addButton("Keep running", QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(keep_btn)
+        box.exec()
+        return box.clickedButton() is switch_btn
 
     # helpers
 

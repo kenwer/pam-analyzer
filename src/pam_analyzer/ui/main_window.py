@@ -25,7 +25,6 @@ from .dialogs.about_dialog import show_about_dialog
 from .panels.birdnet_panel import BirdNetPanel
 from .panels.campaigns_panel import CampaignsPanel
 from .panels.examine_panel import ExaminePanel
-from .panels.import_audio_panel import ImportAudioPanel
 from .panels.project_panel import ProjectPanel
 from .panels.welcome_panel import WelcomePanel
 from .ui_main_window import Ui_MainWindow
@@ -57,14 +56,23 @@ class MainWindow(QMainWindow):
         welcome_layout.setContentsMargins(0, 0, 0, 0)
         welcome_layout.addWidget(self._welcome_panel)
 
-        self._campaigns_panel = CampaignsPanel(app_state, campaign_repo, self.ui.campaigns_tab)
+        self._campaigns_panel = CampaignsPanel(
+            app_state,
+            campaign_repo,
+            audio_importer,
+            sdcard_scanner,
+            self.ui.campaigns_tab,
+        )
         self._mount_tab(self.ui.campaigns_tab, self._campaigns_panel, "Campaigns")
 
         self._project_panel = ProjectPanel(app_state, self.ui.project_tab)
         self._mount_tab(self.ui.project_tab, self._project_panel, "Project")
 
-        self._import_panel = ImportAudioPanel(app_state, audio_importer, sdcard_scanner, self.ui.import_tab)
-        self._mount_tab(self.ui.import_tab, self._import_panel, "Import Audio")
+        # The Import Audio tab is gone in step 3: imports now live inside the
+        # campaign view. Remove the placeholder so users don't see an empty tab.
+        import_idx = self.ui.tab_widget.indexOf(self.ui.import_tab)
+        if import_idx != -1:
+            self.ui.tab_widget.removeTab(import_idx)
 
         self._birdnet_panel = BirdNetPanel(app_state, analysis_runner, campaign_repo, self.ui.birdnet_tab)
         self._mount_tab(self.ui.birdnet_tab, self._birdnet_panel, "BirdNET")
@@ -112,6 +120,11 @@ class MainWindow(QMainWindow):
         self._app_state.projectDirtyChanged.connect(self._on_dirty_changed)
         self._app_state.analysisStarted.connect(lambda: self.ui.status_bar.showMessage("BirdNET running…", 0))
         self._app_state.analysisFinished.connect(lambda _r: self.ui.status_bar.clearMessage())
+        self._app_state.importStarted.connect(self._on_import_started)
+        self._app_state.importFinished.connect(lambda: self.ui.status_bar.clearMessage())
+
+    def _on_import_started(self, campaign_name: str) -> None:
+        self.ui.status_bar.showMessage(f"Watching for SD cards (campaign: {campaign_name})…", 0)
 
     def _wire_welcome(self) -> None:
         self._welcome_panel.newRequested.connect(self._on_new)
@@ -279,14 +292,14 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         self._birdnet_panel.request_shutdown()
-        self._import_panel.request_shutdown()
+        self._campaigns_panel.request_shutdown()
         self._settings.window_geometry = self.saveGeometry()
         super().closeEvent(event)
 
     def _confirm_cancel_running(self) -> bool:
         busy = [
             label
-            for panel in (self._birdnet_panel, self._import_panel)
+            for panel in (self._birdnet_panel, self._campaigns_panel)
             if (label := panel.busy_label())
         ]
         if not busy:
@@ -314,7 +327,7 @@ class MainWindow(QMainWindow):
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             self._birdnet_panel.request_shutdown()
-            self._import_panel.request_shutdown()
+            self._campaigns_panel.request_shutdown()
         finally:
             QApplication.restoreOverrideCursor()
             self.ui.status_bar.clearMessage()
