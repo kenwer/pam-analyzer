@@ -53,7 +53,6 @@ Passive Acoustic Monitoring for Bird Species Detection
   - [Workflow](#workflow)
     - [Project Settings](#project-settings)
     - [Campaigns](#campaigns)
-    - [Import Audio](#import-audio)
     - [BirdNET](#birdnet)
     - [Examine Detections](#examine-detections)
   - [Keyboard shortcuts](#keyboard-shortcuts)
@@ -151,11 +150,11 @@ Example:
 ## Usage
 Download and execute the binary for your platform from the [Download](#download) section. No installation is required.
 
-Upon first launch, use `New Project` to initialize a project and configure the audio root and output paths. Use `File -> Save Project` (or `⌘S` / `Ctrl+S`) to persist this configuration as a `.pamproj` file. Then create at least one campaign in the `Campaigns` panel, import audio from SD cards in the `Import` panel, run analysis in the `BirdNET` panel, and review detections in the `Examine` panel.
+Upon first launch, use `New Project` to initialize a project and configure the audio root and output paths. Use `File -> Save Project` (or `⌘S` / `Ctrl+S`) to persist this configuration as a `.pamproj` file. Then create at least one campaign in the `Campaigns` panel (audio import from SD cards is also handled there), run analysis in the `BirdNET` panel, and review detections in the `Examine` panel.
 
 
 ## Workflow
-The application is organized into five panels that map to the steps of a typical PAM analysis workflow.
+The application is organized into four panels that map to the steps of a typical PAM analysis workflow.
 
 ### Project Settings
 Configure a study. Set the audio recordings root directory, the SD card volume name pattern (regex), the detections output path, and the preferred species language for labels. Settings persist automatically to the `.pamproj` file.
@@ -169,11 +168,9 @@ Create and manage the campaigns that belong to a project. The panel shows all di
 - **Rename** a campaign by editing its name in the form and saving.
 - **Edit** species filter settings at any time.
 - **Delete** a campaign via the trash icon on its list card, with an inline confirmation step.
+- **Import audio** from SD cards directly within a campaign's detail view. Click the import button to start monitoring for SD card volumes matching the configured name pattern. When a matching card is inserted, files are copied into the `campaign/ARU/week` directory structure with deduplication and conflict resolution.
 
 Campaigns are discovered automatically from the audio recordings root: any subdirectory containing a `campaign.toml` sidecar is treated as a campaign.
-
-### Import Audio
-Import audio from SD cards into a campaign. Select the target campaign, then start monitoring for SD card volumes matching the configured name pattern. When a matching card is inserted, files are copied into the `campaign/ARU/week` directory structure with deduplication and conflict resolution.
 
 ### BirdNET
 Run bird species detection using BirdNET-Analyzer. Configurable parameters include minimum confidence threshold, segment overlap, and additional language columns for species names. Each 3-second detection is assigned a within-segment `Rank` (1 = highest-confidence species in that window), useful for deprioritising detections that are consistently outcompeted by other species in the same clip. Analyses can be run per-campaign or across all campaigns, producing per-campaign detection CSVs (grouped by ARU and week), per-ARU and all-ARUs summary CSVs, and project-level rollups when running all campaigns at once.
