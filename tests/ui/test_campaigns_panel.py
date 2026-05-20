@@ -67,20 +67,47 @@ def test_panel_populates_list_on_project_load(panel: CampaignsPanel):
     assert panel._model.item(0).text() == "alpha"
 
 
-def test_selecting_campaign_opens_edit_form(qtbot, panel: CampaignsPanel):
+def test_selecting_campaign_opens_view_page(qtbot, panel: CampaignsPanel):
+    """Default landing after selecting a campaign is the view page, not the form."""
     index = panel._model.index(0, 0)
     panel.ui.campaign_list.setCurrentIndex(index)
     qtbot.waitUntil(
-        lambda: panel._detail.ui.stack.currentWidget() is panel._detail.ui.form_page,
+        lambda: panel._detail.ui.stack.currentWidget() is panel._detail._view_page,
         timeout=1000,
     )
+    assert panel._detail._view_name_label.text() == "alpha"
+    # Filter summary should describe the location-mode campaign.
+    assert "Location" in panel._detail._view_filter_label.text()
+
+
+def test_edit_button_switches_to_form(qtbot, panel: CampaignsPanel):
+    index = panel._model.index(0, 0)
+    panel.ui.campaign_list.setCurrentIndex(index)
+    qtbot.waitUntil(
+        lambda: panel._detail.ui.stack.currentWidget() is panel._detail._view_page,
+        timeout=1000,
+    )
+    panel._detail._view_edit_button.click()
+    assert panel._detail.ui.stack.currentWidget() is panel._detail.ui.form_page
     assert panel._detail.ui.name_edit.text() == "alpha"
+
+
+def test_form_cancel_returns_to_view_when_editing(qtbot, panel: CampaignsPanel):
+    index = panel._model.index(0, 0)
+    panel.ui.campaign_list.setCurrentIndex(index)
+    qtbot.waitUntil(
+        lambda: panel._detail.ui.stack.currentWidget() is panel._detail._view_page,
+        timeout=1000,
+    )
+    panel._detail._view_edit_button.click()
+    panel._detail.ui.cancel_button.click()
+    assert panel._detail.ui.stack.currentWidget() is panel._detail._view_page
 
 
 def test_inventory_tree_reflects_imported_files(
     qtbot, panel: CampaignsPanel, state: AppState, project_with_campaign
 ):
-    """The inventory tree under the form should populate from disk content."""
+    """The inventory tree on the view page should populate from disk content."""
     _proj, campaign = project_with_campaign
 
     # Drop some files into the campaign folder, then ask AppState to rescan.
@@ -90,12 +117,11 @@ def test_inventory_tree_reflects_imported_files(
     (card / "week_01" / "20240102_120000.WAV").write_bytes(b"\x00" * 1024)
     state.refresh_audio_inventory()
 
-    # Select the campaign so the detail enters edit mode (which is when the
-    # inventory section is visible in step 1's UI placement).
+    # Select the campaign so the detail lands on the view page.
     index = panel._model.index(0, 0)
     panel.ui.campaign_list.setCurrentIndex(index)
     qtbot.waitUntil(
-        lambda: panel._detail.ui.stack.currentWidget() is panel._detail.ui.form_page,
+        lambda: panel._detail.ui.stack.currentWidget() is panel._detail._view_page,
         timeout=1000,
     )
 

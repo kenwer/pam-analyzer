@@ -55,6 +55,7 @@ class CampaignsPanel(QWidget):
         self._detail.createRequested.connect(self._on_create_requested)
         self._detail.updateRequested.connect(self._on_update_requested)
         self._detail.deleteRequested.connect(self._on_delete_requested)
+        self._detail.deleteConfirmRequested.connect(self._show_delete_confirm)
         self._detail.cancelled.connect(self._on_detail_cancelled)
 
     def _setup_shortcuts(self) -> None:
@@ -95,15 +96,20 @@ class CampaignsPanel(QWidget):
         if campaign is None:
             self._detail.show_empty()
         else:
-            self._open_edit(campaign)
+            self._open_view(campaign)
+
+    def _open_view(self, campaign: Campaign) -> None:
+        species_text = self._species_text_for(campaign)
+        self._detail.open_view(campaign, self._existing_names(), species_text)
 
     def _open_edit(self, campaign: Campaign) -> None:
-        species_text = (
-            self._service.read_species_list(campaign)
-            if campaign.species_filter_mode == FilterMode.LIST
-            else ""
-        )
+        species_text = self._species_text_for(campaign)
         self._detail.open_edit(campaign, self._existing_names(), species_text)
+
+    def _species_text_for(self, campaign: Campaign) -> str:
+        if campaign.species_filter_mode != FilterMode.LIST:
+            return ""
+        return self._service.read_species_list(campaign)
 
     def _on_create_requested(
         self,
@@ -170,11 +176,11 @@ class CampaignsPanel(QWidget):
         self._detail.show_empty()
 
     def _on_list_clicked(self, index) -> None:
-        # Re-open the edit page when the user clicks on an already-selected
+        # Re-open the view page when the user clicks on an already-selected
         # item (currentChanged doesn't fire in that case).
         campaign = self._campaign_at(index)
         if campaign is not None:
-            self._open_edit(campaign)
+            self._open_view(campaign)
 
     # context menu & keyboard shortcuts
 
@@ -201,7 +207,12 @@ class CampaignsPanel(QWidget):
 
     def _show_delete_confirm(self, campaign: Campaign) -> None:
         audio_count = self._service.count_audio_files(campaign)
-        self._detail.show_delete_confirm(campaign, audio_count)
+        self._detail.show_delete_confirm(
+            campaign,
+            audio_count,
+            existing_names=self._existing_names(),
+            species_text=self._species_text_for(campaign),
+        )
 
     def _rename_campaign(self, campaign: Campaign) -> None:
         new_name, ok = QInputDialog.getText(self, "Rename campaign", "New name:", text=campaign.name)
