@@ -107,3 +107,7 @@ class AnalysisRunResult:
     per_campaign_aru_csv: Path | None = None
     all_campaigns_csv: Path | None = None
     elapsed: float = 0.0
+    # True when synthesized from on-disk artifacts at project load, rather
+    # than from a fresh BirdNET run. The UI uses this to show a different
+    # headline ("Loaded previous results" vs "Run finished").
+    from_disk: bool = False

@@ -10,7 +10,11 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Signal
 
 from ..domain import AnalysisRunResult, Campaign, CardImportResult, Project
-from ..infrastructure import TomlCampaignRepository, TomlProjectRepository
+from ..infrastructure import (
+    TomlCampaignRepository,
+    TomlProjectRepository,
+    discover_analysis_result,
+)
 
 
 class AppState(QObject):
@@ -74,6 +78,9 @@ class AppState(QObject):
             return
         self._apply_project(project, dirty=False)
         self.refresh_campaigns()
+        discovered = discover_analysis_result(project.output_base, project.name)
+        if discovered is not None:
+            self.set_last_analysis_result(discovered)
         self.statusMessage.emit(f"Opened {path.name}")
 
     def create_project(self, path: Path) -> None:

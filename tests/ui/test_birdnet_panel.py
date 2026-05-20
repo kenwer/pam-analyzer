@@ -159,6 +159,39 @@ def test_on_succeeded_switches_to_results_page(panel: BirdNetPanel, tmp_path: Pa
     assert "42" in panel.ui.summary_label.text()
 
 
+def test_loads_previous_results_from_disk(qtbot, tmp_path: Path):
+    """Opening a project that already has detection CSVs should surface them
+    in the BirdNET panel without the user re-running analysis."""
+    audio_root = tmp_path / "audio"
+    audio_root.mkdir()
+    proj = Project(path=tmp_path / "loaded.pamproj", audio_recordings_path=audio_root)
+    TomlProjectRepository().save(proj)
+
+    output_base = proj.output_base
+    campaign_dir = output_base / "alpha"
+    campaign_dir.mkdir(parents=True)
+    csv_path = campaign_dir / "alpha-detections.csv"
+    csv_path.write_text(
+        "Species,Confidence\n"
+        "Robin,0.9\n"
+        "Sparrow,0.8\n"
+        "Crow,0.7\n",
+        encoding="utf-8",
+    )
+
+    state = AppState(TomlProjectRepository(), TomlCampaignRepository())
+    panel = BirdNetPanel(state, _FakeRunner(), TomlCampaignRepository())
+    qtbot.addWidget(panel)
+
+    state.load_project(proj.path)
+
+    assert panel.ui.status_stack.currentIndex() == 2  # page_results
+    assert state.last_analysis_result is not None
+    assert state.last_analysis_result.from_disk is True
+    assert "Loaded previous results" in panel.ui.summary_label.text()
+    assert "3 detections" in panel.ui.summary_label.text()
+
+
 def test_project_switch_clears_stale_results(
     panel: BirdNetPanel, state: AppState, tmp_path: Path
 ):

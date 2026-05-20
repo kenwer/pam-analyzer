@@ -1,3 +1,4 @@
+from .analysis_discovery import discover_analysis_result
 from .audio_extractor import SoundfileAudioExtractor
 from .audio_import import AudioImporter
 from .birdnet_runner import BirdnetAnalyzerRunner
@@ -14,4 +15,5 @@ __all__ = [
     "SoundfileAudioExtractor",
     "TomlCampaignRepository",
     "TomlProjectRepository",
+    "discover_analysis_result",
 ]

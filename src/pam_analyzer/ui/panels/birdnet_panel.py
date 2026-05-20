@@ -392,11 +392,12 @@ class BirdNetPanel(QWidget):
             folder_btn.clicked.connect(lambda _=False, p=folder: self._open_path(p))
             layout.addWidget(folder_btn)
             for f in files:
+                if not f.exists():
+                    continue
                 btn = QToolButton(container)
                 btn.setText(f.name)
                 btn.setAutoRaise(True)
                 btn.setToolTip(str(f))
-                btn.setEnabled(f.exists())
                 btn.clicked.connect(lambda _=False, p=f: self._open_path(p))
                 layout.addWidget(btn)
             layout.addStretch(1)
@@ -408,9 +409,17 @@ class BirdNetPanel(QWidget):
 
     def _build_summary(self, result: AnalysisRunResult) -> str:
         total_det = sum(c.detection_count for c in result.campaigns)
+        weeks = sum(len(c.week_results) for c in result.campaigns)
+        if result.from_disk:
+            # No elapsed/wav/aru on disk; show only what we recovered.
+            parts = [f"{total_det:,} detections"]
+            if len(result.campaigns) > 1:
+                parts.append(f"{len(result.campaigns)} campaigns")
+            if weeks:
+                parts.append(f"{weeks} weeks")
+            return "↺ Loaded previous results: " + "  ·  ".join(parts)
         total_wav = sum(c.wav_count for c in result.campaigns)
         total_aru = sum(c.aru_count for c in result.campaigns)
-        weeks = sum(len(c.week_results) for c in result.campaigns)
         m, s = divmod(int(result.elapsed), 60)
         dur = f"{m}m {s:02d}s" if m else f"{s}s"
         parts = [f"{total_det:,} detections"]
