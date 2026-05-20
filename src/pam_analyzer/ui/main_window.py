@@ -1,7 +1,8 @@
+import sys
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, Qt
-from PySide6.QtGui import QAction, QCloseEvent
+from PySide6.QtGui import QAction, QCloseEvent, QColor
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -150,7 +151,13 @@ class MainWindow(QMainWindow):
         tab_bar = self.ui.tab_widget.tabBar()
         current = self.ui.tab_widget.currentIndex()
         for i in range(self.ui.tab_widget.count()):
-            tab_bar.setTabEnabled(i, not locked or i == current)
+            enabled = not locked or i == current
+            tab_bar.setTabEnabled(i, enabled)
+            # macOS Aqua style ignores the disabled state visually; override the text
+            # color at the Qt level so the lock is perceptible. Other platforms render
+            # disabled tabs correctly on their own. QColor() resets to palette default.
+            if sys.platform == "darwin":
+                tab_bar.setTabTextColor(i, QColor() if enabled else QColor(128, 128, 128, 160))
 
     def _wire_welcome(self) -> None:
         self._welcome_panel.newRequested.connect(self._on_new)
