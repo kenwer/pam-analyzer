@@ -127,7 +127,7 @@ class CampaignDetailWidget(QWidget):
         self._inventory_model = AudioInventoryTreeModel(self)
         self.ui.inventory_tree.setModel(self._inventory_model)
         header = self.ui.inventory_tree.header()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
 

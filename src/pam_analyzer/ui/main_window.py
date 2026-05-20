@@ -49,6 +49,8 @@ class MainWindow(QMainWindow):
 
         self._app_state = app_state
         self._settings = settings
+        self._analysis_running = False
+        self._import_running = False
 
         # Welcome page: mount WelcomePanel into the stacked widget's first page
         self._welcome_panel = WelcomePanel(self.ui.welcome_page)
@@ -118,13 +120,37 @@ class MainWindow(QMainWindow):
         self._app_state.errorOccurred.connect(lambda msg: QMessageBox.warning(self, "PAM Analyzer", msg))
         self._app_state.projectChanged.connect(self._on_project_changed)
         self._app_state.projectDirtyChanged.connect(self._on_dirty_changed)
-        self._app_state.analysisStarted.connect(lambda: self.ui.status_bar.showMessage("BirdNET running…", 0))
-        self._app_state.analysisFinished.connect(lambda _r: self.ui.status_bar.clearMessage())
+        self._app_state.analysisStarted.connect(self._on_analysis_started)
+        self._app_state.analysisFinished.connect(self._on_analysis_finished)
         self._app_state.importStarted.connect(self._on_import_started)
-        self._app_state.importFinished.connect(lambda: self.ui.status_bar.clearMessage())
+        self._app_state.importFinished.connect(self._on_import_finished)
+
+    def _on_analysis_started(self) -> None:
+        self._analysis_running = True
+        self._update_tab_lock()
+        self.ui.status_bar.showMessage("BirdNET running…", 0)
+
+    def _on_analysis_finished(self, _result: object) -> None:
+        self._analysis_running = False
+        self._update_tab_lock()
+        self.ui.status_bar.clearMessage()
 
     def _on_import_started(self, campaign_name: str) -> None:
+        self._import_running = True
+        self._update_tab_lock()
         self.ui.status_bar.showMessage(f"Watching for SD cards (campaign: {campaign_name})…", 0)
+
+    def _on_import_finished(self) -> None:
+        self._import_running = False
+        self._update_tab_lock()
+        self.ui.status_bar.clearMessage()
+
+    def _update_tab_lock(self) -> None:
+        locked = self._analysis_running or self._import_running
+        tab_bar = self.ui.tab_widget.tabBar()
+        current = self.ui.tab_widget.currentIndex()
+        for i in range(self.ui.tab_widget.count()):
+            tab_bar.setTabEnabled(i, not locked or i == current)
 
     def _wire_welcome(self) -> None:
         self._welcome_panel.newRequested.connect(self._on_new)
