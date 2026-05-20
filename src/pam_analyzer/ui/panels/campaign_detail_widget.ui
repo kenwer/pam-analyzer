@@ -26,16 +26,14 @@
    <item>
     <widget class="QStackedWidget" name="stack">
      <property name="currentIndex">
-      <number>0</number>
+      <number>2</number>
      </property>
-
-     <!-- Page 0: empty state -->
      <widget class="QWidget" name="empty_page">
       <layout class="QVBoxLayout" name="empty_layout">
        <item>
         <spacer name="empty_top_spacer">
          <property name="orientation">
-          <enum>Qt::Vertical</enum>
+          <enum>Qt::Orientation::Vertical</enum>
          </property>
          <property name="sizeHint" stdset="0">
           <size>
@@ -47,21 +45,21 @@
        </item>
        <item>
         <widget class="QLabel" name="empty_label">
+         <property name="styleSheet">
+          <string>color: gray;</string>
+         </property>
          <property name="text">
           <string>Select a campaign…</string>
          </property>
          <property name="alignment">
-          <set>Qt::AlignCenter</set>
-         </property>
-         <property name="styleSheet">
-          <string>color: gray;</string>
+          <set>Qt::AlignmentFlag::AlignCenter</set>
          </property>
         </widget>
        </item>
        <item>
         <spacer name="empty_bottom_spacer">
          <property name="orientation">
-          <enum>Qt::Vertical</enum>
+          <enum>Qt::Orientation::Vertical</enum>
          </property>
          <property name="sizeHint" stdset="0">
           <size>
@@ -73,8 +71,6 @@
        </item>
       </layout>
      </widget>
-
-     <!-- Page 1: delete confirmation -->
      <widget class="QWidget" name="confirm_page">
       <layout class="QVBoxLayout" name="confirm_layout">
        <property name="leftMargin">
@@ -94,18 +90,18 @@
          <property name="text">
           <string/>
          </property>
+         <property name="alignment">
+          <set>Qt::AlignmentFlag::AlignLeading|Qt::AlignmentFlag::AlignLeft|Qt::AlignmentFlag::AlignTop</set>
+         </property>
          <property name="wordWrap">
           <bool>true</bool>
-         </property>
-         <property name="alignment">
-          <set>Qt::AlignTop|Qt::AlignLeft</set>
          </property>
         </widget>
        </item>
        <item>
         <spacer name="confirm_spacer">
          <property name="orientation">
-          <enum>Qt::Vertical</enum>
+          <enum>Qt::Orientation::Vertical</enum>
          </property>
          <property name="sizeHint" stdset="0">
           <size>
@@ -120,7 +116,7 @@
          <item>
           <spacer name="confirm_btn_spacer">
            <property name="orientation">
-            <enum>Qt::Horizontal</enum>
+            <enum>Qt::Orientation::Horizontal</enum>
            </property>
            <property name="sizeHint" stdset="0">
             <size>
@@ -139,11 +135,11 @@
          </item>
          <item>
           <widget class="QPushButton" name="delete_button">
-           <property name="text">
-            <string>Delete</string>
-           </property>
            <property name="styleSheet">
             <string>QPushButton { color: #c62828; font-weight: 600; }</string>
+           </property>
+           <property name="text">
+            <string>Delete</string>
            </property>
           </widget>
          </item>
@@ -151,10 +147,11 @@
        </item>
       </layout>
      </widget>
-
-     <!-- Page 2: create / edit form -->
-     <widget class="QWidget" name="form_page">
-      <layout class="QVBoxLayout" name="form_layout">
+     <widget class="QWidget" name="view_page">
+      <layout class="QVBoxLayout" name="view_layout">
+       <property name="spacing">
+        <number>8</number>
+       </property>
        <property name="leftMargin">
         <number>16</number>
        </property>
@@ -167,20 +164,320 @@
        <property name="bottomMargin">
         <number>12</number>
        </property>
+       <item>
+        <layout class="QHBoxLayout" name="view_header_row">
+         <item>
+          <widget class="QLabel" name="view_name_label">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+             <horstretch>1</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+           <property name="font">
+            <font>
+             <pointsize>14</pointsize>
+             <bold>true</bold>
+            </font>
+           </property>
+           <property name="text">
+            <string/>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="view_edit_button">
+           <property name="text">
+            <string>Edit</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="view_delete_button">
+           <property name="text">
+            <string>Delete…</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QLabel" name="view_filter_label">
+         <property name="text">
+          <string/>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="verticalSpacer_2">
+         <property name="orientation">
+          <enum>Qt::Orientation::Vertical</enum>
+         </property>
+         <property name="sizeType">
+          <enum>QSizePolicy::Policy::Minimum</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>20</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="import_group">
+         <property name="title">
+          <string>SD card import</string>
+         </property>
+         <layout class="QVBoxLayout" name="import_layout">
+          <property name="spacing">
+           <number>4</number>
+          </property>
+          <item>
+           <layout class="QHBoxLayout" name="import_controls_row">
+            <item>
+             <widget class="QPushButton" name="watch_button">
+              <property name="styleSheet">
+               <string notr="true">QPushButton {
+  background-color: #5a8dee;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 14px;
+  font-weight: 600;
+}
+QPushButton:hover { background-color: #4a7dd0; }
+QPushButton:pressed { background-color: #3d6cb8; }
+QPushButton:checked { background-color: #e53935; }
+QPushButton:checked:hover { background-color: #d32f2f; }
+QPushButton:checked:pressed { background-color: #c62828; }
+QPushButton:disabled { background-color: #c0c0c0; color: #f5f5f5; }</string>
+              </property>
+              <property name="text">
+               <string>Start SD import</string>
+              </property>
+              <property name="checkable">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="horizontalSpacer">
+              <property name="orientation">
+               <enum>Qt::Orientation::Horizontal</enum>
+              </property>
+              <property name="sizeType">
+               <enum>QSizePolicy::Policy::Minimum</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>20</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+            <item>
+             <widget class="QCheckBox" name="overwrite_check">
+              <property name="text">
+               <string>Overwrite conflicts</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="horizontalSpacer_2">
+              <property name="orientation">
+               <enum>Qt::Orientation::Horizontal</enum>
+              </property>
+              <property name="sizeType">
+               <enum>QSizePolicy::Policy::Minimum</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>20</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+            <item>
+             <widget class="QCheckBox" name="clear_check">
+              <property name="text">
+               <string>Clear card after copy</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="import_controls_spacer">
+              <property name="orientation">
+               <enum>Qt::Orientation::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QLabel" name="import_hint_label">
+            <property name="text">
+             <string/>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="copying_layout">
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <item>
+             <widget class="QLabel" name="card_name_label">
+              <property name="text">
+               <string/>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QProgressBar" name="progress_bar">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+                <horstretch>1</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="files_label">
+              <property name="text">
+               <string/>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="eta_label">
+              <property name="text">
+               <string/>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QLabel" name="queue_label">
+            <property name="text">
+             <string/>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <spacer name="verticalSpacer">
+         <property name="orientation">
+          <enum>Qt::Orientation::Vertical</enum>
+         </property>
+         <property name="sizeType">
+          <enum>QSizePolicy::Policy::Minimum</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>20</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+       <item>
+        <widget class="QLabel" name="inventory_label">
+         <property name="text">
+          <string/>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QTreeView" name="inventory_tree">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
+           <horstretch>0</horstretch>
+           <verstretch>1</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="alternatingRowColors">
+          <bool>true</bool>
+         </property>
+         <property name="rootIsDecorated">
+          <bool>true</bool>
+         </property>
+         <property name="uniformRowHeights">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="view_bottom_spacer">
+         <property name="orientation">
+          <enum>Qt::Orientation::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>0</width>
+           <height>0</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="form_page">
+      <layout class="QVBoxLayout" name="form_layout">
        <property name="spacing">
         <number>8</number>
        </property>
-
-       <!-- Name row -->
+       <property name="leftMargin">
+        <number>16</number>
+       </property>
+       <property name="topMargin">
+        <number>12</number>
+       </property>
+       <property name="rightMargin">
+        <number>16</number>
+       </property>
+       <property name="bottomMargin">
+        <number>12</number>
+       </property>
        <item>
         <layout class="QHBoxLayout" name="name_row">
          <item>
           <widget class="QLabel" name="name_label">
            <property name="text">
             <string>Name</string>
-           </property>
-           <property name="minimumWidth">
-            <number>48</number>
            </property>
           </widget>
          </item>
@@ -193,17 +490,12 @@
          </item>
         </layout>
        </item>
-
-       <!-- Filter mode row -->
        <item>
         <layout class="QHBoxLayout" name="mode_row">
          <item>
           <widget class="QLabel" name="mode_label">
            <property name="text">
             <string>Filter</string>
-           </property>
-           <property name="minimumWidth">
-            <number>48</number>
            </property>
           </widget>
          </item>
@@ -227,7 +519,7 @@
          <item>
           <spacer name="mode_spacer">
            <property name="orientation">
-            <enum>Qt::Horizontal</enum>
+            <enum>Qt::Orientation::Horizontal</enum>
            </property>
            <property name="sizeHint" stdset="0">
             <size>
@@ -239,33 +531,28 @@
          </item>
         </layout>
        </item>
-
-       <!-- Location group (visible when By location is selected) -->
        <item>
         <widget class="QGroupBox" name="location_group">
-         <property name="title">
-          <string>Location</string>
-         </property>
          <property name="sizePolicy">
           <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
            <horstretch>0</horstretch>
            <verstretch>1</verstretch>
           </sizepolicy>
          </property>
+         <property name="title">
+          <string>Location</string>
+         </property>
          <layout class="QVBoxLayout" name="location_layout">
           <property name="spacing">
            <number>6</number>
           </property>
           <item>
-           <widget class="QWidget" name="map_container">
+           <widget class="QWidget" name="map_container" native="true">
             <property name="sizePolicy">
              <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
               <horstretch>0</horstretch>
               <verstretch>1</verstretch>
              </sizepolicy>
-            </property>
-            <property name="minimumHeight">
-             <number>200</number>
             </property>
            </widget>
           </item>
@@ -302,7 +589,7 @@
             <item>
              <spacer name="coords_spacer">
               <property name="orientation">
-               <enum>Qt::Horizontal</enum>
+               <enum>Qt::Orientation::Horizontal</enum>
               </property>
               <property name="sizeHint" stdset="0">
                <size>
@@ -317,18 +604,16 @@
          </layout>
         </widget>
        </item>
-
-       <!-- Species list group (visible when Species list is selected) -->
        <item>
         <widget class="QGroupBox" name="species_group">
-         <property name="title">
-          <string>Species list</string>
-         </property>
          <property name="sizePolicy">
           <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
            <horstretch>0</horstretch>
            <verstretch>1</verstretch>
           </sizepolicy>
+         </property>
+         <property name="title">
+          <string>Species list</string>
          </property>
          <layout class="QVBoxLayout" name="species_layout">
           <item>
@@ -342,18 +627,18 @@
             </item>
             <item>
              <widget class="QLabel" name="species_label">
-              <property name="text">
-               <string/>
-              </property>
               <property name="styleSheet">
                <string>color: gray;</string>
+              </property>
+              <property name="text">
+               <string/>
               </property>
              </widget>
             </item>
             <item>
              <spacer name="import_spacer">
               <property name="orientation">
-               <enum>Qt::Horizontal</enum>
+               <enum>Qt::Orientation::Horizontal</enum>
               </property>
               <property name="sizeHint" stdset="0">
                <size>
@@ -370,22 +655,17 @@
             <property name="placeholderText">
              <string>One species name per line (or drag and drop a .txt file)</string>
             </property>
-            <property name="minimumHeight">
-             <number>100</number>
-            </property>
            </widget>
           </item>
          </layout>
         </widget>
        </item>
-
-       <!-- Footer buttons -->
        <item>
         <layout class="QHBoxLayout" name="footer_row">
          <item>
           <spacer name="footer_spacer">
            <property name="orientation">
-            <enum>Qt::Horizontal</enum>
+            <enum>Qt::Orientation::Horizontal</enum>
            </property>
            <property name="sizeHint" stdset="0">
             <size>
@@ -404,11 +684,11 @@
          </item>
          <item>
           <widget class="QPushButton" name="save_button">
-           <property name="text">
-            <string>Save</string>
-           </property>
            <property name="enabled">
             <bool>false</bool>
+           </property>
+           <property name="text">
+            <string>Save</string>
            </property>
            <property name="default">
             <bool>true</bool>
@@ -417,10 +697,8 @@
          </item>
         </layout>
        </item>
-
       </layout>
      </widget>
-
     </widget>
    </item>
   </layout>

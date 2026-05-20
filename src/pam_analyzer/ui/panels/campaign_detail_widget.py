@@ -20,21 +20,11 @@ from pathlib import Path
 from typing import Literal
 
 from PySide6.QtCore import QCoreApplication, QSignalBlocker, Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
-    QCheckBox,
     QDialog,
     QFileDialog,
-    QGroupBox,
-    QHBoxLayout,
     QHeaderView,
-    QLabel,
     QPlainTextEdit,
-    QProgressBar,
-    QPushButton,
-    QSizePolicy,
-    QSpacerItem,
-    QTreeView,
     QVBoxLayout,
     QWidget,
 )
@@ -64,21 +54,6 @@ class _ImportState(Enum):
     COPYING = "copying"
 
 
-# Watch-button styling: green to invite the safe "go" action, red to mark the
-# stop action while a copy may be mid-flight. Matches the legacy PAM Analyzer
-# affordance so returning users recognize the button at a glance.
-_BTN_START_QSS = (
-    "QPushButton { background-color: #2e7d32; color: white; padding: 4px 10px; "
-    "border-radius: 3px; font-weight: bold; } "
-    "QPushButton:hover { background-color: #388e3c; } "
-    "QPushButton:disabled { background-color: #9e9e9e; color: #eeeeee; }"
-)
-_BTN_STOP_QSS = (
-    "QPushButton { background-color: #c62828; color: white; padding: 4px 10px; "
-    "border-radius: 3px; font-weight: bold; } "
-    "QPushButton:hover { background-color: #d32f2f; } "
-    "QPushButton:disabled { background-color: #9e9e9e; color: #eeeeee; }"
-)
 
 
 class CampaignDetailWidget(QWidget):
@@ -131,7 +106,7 @@ class CampaignDetailWidget(QWidget):
         map_layout.addWidget(self._map)
 
         self._setup_spinboxes()
-        self._build_view_page()
+        self._configure_view_page()
         self._wire_signals()
         self._apply_import_state()
         self.show_empty()
@@ -144,111 +119,21 @@ class CampaignDetailWidget(QWidget):
         self.ui.lon_spin.setDecimals(6)
         self.ui.lon_spin.setSingleStep(0.1)
 
-    def _build_view_page(self) -> None:
-        """Construct the view page (compact summary + inventory tree) and
-        register it as a new page in the existing stack.
+    def _configure_view_page(self) -> None:
+        """Hook up the runtime-only pieces of the view page (model, header,
+        button clicks, initial stylesheet). The structure itself lives in
+        campaign_detail_widget.ui.
         """
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(16, 12, 16, 12)
-        layout.setSpacing(8)
-
-        # Header row: campaign name + Edit + Delete.
-        header_row = QHBoxLayout()
-        self._view_name_label = QLabel(page)
-        name_font = self._view_name_label.font()
-        name_font.setPointSizeF(name_font.pointSizeF() * 1.3)
-        name_font.setWeight(QFont.Weight.Bold)
-        self._view_name_label.setFont(name_font)
-        header_row.addWidget(self._view_name_label, stretch=1)
-
-        self._view_edit_button = QPushButton("Edit", page)
-        self._view_edit_button.clicked.connect(self._on_edit_clicked)
-        header_row.addWidget(self._view_edit_button)
-
-        self._view_delete_button = QPushButton("Delete…", page)
-        self._view_delete_button.clicked.connect(self._on_view_delete_clicked)
-        header_row.addWidget(self._view_delete_button)
-
-        layout.addLayout(header_row)
-
-        # Filter summary line (location or species count).
-        self._view_filter_label = QLabel(page)
-        self._view_filter_label.setWordWrap(True)
-        layout.addWidget(self._view_filter_label)
-
-        # Import section: watch controls, options, live progress.
-        self._build_import_section(page, layout)
-
-        # Inventory section.
-        self._inventory_label = QLabel(page)
-        self._inventory_label.setWordWrap(True)
-        layout.addWidget(self._inventory_label)
-
         self._inventory_model = AudioInventoryTreeModel(self)
-        self._inventory_tree = QTreeView(page)
-        self._inventory_tree.setModel(self._inventory_model)
-        self._inventory_tree.setRootIsDecorated(True)
-        self._inventory_tree.setUniformRowHeights(True)
-        self._inventory_tree.setAlternatingRowColors(True)
-        header = self._inventory_tree.header()
+        self.ui.inventory_tree.setModel(self._inventory_model)
+        header = self.ui.inventory_tree.header()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        layout.addWidget(self._inventory_tree, stretch=1)
 
-        # Trailing spacer so a tiny inventory doesn't fight the tree for height.
-        layout.addItem(QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
-
-        self.ui.stack.addWidget(page)
-        self._view_page = page
-
-    def _build_import_section(self, page: QWidget, parent_layout: QVBoxLayout) -> None:
-        """SD-card import controls, options, and live progress."""
-        group = QGroupBox("SD card import", page)
-        group_layout = QVBoxLayout(group)
-        group_layout.setSpacing(4)
-
-        controls_row = QHBoxLayout()
-        self._watch_button = QPushButton("Start SD import", group)
-        self._watch_button.setStyleSheet(_BTN_START_QSS)
-        self._watch_button.clicked.connect(self._on_watch_clicked)
-        controls_row.addWidget(self._watch_button)
-
-        self._overwrite_check = QCheckBox("Overwrite conflicts", group)
-        controls_row.addWidget(self._overwrite_check)
-        self._clear_check = QCheckBox("Clear card after copy", group)
-        controls_row.addWidget(self._clear_check)
-
-        controls_row.addStretch(1)
-        group_layout.addLayout(controls_row)
-
-        self._import_hint_label = QLabel("", group)
-        self._import_hint_label.setWordWrap(True)
-        group_layout.addWidget(self._import_hint_label)
-
-        # Inline progress widgets (visible only during COPYING) for the
-        # currently-active card.
-        self._copying_widget = QWidget(group)
-        copying_layout = QHBoxLayout(self._copying_widget)
-        copying_layout.setContentsMargins(0, 0, 0, 0)
-        self._card_name_label = QLabel("", self._copying_widget)
-        copying_layout.addWidget(self._card_name_label)
-        self._progress_bar = QProgressBar(self._copying_widget)
-        copying_layout.addWidget(self._progress_bar, stretch=1)
-        self._files_label = QLabel("", self._copying_widget)
-        copying_layout.addWidget(self._files_label)
-        self._eta_label = QLabel("", self._copying_widget)
-        copying_layout.addWidget(self._eta_label)
-        group_layout.addWidget(self._copying_widget)
-
-        # Queue line: what's waiting *behind* the current copy.
-        self._queue_label = QLabel("", group)
-        self._queue_label.setWordWrap(True)
-        group_layout.addWidget(self._queue_label)
-
-        parent_layout.addWidget(group)
-        self._import_group = group
+        self.ui.view_edit_button.clicked.connect(self._on_edit_clicked)
+        self.ui.view_delete_button.clicked.connect(self._on_view_delete_clicked)
+        self.ui.watch_button.clicked.connect(self._on_watch_clicked)
 
     def _wire_signals(self) -> None:
         self._map.locationPicked.connect(self._on_map_location_picked)
@@ -291,7 +176,7 @@ class CampaignDetailWidget(QWidget):
         self._existing_names = list(existing_names)
         self._species_text = species_text
         self._render_view()
-        self.ui.stack.setCurrentWidget(self._view_page)
+        self.ui.stack.setCurrentWidget(self.ui.view_page)
         self._refresh_inventory()
         self._apply_import_state()
 
@@ -379,8 +264,8 @@ class CampaignDetailWidget(QWidget):
     def _render_view(self) -> None:
         if self._campaign is None:
             return
-        self._view_name_label.setText(self._campaign.name)
-        self._view_filter_label.setText(self._filter_summary_text(self._campaign))
+        self.ui.view_name_label.setText(self._campaign.name)
+        self.ui.view_filter_label.setText(self._filter_summary_text(self._campaign))
 
     def _filter_summary_text(self, campaign: Campaign) -> str:
         if campaign.species_filter_mode == FilterMode.LOCATION and campaign.location is not None:
@@ -481,18 +366,18 @@ class CampaignDetailWidget(QWidget):
             return
         campaign_inv = self._app_state.audio_inventory.for_campaign(self._campaign.name)
         if campaign_inv is None or campaign_inv.file_count == 0:
-            self._inventory_label.setText("Audio inventory:  (no files imported yet)")
+            self.ui.inventory_label.setText("Audio inventory:  (no files imported yet)")
             self._inventory_model.set_campaign(None)
             return
         n = campaign_inv.file_count
         size = format_bytes(campaign_inv.total_bytes)
         cards = len(campaign_inv.cards)
-        self._inventory_label.setText(
+        self.ui.inventory_label.setText(
             f"Audio inventory:  {n:,} files  ·  {size}  ·  "
             f"{cards} card{'s' if cards != 1 else ''}"
         )
         self._inventory_model.set_campaign(campaign_inv)
-        self._inventory_tree.expandToDepth(0)
+        self.ui.inventory_tree.expandToDepth(0)
 
     # import lifecycle (formerly ImportAudioPanel)
 
@@ -564,7 +449,7 @@ class CampaignDetailWidget(QWidget):
 
         resolutions: dict[str, ConflictChoice] = {}
         if conflict_report.conflicts:
-            if self._overwrite_check.isChecked():
+            if self.ui.overwrite_check.isChecked():
                 resolutions = {c.filename: ConflictChoice.REPLACE for c in conflict_report.conflicts}
             else:
                 dialog = ImportConflictDialog(list(conflict_report.conflicts), self)
@@ -575,11 +460,11 @@ class CampaignDetailWidget(QWidget):
                     return
                 resolutions = dialog.result_resolutions()
 
-        self._card_name_label.setText(card.name)
-        self._progress_bar.setRange(0, len(files) if files else 1)
-        self._progress_bar.setValue(0)
-        self._files_label.clear()
-        self._eta_label.clear()
+        self.ui.card_name_label.setText(card.name)
+        self.ui.progress_bar.setRange(0, len(files) if files else 1)
+        self.ui.progress_bar.setValue(0)
+        self.ui.files_label.clear()
+        self.ui.eta_label.clear()
 
         self._thread = QThread(self)
         self._worker = AudioImportWorker(
@@ -590,7 +475,7 @@ class CampaignDetailWidget(QWidget):
             dest_dir=campaign_dir,
             resolutions=resolutions,
             identical=conflict_report.identical,
-            clear_after=self._clear_check.isChecked(),
+            clear_after=self.ui.clear_check.isChecked(),
         )
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
@@ -606,13 +491,13 @@ class CampaignDetailWidget(QWidget):
 
     def _on_import_progress(self, snap: ImportProgress) -> None:
         if snap.files_total > 0:
-            self._progress_bar.setRange(0, snap.files_total)
-            self._progress_bar.setValue(snap.files_done)
-        self._files_label.setText(f"{snap.files_done} / {snap.files_total} files")
+            self.ui.progress_bar.setRange(0, snap.files_total)
+            self.ui.progress_bar.setValue(snap.files_done)
+        self.ui.files_label.setText(f"{snap.files_done} / {snap.files_total} files")
         if snap.elapsed > 1 and snap.files_done > 0:
             remaining = snap.elapsed / snap.files_done * (snap.files_total - snap.files_done)
             mins, secs = divmod(int(remaining), 60)
-            self._eta_label.setText(f"{mins}m {secs:02d}s" if mins else f"{secs}s")
+            self.ui.eta_label.setText(f"{mins}m {secs:02d}s" if mins else f"{secs}s")
 
     def _on_import_finished(self, result: CardImportResult) -> None:
         self._teardown_worker()
@@ -659,7 +544,7 @@ class CampaignDetailWidget(QWidget):
     def _update_queue_label(self) -> None:
         pending = self._queue.pending
         if not pending:
-            self._queue_label.clear()
+            self.ui.queue_label.clear()
             return
         head = pending[:6]
         names = ", ".join(c.name for c in head)
@@ -669,22 +554,27 @@ class CampaignDetailWidget(QWidget):
         # Distinguish "1 card waiting" from "N cards waiting" so a multi-slot
         # reader's queue is immediately legible.
         if n == 1:
-            self._queue_label.setText(f"Next in queue: {names}")
+            self.ui.queue_label.setText(f"Next in queue: {names}")
         else:
-            self._queue_label.setText(f"{n} cards queued: {names}")
+            self.ui.queue_label.setText(f"{n} cards queued: {names}")
 
     def _apply_import_state(self) -> None:
         has_campaign = self._campaign is not None
         is_watching = self._import_state in (_ImportState.WATCHING, _ImportState.COPYING)
         is_copying = self._import_state == _ImportState.COPYING
 
-        self._watch_button.setEnabled(has_campaign or is_watching)
-        self._watch_button.setText("Stop SD import" if is_watching else "Start SD import")
-        self._watch_button.setStyleSheet(_BTN_STOP_QSS if is_watching else _BTN_START_QSS)
-        self._overwrite_check.setEnabled(not is_copying)
-        self._clear_check.setEnabled(not is_copying)
-        self._copying_widget.setVisible(is_copying)
-        self._import_hint_label.setText(
+        self.ui.watch_button.setEnabled(has_campaign or is_watching)
+        self.ui.watch_button.setText("Stop SD import" if is_watching else "Start SD import")
+        # The .ui's :checked stylesheet swaps to red while watching; we keep
+        # the button's checked state in sync with the import state machine so
+        # programmatic stops (e.g. request_shutdown) flip the visual too.
+        if self.ui.watch_button.isChecked() != is_watching:
+            self.ui.watch_button.setChecked(is_watching)
+        self.ui.overwrite_check.setEnabled(not is_copying)
+        self.ui.clear_check.setEnabled(not is_copying)
+        for w in (self.ui.card_name_label, self.ui.progress_bar, self.ui.files_label, self.ui.eta_label):
+            w.setVisible(is_copying)
+        self.ui.import_hint_label.setText(
             "Once all imports are finished, stop the SD import to prevent unintended copies."
             if is_watching
             else "Start the SD import to copy audio files when a card is inserted."

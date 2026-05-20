@@ -100,22 +100,22 @@ def test_selecting_campaign_opens_view_page(qtbot, panel: CampaignsPanel):
     index = panel._model.index(0, 0)
     panel.ui.campaign_list.setCurrentIndex(index)
     qtbot.waitUntil(
-        lambda: panel._detail.ui.stack.currentWidget() is panel._detail._view_page,
+        lambda: panel._detail.ui.stack.currentWidget() is panel._detail.ui.view_page,
         timeout=1000,
     )
-    assert panel._detail._view_name_label.text() == "alpha"
+    assert panel._detail.ui.view_name_label.text() == "alpha"
     # Filter summary should describe the location-mode campaign.
-    assert "Location" in panel._detail._view_filter_label.text()
+    assert "Location" in panel._detail.ui.view_filter_label.text()
 
 
 def test_edit_button_switches_to_form(qtbot, panel: CampaignsPanel):
     index = panel._model.index(0, 0)
     panel.ui.campaign_list.setCurrentIndex(index)
     qtbot.waitUntil(
-        lambda: panel._detail.ui.stack.currentWidget() is panel._detail._view_page,
+        lambda: panel._detail.ui.stack.currentWidget() is panel._detail.ui.view_page,
         timeout=1000,
     )
-    panel._detail._view_edit_button.click()
+    panel._detail.ui.view_edit_button.click()
     assert panel._detail.ui.stack.currentWidget() is panel._detail.ui.form_page
     assert panel._detail.ui.name_edit.text() == "alpha"
 
@@ -124,12 +124,12 @@ def test_form_cancel_returns_to_view_when_editing(qtbot, panel: CampaignsPanel):
     index = panel._model.index(0, 0)
     panel.ui.campaign_list.setCurrentIndex(index)
     qtbot.waitUntil(
-        lambda: panel._detail.ui.stack.currentWidget() is panel._detail._view_page,
+        lambda: panel._detail.ui.stack.currentWidget() is panel._detail.ui.view_page,
         timeout=1000,
     )
-    panel._detail._view_edit_button.click()
+    panel._detail.ui.view_edit_button.click()
     panel._detail.ui.cancel_button.click()
-    assert panel._detail.ui.stack.currentWidget() is panel._detail._view_page
+    assert panel._detail.ui.stack.currentWidget() is panel._detail.ui.view_page
 
 
 def test_inventory_tree_reflects_imported_files(
@@ -149,7 +149,7 @@ def test_inventory_tree_reflects_imported_files(
     index = panel._model.index(0, 0)
     panel.ui.campaign_list.setCurrentIndex(index)
     qtbot.waitUntil(
-        lambda: panel._detail.ui.stack.currentWidget() is panel._detail._view_page,
+        lambda: panel._detail.ui.stack.currentWidget() is panel._detail.ui.view_page,
         timeout=1000,
     )
 
@@ -163,7 +163,7 @@ def test_inventory_tree_reflects_imported_files(
     assert card_item.child(0, 0).rowCount() == 2
 
     # Headline label mentions file count and card count.
-    text = panel._detail._inventory_label.text()
+    text = panel._detail.ui.inventory_label.text()
     assert "2" in text
     assert "card" in text
 
@@ -173,12 +173,12 @@ def test_watch_button_lives_on_view_page(qtbot, panel: CampaignsPanel):
     index = panel._model.index(0, 0)
     panel.ui.campaign_list.setCurrentIndex(index)
     qtbot.waitUntil(
-        lambda: panel._detail.ui.stack.currentWidget() is panel._detail._view_page,
+        lambda: panel._detail.ui.stack.currentWidget() is panel._detail.ui.view_page,
         timeout=1000,
     )
     # _watch_button lives on the view page; isEnabled is the right check
     # because isVisible is False until the parent widget is show()n.
-    assert panel._detail._watch_button.isEnabled()
+    assert panel._detail.ui.watch_button.isEnabled()
     assert panel._detail.is_busy() is False
     assert panel.is_busy() is False
 
@@ -188,11 +188,11 @@ def test_starting_watch_emits_importStarted(qtbot, panel: CampaignsPanel, state:
     index = panel._model.index(0, 0)
     panel.ui.campaign_list.setCurrentIndex(index)
     qtbot.waitUntil(
-        lambda: panel._detail.ui.stack.currentWidget() is panel._detail._view_page,
+        lambda: panel._detail.ui.stack.currentWidget() is panel._detail.ui.view_page,
         timeout=1000,
     )
     with qtbot.waitSignal(state.importStarted, timeout=1000) as blocker:
-        panel._detail._watch_button.click()
+        panel._detail.ui.watch_button.click()
     assert blocker.args == ["alpha"]
     assert panel.is_busy() is True
     assert panel.busy_label() == "SD-card watcher"
@@ -220,10 +220,10 @@ def test_queue_label_shows_pending_cards(
     index = panel._model.index(0, 0)
     panel.ui.campaign_list.setCurrentIndex(index)
     qtbot.waitUntil(
-        lambda: panel._detail.ui.stack.currentWidget() is panel._detail._view_page,
+        lambda: panel._detail.ui.stack.currentWidget() is panel._detail.ui.view_page,
         timeout=1000,
     )
-    panel._detail._watch_button.click()
+    panel._detail.ui.watch_button.click()
 
     # Drive one poll synchronously; the first card pops and starts copying,
     # leaving two behind in the queue.
@@ -231,7 +231,7 @@ def test_queue_label_shows_pending_cards(
     panel._detail._on_poll()
 
     qtbot.waitUntil(lambda: bool(panel._detail._queue.pending), timeout=1000)
-    text = panel._detail._queue_label.text()
+    text = panel._detail.ui.queue_label.text()
     assert "2 cards queued" in text
     # Both pending card names should appear in the label.
     assert "MSD-B" in text
@@ -263,10 +263,10 @@ def test_campaign_switch_while_watching_prompts(
     )
     panel.ui.campaign_list.setCurrentIndex(alpha_idx)
     qtbot.waitUntil(
-        lambda: panel._detail.ui.stack.currentWidget() is panel._detail._view_page,
+        lambda: panel._detail.ui.stack.currentWidget() is panel._detail.ui.view_page,
         timeout=1000,
     )
-    panel._detail._watch_button.click()
+    panel._detail.ui.watch_button.click()
     assert panel.is_busy()
 
     # User declines to switch -> selection should revert to alpha.
