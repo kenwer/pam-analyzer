@@ -373,8 +373,7 @@ class CampaignDetailWidget(QWidget):
         size = format_bytes(campaign_inv.total_bytes)
         cards = len(campaign_inv.cards)
         self.ui.inventory_label.setText(
-            f"Audio inventory:  {n:,} files  ·  {size}  ·  "
-            f"{cards} card{'s' if cards != 1 else ''}"
+            f"Audio inventory:  {cards} ARU{'s' if cards != 1 else ''}  ·  {n:,} files  ·  {size}"
         )
         self._inventory_model.set_campaign(campaign_inv)
         tree = self.ui.inventory_tree
