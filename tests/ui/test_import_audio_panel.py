@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from pam_analyzer.domain import Campaign, FilterMode, LatLon, Project
+from pam_analyzer.domain import Campaign, CardImportResult, FilterMode, LatLon, Project
 from pam_analyzer.domain.audio_import import DetectedCard
 from pam_analyzer.infrastructure import AudioImporter, TomlCampaignRepository, TomlProjectRepository
 from pam_analyzer.ui.app_state import AppState
@@ -178,6 +178,39 @@ def test_results_table_shows_error_on_missing_card(qtbot, panel: ImportAudioPane
     status = panel.ui.results_table.item(0, 6)
     assert status is not None
     assert status.text() != "OK"
+
+
+def test_project_switch_clears_stale_results(
+    panel: ImportAudioPanel, state: AppState, tmp_path: Path
+):
+    """Switching to a new project must wipe the previous import history.
+
+    Locks in the cure: panels were showing the previous project's import
+    results because they held their own list separate from AppState.
+    """
+    card = DetectedCard(name="MSD-1", mountpoint=tmp_path / "card1", device="/dev/fake")
+    state.append_import_result(
+        CardImportResult(
+            card=card,
+            files_copied=3,
+            files_skipped=0,
+            bytes_copied=300,
+            elapsed=0.5,
+            error=None,
+            dest_dir=tmp_path / "dest",
+        )
+    )
+    assert panel.ui.results_table.rowCount() == 1
+
+    other_root = tmp_path / "audio2"
+    other_root.mkdir()
+    other = Project(path=tmp_path / "other.pamproj", audio_recordings_path=other_root)
+    TomlProjectRepository().save(other)
+    state.load_project(other.path)
+
+    assert state.import_results == []
+    assert panel.ui.results_table.rowCount() == 0
+    assert panel.ui.summary_label.text() == ""
 
 
 def test_campaign_change_clears_seen(panel: ImportAudioPanel):

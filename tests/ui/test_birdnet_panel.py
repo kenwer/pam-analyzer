@@ -128,10 +128,10 @@ def test_slider_autosave_calls_update_birdnet_settings(panel: BirdNetPanel, stat
     assert abs(saved_args[-1]["min_conf"] - 0.60) < 1e-9
 
 
-def test_on_succeeded_switches_to_results_page(panel: BirdNetPanel, tmp_path: Path):
+def _make_result(tmp_path: Path, count: int = 42) -> AnalysisRunResult:
     dummy_csv = tmp_path / "dummy.csv"
     dummy_csv.touch()
-    result = AnalysisRunResult(
+    return AnalysisRunResult(
         campaigns=(
             CampaignRunResult(
                 campaign_name="alpha",
@@ -141,7 +141,7 @@ def test_on_succeeded_switches_to_results_page(panel: BirdNetPanel, tmp_path: Pa
                 all_arus_csv=dummy_csv,
                 species_list_txt=None,
                 week_results=(),
-                detection_count=42,
+                detection_count=count,
                 wav_count=10,
                 aru_count=2,
                 elapsed=1.5,
@@ -149,7 +149,36 @@ def test_on_succeeded_switches_to_results_page(panel: BirdNetPanel, tmp_path: Pa
         ),
         elapsed=1.5,
     )
+
+
+def test_on_succeeded_switches_to_results_page(panel: BirdNetPanel, tmp_path: Path):
+    result = _make_result(tmp_path)
     panel._on_succeeded(result)
 
     assert panel.ui.status_stack.currentIndex() == 2  # page_results
     assert "42" in panel.ui.summary_label.text()
+
+
+def test_project_switch_clears_stale_results(
+    panel: BirdNetPanel, state: AppState, tmp_path: Path
+):
+    """Opening a different project must drop the previous project's results.
+
+    This locks in the cure for the original bug: panels showed stale BirdNET
+    results from the previously opened project.
+    """
+    panel._on_succeeded(_make_result(tmp_path))
+    assert panel.ui.status_stack.currentIndex() == 2  # page_results
+    assert state.last_analysis_result is not None
+
+    # Build a second project on disk and switch to it.
+    other_root = tmp_path / "audio2"
+    other_root.mkdir()
+    other = Project(path=tmp_path / "other.pamproj", audio_recordings_path=other_root)
+    TomlProjectRepository().save(other)
+    state.load_project(other.path)
+
+    assert state.last_analysis_result is None
+    assert panel.ui.status_stack.currentIndex() == 0  # page_idle
+    assert panel._results_model.rowCount() == 0
+    assert panel.ui.summary_label.text() == ""

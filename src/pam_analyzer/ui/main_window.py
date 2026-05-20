@@ -1,8 +1,15 @@
 from pathlib import Path
 
-from PySide6.QtCore import QEvent
+from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QAction, QCloseEvent
-from PySide6.QtWidgets import QFileDialog, QMainWindow, QMessageBox, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QApplication,
+    QFileDialog,
+    QMainWindow,
+    QMessageBox,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ..app.settings import AppSettings
 from ..infrastructure import (
@@ -122,6 +129,8 @@ class MainWindow(QMainWindow):
         )
         if not path_str:
             return
+        if not self._confirm_cancel_running():
+            return
         path = Path(path_str)
         if path.suffix != ".pamproj":
             path = path.with_suffix(".pamproj")
@@ -137,6 +146,8 @@ class MainWindow(QMainWindow):
             "PAM Analyzer projects (*.pamproj)",
         )
         if not path_str:
+            return
+        if not self._confirm_cancel_running():
             return
         path = Path(path_str)
         self._app_state.load_project(path)
@@ -163,6 +174,8 @@ class MainWindow(QMainWindow):
 
     def _on_close_project(self) -> None:
         if not self._confirm_discard_dirty():
+            return
+        if not self._confirm_cancel_running():
             return
         self._app_state.close_project()
 
@@ -204,6 +217,8 @@ class MainWindow(QMainWindow):
                 "Project not found",
                 f"The project file is no longer accessible:\n{path}",
             )
+            return
+        if not self._confirm_cancel_running():
             return
         self._app_state.load_project(path)
         if self._app_state.project is not None:
@@ -267,6 +282,42 @@ class MainWindow(QMainWindow):
         self._import_panel.request_shutdown()
         self._settings.window_geometry = self.saveGeometry()
         super().closeEvent(event)
+
+    def _confirm_cancel_running(self) -> bool:
+        busy = [
+            label
+            for panel in (self._birdnet_panel, self._import_panel)
+            if (label := panel.busy_label())
+        ]
+        if not busy:
+            return True
+        if len(busy) == 1:
+            msg = f"A {busy[0]} is running. Switching projects will stop it."
+        else:
+            joined = ", ".join(busy)
+            msg = f"Background tasks are running ({joined}). Switching projects will stop them."
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle("Switch projects?")
+        box.setText(msg)
+        switch_btn = box.addButton("Switch projects", QMessageBox.ButtonRole.DestructiveRole)
+        keep_btn = box.addButton("Keep running", QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(keep_btn)
+        box.exec()
+        if box.clickedButton() is not switch_btn:
+            return False
+        self._cancel_all_workers()
+        return True
+
+    def _cancel_all_workers(self) -> None:
+        self.ui.status_bar.showMessage("Cancelling background tasks…", 0)
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            self._birdnet_panel.request_shutdown()
+            self._import_panel.request_shutdown()
+        finally:
+            QApplication.restoreOverrideCursor()
+            self.ui.status_bar.clearMessage()
 
     def _confirm_discard_dirty(self) -> bool:
         if not self._app_state.is_dirty:

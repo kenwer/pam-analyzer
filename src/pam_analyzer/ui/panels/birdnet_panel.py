@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, QUrl
+from PySide6.QtCore import QCoreApplication, Qt, QThread, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -45,7 +45,6 @@ class _StatusPage(IntEnum):
 class _PanelState:
     available_locales: list[str] = field(default_factory=list)
     running: bool = False
-    last_result: AnalysisRunResult | None = None
 
 
 class BirdNetPanel(QWidget):
@@ -76,10 +75,12 @@ class BirdNetPanel(QWidget):
         self._wire_signals()
         self._set_status_page(_StatusPage.IDLE)
         self._render_project(app_state.project)
+        self._on_last_result_changed(app_state.last_analysis_result)
 
     def _wire_signals(self) -> None:
         self._app_state.projectChanged.connect(self._render_project)
         self._app_state.campaignsChanged.connect(self._rebuild_campaign_combo)
+        self._app_state.lastAnalysisResultChanged.connect(self._on_last_result_changed)
 
         self.ui.campaign_combo.currentIndexChanged.connect(self._on_campaign_changed)
         self.ui.min_conf_slider.valueChanged.connect(self._on_min_conf_changed)
@@ -281,12 +282,17 @@ class BirdNetPanel(QWidget):
         self.ui.run_button.setEnabled(False)
 
     def request_shutdown(self) -> None:
-        """Called from closeEvent: cancel any running analysis and wait."""
+        """Cancel any running analysis and wait. Called on app close and on
+        project switch. processEvents() drains the worker's queued
+        succeeded/failed/cancelled signal so it's handled while the panel is
+        still in its current session, instead of leaking into the next one.
+        """
         if self._state.running:
             self._request_cancel()
         if self._thread is not None:
             self._thread.quit()  # safe to call from main thread; stops the event loop
             self._thread.wait(5000)
+            QCoreApplication.processEvents()
 
     def _on_progress(self, snap: AnalysisProgressSnapshot) -> None:
         self._app_state.analysisProgress.emit(snap)
@@ -309,10 +315,28 @@ class BirdNetPanel(QWidget):
 
     def _on_succeeded(self, result: AnalysisRunResult) -> None:
         self._teardown_worker()
-        self._state.last_result = result
         self._app_state.analysisFinished.emit(result)
-        self._render_results(result)
-        self._set_status_page(_StatusPage.RESULTS)
+        self._app_state.set_last_analysis_result(result)
+
+    def _on_last_result_changed(self, result: AnalysisRunResult | None) -> None:
+        # A run currently in progress owns the status page; don't fight it.
+        if self._state.running:
+            return
+        if result is None:
+            self._results_model.clear()
+            self._results_model.setHorizontalHeaderLabels(["Name", "Files"])
+            self.ui.summary_label.clear()
+            self.ui.output_path_label.clear()
+            self._set_status_page(_StatusPage.IDLE)
+        else:
+            self._render_results(result)
+            self._set_status_page(_StatusPage.RESULTS)
+
+    def is_busy(self) -> bool:
+        return self._state.running
+
+    def busy_label(self) -> str | None:
+        return "BirdNET analysis" if self._state.running else None
 
     def _on_failed(self, message: str) -> None:
         self._teardown_worker()
@@ -345,7 +369,7 @@ class BirdNetPanel(QWidget):
     def _render_results(self, result: AnalysisRunResult) -> None:
         self._results_model.set_result(result)
         self.ui.results_tree.expandAll()
-        self._populate_row_widgets(result)
+        self._populate_row_widgets()
         self.ui.summary_label.setText(self._build_summary(result))
         out_dir = self._current_output_dir()
         if out_dir is not None:
@@ -353,7 +377,7 @@ class BirdNetPanel(QWidget):
         else:
             self.ui.output_path_label.clear()
 
-    def _populate_row_widgets(self, result: AnalysisRunResult) -> None:
+    def _populate_row_widgets(self) -> None:
         """Attach file-button rows to column 1 of each tree row."""
 
         def files_widget(folder: Path, files: list[Path]) -> QWidget:

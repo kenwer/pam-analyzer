@@ -9,7 +9,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
 
-from ..domain import Campaign, Project
+from ..domain import AnalysisRunResult, Campaign, CardImportResult, Project
 from ..infrastructure import TomlCampaignRepository, TomlProjectRepository
 
 
@@ -23,6 +23,8 @@ class AppState(QObject):
     analysisStarted = Signal()
     analysisProgress = Signal(object)  # AnalysisProgressSnapshot
     analysisFinished = Signal(object)  # AnalysisRunResult | None
+    lastAnalysisResultChanged = Signal(object)  # AnalysisRunResult | None
+    importResultsChanged = Signal(list)  # list[CardImportResult]
 
     def __init__(
         self,
@@ -37,6 +39,8 @@ class AppState(QObject):
         self._dirty: bool = False
         self._campaigns: list[Campaign] = []
         self._current_campaign: Campaign | None = None
+        self._last_analysis_result: AnalysisRunResult | None = None
+        self._import_results: list[CardImportResult] = []
 
     @property
     def project(self) -> Project | None:
@@ -53,6 +57,14 @@ class AppState(QObject):
     @property
     def is_dirty(self) -> bool:
         return self._dirty
+
+    @property
+    def last_analysis_result(self) -> AnalysisRunResult | None:
+        return self._last_analysis_result
+
+    @property
+    def import_results(self) -> list[CardImportResult]:
+        return list(self._import_results)
 
     def load_project(self, path: Path) -> None:
         try:
@@ -170,6 +182,16 @@ class AppState(QObject):
         except Exception as exc:
             self.errorOccurred.emit(f"Failed to save padding: {exc}")
 
+    def set_last_analysis_result(self, result: AnalysisRunResult | None) -> None:
+        if result is self._last_analysis_result:
+            return
+        self._last_analysis_result = result
+        self.lastAnalysisResultChanged.emit(result)
+
+    def append_import_result(self, result: CardImportResult) -> None:
+        self._import_results.append(result)
+        self.importResultsChanged.emit(list(self._import_results))
+
     def set_current_campaign(self, campaign: Campaign | None) -> None:
         if campaign is self._current_campaign:
             return
@@ -186,6 +208,15 @@ class AppState(QObject):
 
     def _apply_project(self, project: Project | None, *, dirty: bool = False) -> None:
         self._project = project
+        # Clear session-scoped derived state before emitting projectChanged so
+        # any panel that re-reads these properties during its render sees the
+        # new (empty) session, not the previous project's results.
+        if self._last_analysis_result is not None:
+            self._last_analysis_result = None
+            self.lastAnalysisResultChanged.emit(None)
+        if self._import_results:
+            self._import_results = []
+            self.importResultsChanged.emit([])
         self.projectChanged.emit(project)
         self._set_dirty(dirty)
 

@@ -3,7 +3,7 @@
 from enum import Enum
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, QTimer
+from PySide6.QtCore import QCoreApplication, Qt, QThread, QTimer
 from PySide6.QtWidgets import QDialog, QTableWidgetItem, QWidget
 
 from ...domain.audio_import import (
@@ -49,7 +49,6 @@ class ImportAudioPanel(QWidget):
         self._state = ImportState.IDLE
         self._queue = CardQueue()
         self._campaign_dir: Path | None = None
-        self._results: list[CardImportResult] = []
         self._current_card: DetectedCard | None = None
 
         self._poll_timer = QTimer(self)
@@ -61,10 +60,12 @@ class ImportAudioPanel(QWidget):
         self._wire_signals()
         self._apply_state()
         self._render_project(app_state.project)
+        self._on_import_results_changed(app_state.import_results)
 
     def _wire_signals(self) -> None:
         self._app_state.projectChanged.connect(self._render_project)
         self._app_state.campaignsChanged.connect(self._rebuild_campaign_combo)
+        self._app_state.importResultsChanged.connect(self._on_import_results_changed)
         self._poll_timer.timeout.connect(self._on_poll)
         self.ui.campaign_combo.currentIndexChanged.connect(self._on_campaign_changed)
         self.ui.watch_button.clicked.connect(self._on_watch_clicked)
@@ -281,7 +282,17 @@ class ImportAudioPanel(QWidget):
         self._current_card = None
 
     def _append_result(self, result: CardImportResult) -> None:
-        self._results.append(result)
+        self._app_state.append_import_result(result)
+
+    def _on_import_results_changed(self, results: list[CardImportResult]) -> None:
+        # Authoritative rebuild: the table mirrors AppState's import_results.
+        # A clear (session boundary) shows up here as an empty list.
+        self.ui.results_table.setRowCount(0)
+        for r in results:
+            self._render_result_row(r)
+        self._update_summary_label(results)
+
+    def _render_result_row(self, result: CardImportResult) -> None:
         row = self.ui.results_table.rowCount()
         self.ui.results_table.insertRow(row)
         mb = result.bytes_copied / 1e6
@@ -305,11 +316,9 @@ class ImportAudioPanel(QWidget):
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.ui.results_table.setItem(row, col, item)
 
-        self._update_summary_label()
-
-    def _update_summary_label(self) -> None:
-        ok = sum(1 for r in self._results if not r.error)
-        err = sum(1 for r in self._results if r.error)
+    def _update_summary_label(self, results: list[CardImportResult]) -> None:
+        ok = sum(1 for r in results if not r.error)
+        err = sum(1 for r in results if r.error)
         parts: list[str] = []
         if ok:
             parts.append(f"{ok} copied")
@@ -341,10 +350,26 @@ class ImportAudioPanel(QWidget):
         self.ui.copying_widget.setVisible(is_copying)
         self.ui.hint_label.setText(_HINT_WATCHING if is_watching else _HINT_IDLE)
 
+    def is_busy(self) -> bool:
+        return self._state in (ImportState.WATCHING, ImportState.COPYING)
+
+    def busy_label(self) -> str | None:
+        if self._state == ImportState.COPYING:
+            return "audio import"
+        if self._state == ImportState.WATCHING:
+            return "SD-card watcher"
+        return None
+
     def request_shutdown(self) -> None:
-        """Called from closeEvent: cancel any running import and wait."""
+        """Cancel any running import and wait. Called on app close and on
+        project switch. processEvents() drains the worker's queued
+        finished/failed signal so it's handled while the panel is still in
+        its current session, instead of leaking into the next one.
+        """
+        self._poll_timer.stop()
         if self._worker is not None:
             self._worker.request_cancel()
         if self._thread is not None:
             self._thread.quit()
             self._thread.wait(5000)
+            QCoreApplication.processEvents()
