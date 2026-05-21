@@ -65,6 +65,7 @@ compile-ui = { cmd = "python scripts/compile_ui.py", help = "Compile Qt Designer
 compile-qrc = { cmd = "python scripts/compile_qrc.py", help = "Compile Qt resource files to *_rc.py modules" }
 run-app = "python -m pam_analyzer"
 run = { sequence = ["compile-ui", "compile-qrc", "run-app"], help = "Compile UI/resources, then run the app" }
+run-dbg = { cmd = "python -m pam_analyzer", env = {PAM_LOG_LEVEL = "DEBUG"}, help = "Run the app with DEBUG logging (skips UI recompile)" }
 profile = { cmd = "py-spy record -o spectrogram_profile.svg -- python -m pam_analyzer", help = "Record a py-spy flame graph; navigate the app then Ctrl+C to write spectrogram_profile.svg (Windows: run as Administrator)" }
 test = "pytest"
 lint = "ruff check src tests"

@@ -4,10 +4,14 @@ A single instance is created in bootstrap and injected into every panel.
 Replaces the module-level globals from the original NiceGUI app.
 """
 
+import logging
+import time
 from dataclasses import replace
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
+
+_log = logging.getLogger(__name__)
 
 from ..domain import (
     AnalysisRunResult,
@@ -86,15 +90,34 @@ class AppState(QObject):
         return self._audio_inventory
 
     def load_project(self, path: Path) -> None:
+        dbg = _log.isEnabledFor(logging.DEBUG)
+        t0 = time.perf_counter() if dbg else 0.0
         try:
             project = self._project_repo.load(path)
         except Exception as exc:
             self.errorOccurred.emit(f"Failed to open {path.name}: {exc}")
             return
+        if dbg:
+            _log.debug("load_project: repo.load %.2fs", time.perf_counter() - t0)
+
         self._apply_project(project, dirty=False)
+
+        t = time.perf_counter() if dbg else 0.0
         self.refresh_campaigns()
+        if dbg:
+            _log.debug("load_project: refresh_campaigns %.2fs", time.perf_counter() - t)
+
+        t = time.perf_counter() if dbg else 0.0
         self.refresh_audio_inventory()
+        if dbg:
+            _log.debug("load_project: refresh_audio_inventory %.2fs", time.perf_counter() - t)
+
+        t = time.perf_counter() if dbg else 0.0
         discovered = discover_analysis_result(project.output_base, project.name)
+        if dbg:
+            _log.debug("load_project: discover_analysis_result %.2fs", time.perf_counter() - t)
+            _log.debug("load_project: total %.2fs", time.perf_counter() - t0)
+
         if discovered is not None:
             self.set_last_analysis_result(discovered)
         self.statusMessage.emit(f"Opened {path.name}")

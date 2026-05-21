@@ -2,8 +2,12 @@
 
 import gc
 import logging
+import logging.handlers
 import os
 import sys
+from pathlib import Path
+
+from platformdirs import user_log_dir
 
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
@@ -46,12 +50,32 @@ def build_main_window() -> MainWindow:
     )
 
 
+def _setup_logging(level: int) -> None:
+    log_dir = Path(user_log_dir("PAM Analyzer", appauthor=False))
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / "pam-analyzer.log"
+
+    file_handler = logging.handlers.RotatingFileHandler(
+        log_file, maxBytes=1_000_000, backupCount=1, encoding="utf-8"
+    )
+    file_handler.setLevel(level)
+    file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(level)
+    console_handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+
+    root = logging.getLogger()
+    root.setLevel(level)
+    root.addHandler(file_handler)
+    root.addHandler(console_handler)
+
+    logging.getLogger(__name__).debug("Logging to %s", log_file)
+
+
 def main() -> int:
     level_name = os.environ.get("PAM_LOG_LEVEL", "WARNING").upper()
-    logging.basicConfig(
-        level=getattr(logging, level_name, logging.WARNING),
-        format="%(levelname)s %(name)s: %(message)s",
-    )
+    _setup_logging(getattr(logging, level_name, logging.WARNING))
 
     app = QApplication(sys.argv)
     app.setApplicationName("PAM Analyzer")
