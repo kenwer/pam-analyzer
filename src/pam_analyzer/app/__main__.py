@@ -13,17 +13,18 @@ from PySide6.QtWidgets import QApplication
 
 from ..infrastructure import (
     AudioImporter,
-    BirdnetAnalyzerRunner,
+    BirdnetAnalyzer,
+    BirdnetRunner,
     CsvDetectionRepository,
     PsutilSdCardScanner,
     SoundfileAudioExtractor,
     TomlCampaignRepository,
     TomlProjectRepository,
 )
-from ..workers import ImportOrchestrator
 from ..ui import resources_rc  # noqa: F401  registers :/icons/* resources
 from ..ui.app_state import AppState
 from ..ui.main_window import MainWindow
+from ..workers import ImportOrchestrator
 from .settings import AppSettings
 
 
@@ -32,7 +33,7 @@ def build_main_window() -> MainWindow:
     campaign_repo = TomlCampaignRepository()
     detection_repo = CsvDetectionRepository()
     audio_extractor = SoundfileAudioExtractor()
-    analysis_runner = BirdnetAnalyzerRunner()
+    analysis_runner = BirdnetAnalyzer(BirdnetRunner())
     sdcard_scanner = PsutilSdCardScanner()
     audio_importer = AudioImporter()
     import_orchestrator = ImportOrchestrator(audio_importer, sdcard_scanner)

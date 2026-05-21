@@ -1,39 +1,36 @@
-"""BirdNET infrastructure adapter.
+"""BirdNET per-campaign infrastructure adapter.
 
-Wraps birdnet_analyzer in the AnalysisRunner port. All birdnet_analyzer
-imports are confined to this module so the rest of the codebase stays
-agnostic of the underlying analyzer.
+Wraps birdnet_analyzer in a single-campaign subprocess loop. All
+birdnet_analyzer imports are confined to this module so the rest of the
+codebase stays agnostic of the underlying analyzer.
 
-Flow when a user clicks "Run BirdNET" in the UI:
+Cross-campaign coordination (progress normalisation, rollup CSVs) lives in
+birdnet_analyzer.BirdnetAnalyzer, which calls BirdnetRunner.run_campaign
+once per campaign.
 
-    AnalysisWorker (background QThread, see workers/analysis_worker.py)
-      -> BirdnetAnalyzerRunner.run(...)            # public entry point
-         -> _prewarm_model()                       # once per process
-         -> pre-count files; wrap progress in
-            _RunGlobalProgress so the bar reflects
-            run-wide progress (not per-campaign)
-         -> for each campaign: _run_one(...)
-              -> _emit(phase="preparing")
-              -> _emit(phase="analyzing")          # bar appears at 0/N
+Flow when BirdnetRunner.run_campaign is called:
+
+    BirdnetAnalyzer (see birdnet_analyzer.py)
+      -> BirdnetRunner.run_campaign(...)      # public entry point
+         -> _run_campaign(...)
+              -> _emit_progress(phase="preparing")
+              -> _emit_progress(phase="analyzing")     # bar appears at 0/N
               -> _analyze_with_per_file_progress() # one call per week_dir
-                                                   # (location mode) or one
-                                                   # call for the whole
-                                                   # campaign (list / global)
+                                             # (location mode) or one call
+                                             # for the whole campaign
+                                             # (list / global)
                    -> Pool.imap_unordered(
                           _analyze_file_with_path, flist)
-                        -> _emit("analyzing", k/N) # per finished file
-              -> _emit(phase="parsing")
+                        -> _emit_progress("analyzing", k/N) # per finished file
+              -> _emit_progress(phase="parsing")
               -> _parse_result_csv() per
-                 *.BirdNET.results.csv             # one file per audio input
-              -> _emit(phase="summarizing")
+                 *.BirdNET.results.csv        # one file per audio input
+              -> _emit_progress(phase="summarizing")
               -> _write_summary_tables(),
-                 _write_week_tables()              # weeks only in loc. mode
-              -> _emit(phase="done")
-         -> if >1 campaign:
-              -> _write_combined_csv()             # cross-campaign rollup
-              -> _write_project_summaries()        # cross-campaign summary
+                 _write_week_tables()         # weeks only in loc. mode
+              -> _emit_progress(phase="done")
 
-Cancellation: each campaign boundary, each per-file Pool yield, and each
+Cancellation: each week-dir boundary, each per-file Pool yield, and each
 result-CSV parse checks progress.is_cancelled(); the Pool loop also calls
 pool.terminate() before raising CancelledError so in-flight workers stop
 immediately instead of draining.
@@ -48,7 +45,6 @@ import re
 import sys
 import time
 from collections import defaultdict
-from dataclasses import replace
 from datetime import datetime
 from functools import lru_cache
 from multiprocessing import Pool
@@ -68,14 +64,14 @@ from ..domain import (
     CancelledError,
     FilterMode,
 )
-from ..domain.entities import AnalysisRunResult, CampaignRunResult, WeekRunResult
+from ..domain.entities import CampaignRunResult, WeekRunResult
 from . import paths
 
 
 def _count_audio_files(campaign_dir: Path) -> int:
     """Count audio files under a campaign folder.
 
-    Called once at the start of each _run_one to populate files_total on
+    Called once at the start of each _run_campaign to populate files_total on
     progress snapshots, and also exposed via the public port for the UI's
     pre-run sanity check.
     """
@@ -189,7 +185,7 @@ def _parse_result_csv(
 ) -> list[dict]:
     """Turn one BirdNET per-file results CSV into normalised detection rows.
 
-    Called during the 'parsing' phase of _run_one, once for every
+    Called during the 'parsing' phase of _run_campaign, once for every
     '*.BirdNET.results.csv' file that birdnet_analyzer wrote (one per
     input audio file). The rows it returns are streamed straight into
     the combined per-campaign detections CSV.
@@ -278,7 +274,7 @@ def _write_summary_tables(
 ) -> tuple[Path, Path]:
     """Write the two per-campaign aggregate CSVs the UI links to.
 
-    Called in the 'summarizing' phase of _run_one, and again from
+    Called in the 'summarizing' phase of _run_campaign, and again from
     _write_week_tables once per week with a week-scoped file_prefix.
     Produces:
       - <prefix>-summary-per-aru.csv:  one row per (ARU, species)
@@ -400,7 +396,7 @@ def _write_week_tables(
 
     Only meaningful for location-mode campaigns (rows then carry a Week
     column derived from the 'week_NN' path segment). Called from
-    _run_one after _write_summary_tables; the returned WeekRunResult
+    _run_campaign after _write_summary_tables; the returned WeekRunResult
     list ends up on CampaignRunResult.week_results so the UI can render
     a row per week.
     """
@@ -437,170 +433,8 @@ def _write_week_tables(
     return results
 
 
-def _write_combined_csv(
-    named_results: list[tuple[str, CampaignRunResult]],
-    output_dir: Path,
-    project_name: str,
-) -> Path:
-    """Concatenate every campaign's detections CSV into one project file.
 
-    Called from BirdnetAnalyzerRunner.run only when the user runs more
-    than one campaign in a single click; gives them a single file to
-    feed into downstream tooling.
-    """
-    fieldnames: list[str] | None = None
-    for _, result in named_results:
-        if result.detections_csv.exists():
-            with open(result.detections_csv, newline="", encoding="utf-8") as f:
-                reader = csv.DictReader(f)
-                if reader.fieldnames:
-                    fieldnames = list(reader.fieldnames)
-                    break
-
-    combined_path = output_dir / f"{project_name}-detections.csv"
-    if not fieldnames:
-        return combined_path
-
-    with open(combined_path, "w", newline="", encoding="utf-8") as outfile:
-        writer = csv.DictWriter(outfile, fieldnames=fieldnames)
-        writer.writeheader()
-        for _, result in named_results:
-            if not result.detections_csv.exists():
-                continue
-            with open(result.detections_csv, newline="", encoding="utf-8") as infile:
-                for row in csv.DictReader(infile):
-                    writer.writerow(row)
-
-    return combined_path
-
-
-def _write_project_summaries(
-    named_results: list[tuple[str, CampaignRunResult]],
-    output_dir: Path,
-    project_name: str,
-    locale_cols: list[str],
-) -> tuple[Path, Path]:
-    """Build cross-campaign aggregates from each campaign's per-ARU summary.
-
-    Counterpart to _write_combined_csv for the summary files: only
-    invoked from run() when more than one campaign was processed.
-    Produces a per-(campaign, ARU) table and a global all-campaigns
-    species table.
-    """
-    all_rows: list[dict] = []
-    fieldnames: list[str] | None = None
-    for _, result in named_results:
-        if not result.per_aru_csv.exists():
-            continue
-        with open(result.per_aru_csv, newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            if fieldnames is None and reader.fieldnames:
-                fieldnames = list(reader.fieldnames)
-            all_rows.extend(reader)
-
-    per_campaign_aru_path = output_dir / f"{project_name}-summary-per-campaign-aru.csv"
-    if fieldnames:
-        with open(per_campaign_aru_path, "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(all_rows)
-
-    global_agg: dict[str, dict] = defaultdict(
-        lambda: {
-            "count": 0,
-            "max_conf": 0.0,
-            "campaigns": set(),
-            "arus": set(),
-            "scientific_name": "",
-            "best_rank": float("inf"),
-            "locale_names": {},
-        }
-    )
-    for row in all_rows:
-        species_name = row["Species"]
-        global_agg[species_name]["count"] += int(row["detection_count"])
-        global_agg[species_name]["max_conf"] = max(global_agg[species_name]["max_conf"], float(row["max_confidence"]))
-        global_agg[species_name]["campaigns"].add(row["Campaign"])
-        global_agg[species_name]["arus"].add(row["ARU"])
-        global_agg[species_name]["scientific_name"] = row["Scientific_Name"]
-        rank_str = row.get("best_species_rank", "top-99").replace("top-", "")
-        try:
-            global_agg[species_name]["best_rank"] = min(global_agg[species_name]["best_rank"], int(rank_str))
-        except ValueError:
-            pass
-        for col in locale_cols:
-            if row.get(col):
-                global_agg[species_name]["locale_names"][col] = row[col]
-
-    all_campaigns_path = output_dir / f"{project_name}-summary-all-campaigns-all-arus.csv"
-    global_fieldnames = [
-        "Scientific_Name",
-        "Species",
-        *locale_cols,
-        "detection_count",
-        "campaign_count",
-        "aru_count",
-        "max_confidence",
-        "best_species_rank_any_campaign",
-    ]
-    with open(all_campaigns_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=global_fieldnames)
-        writer.writeheader()
-        for species_name, data in sorted(global_agg.items(), key=lambda x: -x[1]["count"]):
-            writer.writerow(
-                {
-                    "Species": species_name,
-                    "Scientific_Name": data["scientific_name"],
-                    **data["locale_names"],
-                    "detection_count": data["count"],
-                    "campaign_count": len(data["campaigns"]),
-                    "aru_count": len(data["arus"]),
-                    "max_confidence": f"{data['max_conf']:.4f}",
-                    "best_species_rank_any_campaign": f"top-{int(data['best_rank'])}",
-                }
-            )
-
-    return per_campaign_aru_path, all_campaigns_path
-
-
-class _RunGlobalProgress:
-    """Translate per-campaign snapshots from _run_one to run-global counts.
-
-    _run_one reports files_done/files_total scoped to one campaign so it
-    can be reasoned about in isolation. When the user runs more than one
-    campaign at once, that would make the UI bar fill to 100% and snap
-    back to 0% at every campaign boundary. This adapter sits between
-    _run_one and the real AnalysisProgress port and rewrites each
-    snapshot's files_done/files_total to refer to the entire run, while
-    leaving phase, campaign, and phase_detail untouched so the label
-    still tells the user which campaign is active.
-    """
-
-    def __init__(self, inner: AnalysisProgress, run_total: int) -> None:
-        self._inner = inner
-        self._run_total = run_total
-        self._baseline = 0  # files completed in prior campaigns
-
-    def start_campaign(self, files_done_so_far: int) -> None:
-        """Set the offset added to every subsequent snapshot's files_done.
-
-        Called by BirdnetAnalyzerRunner.run just before each _run_one so
-        progress in the new campaign accumulates on top of what earlier
-        campaigns already contributed.
-        """
-        self._baseline = files_done_so_far
-
-    def report(self, snapshot: AnalysisProgressSnapshot) -> None:
-        global_done = min(self._baseline + snapshot.files_done, self._run_total)
-        self._inner.report(
-            replace(snapshot, files_done=global_done, files_total=self._run_total)
-        )
-
-    def is_cancelled(self) -> bool:
-        return self._inner.is_cancelled()
-
-
-def _emit(
+def _emit_progress(
     progress: AnalysisProgress,
     *,
     campaign: str,
@@ -660,7 +494,7 @@ def _analyze_with_per_file_progress(
     snapshot and re-check cancel_check() so a Stop click takes effect
     within one file rather than one campaign.
 
-    When: called from _run_one, once per week_dir in location mode or
+    When: called from _run_campaign, once per week_dir in location mode or
     once for the whole campaign in list / global mode.
     """
     flist = _set_params(
@@ -708,7 +542,7 @@ def _analyze_with_per_file_progress(
     save_analysis_params(os.path.join(birdnet_cfg.OUTPUT_PATH, birdnet_cfg.ANALYSIS_PARAMS_FILENAME))
 
 
-def _run_one(
+def _run_campaign(
     ci: CampaignRunInput,
     output_dir: Path,
     settings: AnalysisSettings,
@@ -741,7 +575,7 @@ def _run_one(
     t0 = time.monotonic()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    _emit(
+    _emit_progress(
         progress,
         campaign=campaign_name,
         campaign_index=campaign_index,
@@ -792,7 +626,7 @@ def _run_one(
             detail = finished.relative_to(ci.folder).as_posix()
         except ValueError:
             detail = finished.name
-        _emit(
+        _emit_progress(
             progress,
             campaign=campaign_name,
             campaign_index=campaign_index,
@@ -803,7 +637,7 @@ def _run_one(
             phase_detail=detail,
         )
 
-    _emit(
+    _emit_progress(
         progress,
         campaign=campaign_name,
         campaign_index=campaign_index,
@@ -840,7 +674,7 @@ def _run_one(
             **analyze_kwargs,
         )
 
-    _emit(
+    _emit_progress(
         progress,
         campaign=campaign_name,
         campaign_index=campaign_index,
@@ -930,7 +764,7 @@ def _run_one(
     if progress.is_cancelled():
         raise CancelledError()
 
-    _emit(
+    _emit_progress(
         progress,
         campaign=campaign_name,
         campaign_index=campaign_index,
@@ -970,7 +804,7 @@ def _run_one(
 
     week_results = _write_week_tables(detections, output_dir, fieldnames, locale_cols, campaign_name)
 
-    _emit(
+    _emit_progress(
         progress,
         campaign=campaign_name,
         campaign_index=campaign_index,
@@ -996,92 +830,32 @@ def _run_one(
     )
 
 
-class BirdnetAnalyzerRunner:
-    """AnalysisRunner port implementation backed by birdnet_analyzer.
+class BirdnetRunner:
+    """Per-campaign subprocess adapter for BirdNET.
 
-    The only object the rest of the application sees from this module.
-    It is constructed once in the composition root and handed to the
-    AnalysisWorker that runs on a background QThread. Tests substitute
-    a FakeRunner that satisfies the same structural protocol.
+    Handles model prewarm, the Pool-based per-file analysis loop,
+    CSV parsing, and per-campaign summary tables for a single campaign.
+    Cross-campaign coordination and rollup live in BirdnetAnalyzer.
     """
 
     def count_audio_files(self, campaign_dir: Path) -> int:
-        """UI-facing file count used before a run starts."""
         return _count_audio_files(campaign_dir)
 
     def available_locales(self) -> list[str]:
-        """Locale codes the language picker should offer."""
         return _get_available_locales()
 
-    def run(
+    def prewarm(self) -> None:
+        _prewarm_model()
+
+    def run_campaign(
         self,
-        *,
-        campaigns: list[CampaignRunInput],
-        output_base: Path,
-        project_name: str,
+        ci: CampaignRunInput,
+        output_dir: Path,
         settings: AnalysisSettings,
         preferred_lang: str,
         audio_root: Path,
         progress: AnalysisProgress,
-    ) -> AnalysisRunResult:
-        """Execute every campaign sequentially and roll up the results.
-
-        Called by AnalysisWorker.run on the worker QThread. Pre-counts
-        audio files across all campaigns and wraps the inbound progress
-        port in _RunGlobalProgress so the bar shows whole-run progress
-        rather than per-campaign progress, then iterates _run_one per
-        campaign. After the loop, only when more than one campaign was
-        given, writes the project-level combined CSV and summaries.
-        Raises CancelledError if the user cancels between campaigns or
-        from within _run_one.
-        """
-        _prewarm_model()
-        output_base.mkdir(parents=True, exist_ok=True)
-        t0 = time.monotonic()
-
-        # Pre-count audio files so the bar reflects whole-run progress
-        # instead of resetting at every campaign boundary.
-        per_campaign_totals = [_count_audio_files(ci.folder) for ci in campaigns]
-        run_total = sum(per_campaign_totals)
-        run_progress = _RunGlobalProgress(progress, run_total)
-
-        results: list[CampaignRunResult] = []
-        total = len(campaigns)
-        files_completed = 0
-        for i, (ci, ci_total) in enumerate(zip(campaigns, per_campaign_totals, strict=True), start=1):
-            if progress.is_cancelled():
-                raise CancelledError()
-            run_progress.start_campaign(files_completed)
-            camp_out = output_base / ci.name
-            result = _run_one(
-                ci,
-                camp_out,
-                settings,
-                preferred_lang,
-                audio_root,
-                run_progress,
-                i,
-                total,
-            )
-            results.append(result)
-            files_completed += ci_total
-
-        combined_csv = per_campaign_aru_csv = all_campaigns_csv = None
-        if len(results) > 1:
-            locale_cols = [f"Species_{loc}" for loc in settings.locales]
-            named = [(r.campaign_name, r) for r in results]
-            combined_csv = _write_combined_csv(named, output_base, project_name)
-            per_campaign_aru_csv, all_campaigns_csv = _write_project_summaries(
-                named,
-                output_base,
-                project_name,
-                locale_cols,
-            )
-
-        return AnalysisRunResult(
-            campaigns=tuple(results),
-            combined_csv=combined_csv,
-            per_campaign_aru_csv=per_campaign_aru_csv,
-            all_campaigns_csv=all_campaigns_csv,
-            elapsed=time.monotonic() - t0,
-        )
+        campaign_index: int,
+        total_campaigns: int,
+    ) -> CampaignRunResult:
+        return _run_campaign(ci, output_dir, settings, preferred_lang, audio_root, progress, campaign_index, total_campaigns)
