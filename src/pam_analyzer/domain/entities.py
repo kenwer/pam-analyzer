@@ -118,6 +118,7 @@ class WeekInventory:
     week: int  # BirdNET-style week number; -1 for files outside any week_NN folder
     files: tuple[Path, ...]
     total_bytes: int
+    file_sizes: tuple[int, ...] = ()  # parallel to files; populated by audio_inventory_discovery
 
 
 @dataclass(frozen=True, slots=True)

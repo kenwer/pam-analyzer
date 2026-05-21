@@ -58,22 +58,18 @@ class AudioInventoryTreeModel(QStandardItemModel):
         size = QStandardItem(format_bytes(week.total_bytes))
         for item in (name, files, size):
             item.setEditable(False)
-        for path in week.files:
-            name.appendRow(self._file_row(path))
+        for path, sz in zip(week.files, week.file_sizes):
+            name.appendRow(self._file_row(path, sz))
         return [name, files, size]
 
-    def _file_row(self, path: Path) -> list[QStandardItem]:
+    def _file_row(self, path: Path, size: int) -> list[QStandardItem]:
         name = QStandardItem(path.name)
         name.setData(path, _ROLE_PATH)
         empty = QStandardItem("")
-        try:
-            size_text = format_bytes(path.stat().st_size)
-        except OSError:
-            size_text = ""
-        size = QStandardItem(size_text)
-        for item in (name, empty, size):
+        size_item = QStandardItem(format_bytes(size))
+        for item in (name, empty, size_item):
             item.setEditable(False)
-        return [name, empty, size]
+        return [name, empty, size_item]
 
 
 def format_bytes(n: int) -> str:

@@ -118,8 +118,7 @@ class AppState(QObject):
             _log.debug("load_project: discover_analysis_result %.2fs", time.perf_counter() - t)
             _log.debug("load_project: total %.2fs", time.perf_counter() - t0)
 
-        if discovered is not None:
-            self.set_last_analysis_result(discovered)
+        self.set_last_analysis_result(discovered)
         self.statusMessage.emit(f"Opened {path.name}")
 
     def create_project(self, path: Path) -> None:
@@ -135,19 +134,18 @@ class AppState(QObject):
     def update_project(self, project: Project) -> None:
         """Replace the in-memory project after a user edit. Marks dirty, does not persist.
 
-        Re-discovers campaigns when the audio root or output base changes.
         Callers must invoke save_project() to flush to disk.
         """
         previous = self._project
         if project == previous:
             return
         self._apply_project(project, dirty=True)
-        if (
-            previous is None
-            or previous.audio_recordings_path != project.audio_recordings_path
-            or previous.output_base != project.output_base
-        ):
+        if previous is None or previous.audio_recordings_path != project.audio_recordings_path:
             self.refresh_campaigns()
+            self.refresh_audio_inventory()
+        # _apply_project always clears analysis results regardless of what changed,
+        # so always re-discover them here. Discovery is cheap (0.00s) when nothing exists.
+        self.set_last_analysis_result(discover_analysis_result(project.output_base, project.name))
 
     def save_project(self) -> None:
         if self._project is None:
