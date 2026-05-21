@@ -1,6 +1,13 @@
 """Entry point for `python -m pam_analyzer` and PyInstaller bundles."""
 
+import multiprocessing
 import os
+
+# On macOS and Windows, multiprocessing uses the 'spawn' start method. A
+# frozen PyInstaller binary re-executes itself from scratch for every worker
+# process, which would re-launch the full GUI. freeze_support() detects the
+# worker-bootstrap argv sentinel and exits before any GUI code runs.
+multiprocessing.freeze_support()
 
 # PyInstaller freezes the app as a standalone executable, not a Python module.
 # In that context, relative imports fail with "attempted relative import with
