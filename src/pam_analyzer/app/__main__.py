@@ -8,7 +8,6 @@ import sys
 from pathlib import Path
 
 from platformdirs import user_log_dir
-
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
@@ -21,6 +20,7 @@ from ..infrastructure import (
     TomlCampaignRepository,
     TomlProjectRepository,
 )
+from ..workers import ImportOrchestrator
 from ..ui import resources_rc  # noqa: F401  registers :/icons/* resources
 from ..ui.app_state import AppState
 from ..ui.main_window import MainWindow
@@ -35,6 +35,7 @@ def build_main_window() -> MainWindow:
     analysis_runner = BirdnetAnalyzerRunner()
     sdcard_scanner = PsutilSdCardScanner()
     audio_importer = AudioImporter()
+    import_orchestrator = ImportOrchestrator(audio_importer, sdcard_scanner)
 
     app_state = AppState(project_repo, campaign_repo)
     settings = AppSettings()
@@ -43,8 +44,7 @@ def build_main_window() -> MainWindow:
         campaign_repo,
         detection_repo,
         analysis_runner,
-        audio_importer,
-        sdcard_scanner,
+        import_orchestrator,
         settings,
         audio_extractor,
     )

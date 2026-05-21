@@ -14,13 +14,12 @@ from PySide6.QtWidgets import (
 
 from ..app.settings import AppSettings
 from ..infrastructure import (
-    AudioImporter,
     BirdnetAnalyzerRunner,
     CsvDetectionRepository,
-    PsutilSdCardScanner,
     SoundfileAudioExtractor,
     TomlCampaignRepository,
 )
+from ..workers import ImportOrchestrator
 from .app_state import AppState
 from .dialogs.about_dialog import show_about_dialog
 from .panels.birdnet_panel import BirdNetPanel
@@ -38,8 +37,7 @@ class MainWindow(QMainWindow):
         campaign_repo: TomlCampaignRepository,
         detections_repo: CsvDetectionRepository,
         analysis_runner: BirdnetAnalyzerRunner,
-        audio_importer: AudioImporter,
-        sdcard_scanner: PsutilSdCardScanner,
+        import_orchestrator: ImportOrchestrator,
         settings: AppSettings,
         audio_extractor: SoundfileAudioExtractor,
         parent: QWidget | None = None,
@@ -62,8 +60,7 @@ class MainWindow(QMainWindow):
         self._campaigns_panel = CampaignsPanel(
             app_state,
             campaign_repo,
-            audio_importer,
-            sdcard_scanner,
+            import_orchestrator,
             self.ui.campaigns_tab,
         )
         self._mount_tab(self.ui.campaigns_tab, self._campaigns_panel, "Campaigns")

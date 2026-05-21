@@ -12,7 +12,8 @@ from PySide6.QtWidgets import (
 )
 
 from ...domain import Campaign, FilterMode, LatLon
-from ...infrastructure import AudioImporter, PsutilSdCardScanner, TomlCampaignRepository
+from ...infrastructure import TomlCampaignRepository
+from ...workers import ImportOrchestrator
 from ..app_state import AppState
 from .campaign_detail_widget import CampaignDetailWidget
 from .ui_campaigns_panel import Ui_CampaignsPanel
@@ -23,8 +24,7 @@ class CampaignsPanel(QWidget):
         self,
         app_state: AppState,
         campaign_repo: TomlCampaignRepository,
-        audio_importer: AudioImporter,
-        sdcard_scanner: PsutilSdCardScanner,
+        orchestrator: ImportOrchestrator,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -44,8 +44,7 @@ class CampaignsPanel(QWidget):
 
         self._detail = CampaignDetailWidget(
             app_state,
-            audio_importer,
-            sdcard_scanner,
+            orchestrator,
             self.ui.detail_container,
         )
         self.ui.detail_layout.addWidget(self._detail)

@@ -11,6 +11,7 @@ from pam_analyzer.infrastructure import (
     TomlCampaignRepository,
     TomlProjectRepository,
 )
+from pam_analyzer.workers import ImportOrchestrator
 from pam_analyzer.ui.app_state import AppState
 from pam_analyzer.ui.panels.campaigns_panel import CampaignsPanel
 
@@ -77,7 +78,8 @@ def panel(
     qtbot, state: AppState, project_with_campaign, scanner: _FakeScanner
 ) -> CampaignsPanel:
     proj, _ = project_with_campaign
-    p = CampaignsPanel(state, TomlCampaignRepository(), AudioImporter(), scanner)
+    orchestrator = ImportOrchestrator(AudioImporter(), scanner)
+    p = CampaignsPanel(state, TomlCampaignRepository(), orchestrator)
     qtbot.addWidget(p)
     state.load_project(proj.path)
     return p
@@ -85,7 +87,8 @@ def panel(
 
 def test_panel_shows_empty_on_no_project(qtbot):
     state = AppState(TomlProjectRepository(), TomlCampaignRepository())
-    p = CampaignsPanel(state, TomlCampaignRepository(), AudioImporter(), _FakeScanner())
+    orchestrator = ImportOrchestrator(AudioImporter(), _FakeScanner())
+    p = CampaignsPanel(state, TomlCampaignRepository(), orchestrator)
     qtbot.addWidget(p)
     assert p._detail.ui.stack.currentWidget() is p._detail.ui.empty_page
 
@@ -162,10 +165,10 @@ def test_inventory_tree_reflects_imported_files(
     assert card_item.child(0, 0).text() == "Week 01"
     assert card_item.child(0, 0).rowCount() == 2
 
-    # Headline label mentions file count and card count.
+    # Headline label mentions file count and ARU count.
     text = panel._detail.ui.inventory_label.text()
     assert "2" in text
-    assert "card" in text
+    assert "ARU" in text
 
 
 def test_watch_button_lives_on_view_page(qtbot, panel: CampaignsPanel):
@@ -227,10 +230,10 @@ def test_queue_label_shows_pending_cards(
 
     # Drive one poll synchronously; the first card pops and starts copying,
     # leaving two behind in the queue.
-    panel._detail._poll_timer.stop()
-    panel._detail._on_poll()
+    panel._detail._orchestrator._poll_timer.stop()
+    panel._detail._orchestrator._on_poll()
 
-    qtbot.waitUntil(lambda: bool(panel._detail._queue.pending), timeout=1000)
+    qtbot.waitUntil(lambda: bool(panel._detail._orchestrator._queue.pending), timeout=1000)
     text = panel._detail.ui.queue_label.text()
     assert "2 cards queued" in text
     # Both pending card names should appear in the label.

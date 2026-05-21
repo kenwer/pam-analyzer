@@ -15,11 +15,10 @@ panel can clear the list selection.
 
 from __future__ import annotations
 
-from enum import Enum
 from pathlib import Path
 from typing import Literal
 
-from PySide6.QtCore import QCoreApplication, QSignalBlocker, Qt, QThread, QTimer, Signal
+from PySide6.QtCore import QSignalBlocker, QTimer, Signal
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
@@ -31,29 +30,18 @@ from PySide6.QtWidgets import (
 
 from ...domain import AudioInventory, Campaign, FilterMode, LatLon
 from ...domain.audio_import import (
-    CardImportResult,
-    CardQueue,
-    ConflictChoice,
+    ConflictReport,
     DetectedCard,
     ImportProgress,
 )
-from ...infrastructure import AudioImporter, PsutilSdCardScanner
+from ...workers import ImportOrchestrator
 from ...widgets import MapPickerWidget
-from ...workers.audio_import_worker import AudioImportWorker
 from ..app_state import AppState
 from ..dialogs.import_conflict_dialog import ImportConflictDialog
 from ..models.audio_inventory_tree_model import AudioInventoryTreeModel, format_bytes
 from .ui_campaign_detail_widget import Ui_CampaignDetailWidget
 
 _Mode = Literal["empty", "view", "new", "edit", "confirm"]
-
-
-class _ImportState(Enum):
-    IDLE = "idle"
-    WATCHING = "watching"
-    COPYING = "copying"
-
-
 
 
 class CampaignDetailWidget(QWidget):
@@ -73,8 +61,7 @@ class CampaignDetailWidget(QWidget):
     def __init__(
         self,
         app_state: AppState,
-        import_service: AudioImporter,
-        sdcard_scanner: PsutilSdCardScanner,
+        orchestrator: ImportOrchestrator,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -82,8 +69,7 @@ class CampaignDetailWidget(QWidget):
         self.ui.setupUi(self)
 
         self._app_state = app_state
-        self._import_service = import_service
-        self._scanner = sdcard_scanner
+        self._orchestrator = orchestrator
         self._campaign: Campaign | None = None
         # Full list as received from the panel; open_edit derives a 'others'
         # set from it locally for uniqueness validation.
@@ -92,14 +78,9 @@ class CampaignDetailWidget(QWidget):
         self._mode: _Mode = "empty"
         self._location_set = False
 
-        # Import worker state, mirrored from the old ImportAudioPanel.
-        self._import_state = _ImportState.IDLE
-        self._queue = CardQueue()
-        self._current_card: DetectedCard | None = None
-        self._poll_timer = QTimer(self)
-        self._poll_timer.setInterval(2000)
-        self._thread: QThread | None = None
-        self._worker: AudioImportWorker | None = None
+        # Local booleans inferred from the orchestrator signal stream.
+        self._is_watching = False
+        self._is_copying = False
 
         self._map = MapPickerWidget()
         map_layout = QVBoxLayout(self.ui.map_container)
@@ -155,7 +136,23 @@ class CampaignDetailWidget(QWidget):
         self.ui.confirm_cancel_button.clicked.connect(self._on_confirm_cancel)
 
         self._app_state.audioInventoryChanged.connect(self._on_audio_inventory_changed)
-        self._poll_timer.timeout.connect(self._on_poll)
+
+        self.ui.overwrite_check.stateChanged.connect(self._on_options_changed)
+        self.ui.clear_check.stateChanged.connect(self._on_options_changed)
+
+        # Orchestrator events -> local UI state
+        self._orchestrator.watching_started.connect(self._on_watching_started)
+        self._orchestrator.watching_stopped.connect(self._on_watching_stopped)
+        self._orchestrator.card_started.connect(self._on_card_started)
+        self._orchestrator.progress.connect(self._on_progress)
+        self._orchestrator.result_ready.connect(self._on_result_ready)
+        self._orchestrator.conflict_detected.connect(self._on_conflict_detected)
+        self._orchestrator.queue_changed.connect(self._on_queue_changed)
+
+        # Orchestrator events -> AppState relay
+        self._orchestrator.watching_started.connect(self._app_state.importStarted)
+        self._orchestrator.watching_stopped.connect(self._app_state.importFinished)
+        self._orchestrator.result_ready.connect(self._app_state.append_import_result)
 
         _attach_text_drop_handler(self.ui.species_text, self._on_text_dropped)
 
@@ -391,117 +388,48 @@ class CampaignDetailWidget(QWidget):
         tree.expandToDepth(0)
         tree.setUpdatesEnabled(True)
 
-    # import lifecycle (formerly ImportAudioPanel)
+    # import lifecycle
 
     def _on_watch_clicked(self) -> None:
-        if self._import_state == _ImportState.IDLE:
-            self._start_watching()
+        if self._is_watching:
+            self._orchestrator.stop_watching()
         else:
-            self._stop_watching()
+            if self._campaign is None or self._app_state.project is None:
+                return
+            self._orchestrator.set_options(
+                self.ui.overwrite_check.isChecked(),
+                self.ui.clear_check.isChecked(),
+            )
+            self._orchestrator.start_watching(
+                self._campaign, self._app_state.project.sdcard_name_pattern
+            )
 
-    def _start_watching(self) -> None:
-        if self._campaign is None:
-            return
-        self._queue.reset()
-        self._import_state = _ImportState.WATCHING
-        self._poll_timer.start()
-        self._apply_import_state()
-        self._app_state.importStarted.emit(self._campaign.name)
-        self._app_state.statusMessage.emit(
-            f"Watching for SD cards (campaign: {self._campaign.name})..."
+    def _on_options_changed(self) -> None:
+        self._orchestrator.set_options(
+            self.ui.overwrite_check.isChecked(),
+            self.ui.clear_check.isChecked(),
         )
 
-    def _stop_watching(self) -> None:
-        self._poll_timer.stop()
-        if self._worker is not None:
-            self._worker.request_cancel()
-        self._import_state = _ImportState.IDLE
+    def _on_watching_started(self, _campaign_name: str) -> None:
+        self._is_watching = True
+        self._is_copying = False
         self._apply_import_state()
-        self._app_state.importFinished.emit()
-        self._app_state.statusMessage.emit("Stopped watching.")
 
-    def _on_poll(self) -> None:
-        project = self._app_state.project
-        if project is None or self._campaign is None:
-            return
-        cards = self._scanner.scan(project.sdcard_name_pattern)
-        self._queue.offer(cards)
-        self._update_queue_label()
-        if self._import_state == _ImportState.WATCHING and self._queue.pending:
-            self._start_next()
+    def _on_watching_stopped(self) -> None:
+        self._is_watching = False
+        self._is_copying = False
+        self._apply_import_state()
 
-    def _start_next(self) -> None:
-        card = self._queue.pop()
-        if card is None or self._campaign is None:
-            return
-        self._current_card = card
-        self._update_queue_label()
-
-        try:
-            files = self._import_service.list_card_files(card.mountpoint)
-        except Exception as exc:
-            self._current_card = None
-            self._app_state.append_import_result(
-                CardImportResult(
-                    card=card,
-                    files_copied=0,
-                    files_skipped=0,
-                    bytes_copied=0,
-                    elapsed=0.0,
-                    error=str(exc),
-                    dest_dir=None,
-                )
-            )
-            if self._import_state == _ImportState.WATCHING and self._queue.pending:
-                self._start_next()
-            return
-
-        campaign_dir = self._campaign.folder / card.name
-        conflict_report = self._import_service.detect_conflicts(files, campaign_dir)
-
-        resolutions: dict[str, ConflictChoice] = {}
-        if conflict_report.conflicts:
-            if self.ui.overwrite_check.isChecked():
-                resolutions = {c.filename: ConflictChoice.REPLACE for c in conflict_report.conflicts}
-            else:
-                dialog = ImportConflictDialog(list(conflict_report.conflicts), self)
-                if dialog.exec() == QDialog.DialogCode.Rejected:
-                    self._current_card = None
-                    if self._import_state == _ImportState.WATCHING and self._queue.pending:
-                        self._start_next()
-                    return
-                resolutions = dialog.result_resolutions()
-
+    def _on_card_started(self, card: DetectedCard, file_count: int) -> None:
+        self._is_copying = True
         self.ui.card_name_label.setText(card.name)
-        self.ui.progress_bar.setRange(0, len(files) if files else 1)
+        self.ui.progress_bar.setRange(0, file_count if file_count else 1)
         self.ui.progress_bar.setValue(0)
         self.ui.files_label.clear()
         self.ui.eta_label.clear()
-
-        self._thread = QThread(self)
-        self._worker = AudioImportWorker(
-            service=self._import_service,
-            scanner=self._scanner,
-            card=card,
-            files=files,
-            dest_dir=campaign_dir,
-            resolutions=resolutions,
-            identical=conflict_report.identical,
-            clear_after=self.ui.clear_check.isChecked(),
-        )
-        self._worker.moveToThread(self._thread)
-        self._thread.started.connect(self._worker.run)
-        self._worker.progress.connect(self._on_import_progress)
-        self._worker.finished.connect(self._on_import_finished)
-        self._worker.failed.connect(self._on_import_failed)
-        for sig in (self._worker.finished, self._worker.failed):
-            sig.connect(self._thread.quit, Qt.ConnectionType.DirectConnection)
-
-        self._import_state = _ImportState.COPYING
         self._apply_import_state()
-        self._thread.start()
 
-    def _on_import_progress(self, snap: ImportProgress) -> None:
+    def _on_progress(self, snap: ImportProgress) -> None:
         if snap.files_total > 0:
             self.ui.progress_bar.setRange(0, snap.files_total)
             self.ui.progress_bar.setValue(snap.files_done)
@@ -511,50 +439,18 @@ class CampaignDetailWidget(QWidget):
             mins, secs = divmod(int(remaining), 60)
             self.ui.eta_label.setText(f"{mins}m {secs:02d}s" if mins else f"{secs}s")
 
-    def _on_import_finished(self, result: CardImportResult) -> None:
-        self._teardown_worker()
-        self._app_state.append_import_result(result)
-        if self._import_state == _ImportState.COPYING:
-            self._import_state = _ImportState.WATCHING
-        if self._import_state == _ImportState.WATCHING and self._queue.pending:
-            self._start_next()
-        else:
-            self._apply_import_state()
+    def _on_result_ready(self, _result: object) -> None:
+        self._is_copying = False
+        self._apply_import_state()
 
-    def _on_import_failed(self, message: str) -> None:
-        current_card = self._current_card
-        self._teardown_worker()
-        if current_card is not None:
-            self._app_state.append_import_result(
-                CardImportResult(
-                    card=current_card,
-                    files_copied=0,
-                    files_skipped=0,
-                    bytes_copied=0,
-                    elapsed=0.0,
-                    error=message,
-                    dest_dir=None,
-                )
-            )
-        if self._import_state == _ImportState.COPYING:
-            self._import_state = _ImportState.WATCHING
-        if self._import_state == _ImportState.WATCHING and self._queue.pending:
-            self._start_next()
-        else:
-            self._apply_import_state()
+    def _on_conflict_detected(self, card: DetectedCard, report: ConflictReport) -> None:
+        dialog = ImportConflictDialog(list(report.conflicts), self)
+        if dialog.exec() == QDialog.DialogCode.Rejected:
+            self._orchestrator.skip_card()
+            return
+        self._orchestrator.resolve_conflict(dialog.result_resolutions())
 
-    def _teardown_worker(self) -> None:
-        if self._thread is not None:
-            self._thread.wait()
-            self._thread.deleteLater()
-            self._thread = None
-        if self._worker is not None:
-            self._worker.deleteLater()
-            self._worker = None
-        self._current_card = None
-
-    def _update_queue_label(self) -> None:
-        pending = self._queue.pending
+    def _on_queue_changed(self, pending: list[DetectedCard]) -> None:
         if not pending:
             self.ui.queue_label.clear()
             return
@@ -572,51 +468,32 @@ class CampaignDetailWidget(QWidget):
 
     def _apply_import_state(self) -> None:
         has_campaign = self._campaign is not None
-        is_watching = self._import_state in (_ImportState.WATCHING, _ImportState.COPYING)
-        is_copying = self._import_state == _ImportState.COPYING
 
-        self.ui.watch_button.setEnabled(has_campaign or is_watching)
-        self.ui.watch_button.setText("Stop SD import" if is_watching else "Start SD import")
+        self.ui.watch_button.setEnabled(has_campaign or self._is_watching)
+        self.ui.watch_button.setText("Stop SD import" if self._is_watching else "Start SD import")
         # The .ui's :checked stylesheet swaps to red while watching; we keep
         # the button's checked state in sync with the import state machine so
         # programmatic stops (e.g. request_shutdown) flip the visual too.
-        if self.ui.watch_button.isChecked() != is_watching:
-            self.ui.watch_button.setChecked(is_watching)
-        self.ui.overwrite_check.setEnabled(not is_copying)
-        self.ui.clear_check.setEnabled(not is_copying)
+        if self.ui.watch_button.isChecked() != self._is_watching:
+            self.ui.watch_button.setChecked(self._is_watching)
+        self.ui.overwrite_check.setEnabled(not self._is_copying)
+        self.ui.clear_check.setEnabled(not self._is_copying)
         for w in (self.ui.card_name_label, self.ui.progress_bar, self.ui.files_label, self.ui.eta_label):
-            w.setVisible(is_copying)
+            w.setVisible(self._is_copying)
         self.ui.import_hint_label.setText(
             "Once all imports are finished, stop the SD import to prevent unintended copies."
-            if is_watching
+            if self._is_watching
             else "Start the SD import to copy audio files when a card is inserted."
         )
 
     def is_busy(self) -> bool:
-        return self._import_state in (_ImportState.WATCHING, _ImportState.COPYING)
+        return self._orchestrator.is_busy()
 
     def busy_label(self) -> str | None:
-        if self._import_state == _ImportState.COPYING:
-            return "audio import"
-        if self._import_state == _ImportState.WATCHING:
-            return "SD-card watcher"
-        return None
+        return self._orchestrator.busy_label()
 
     def request_shutdown(self) -> None:
-        """Cancel any running import and wait. Drains queued worker signals so
-        they're handled before the next session begins."""
-        was_busy = self.is_busy()
-        self._poll_timer.stop()
-        if self._worker is not None:
-            self._worker.request_cancel()
-        if self._thread is not None:
-            self._thread.quit()
-            self._thread.wait(5000)
-            QCoreApplication.processEvents()
-        self._import_state = _ImportState.IDLE
-        self._apply_import_state()
-        if was_busy:
-            self._app_state.importFinished.emit()
+        self._orchestrator.request_shutdown()
 
     # validation
 
