@@ -70,6 +70,13 @@ class TomlCampaignRepository:
     def write_species_list(self, campaign: Campaign, content: str) -> None:
         paths.species_list_file(campaign.folder).write_text(content, encoding="utf-8")
 
+    def read_must_have_species(self, campaign: Campaign) -> str:
+        f = paths.must_have_species_file(campaign.folder)
+        return f.read_text(encoding="utf-8") if f.exists() else ""
+
+    def write_must_have_species(self, campaign: Campaign, content: str) -> None:
+        paths.must_have_species_file(campaign.folder).write_text(content, encoding="utf-8")
+
     def count_audio_files(self, campaign: Campaign) -> int:
         if not campaign.folder.exists():
             return 0

@@ -542,6 +542,55 @@ def _analyze_with_per_file_progress(
     save_analysis_params(os.path.join(birdnet_cfg.OUTPUT_PATH, birdnet_cfg.ANALYSIS_PARAMS_FILENAME))
 
 
+def _build_location_slists(
+    lat: float,
+    lon: float,
+    week_dirs: list[Path],
+    must_haves: list[str],
+    output_dir: Path,
+    campaign_name: str,
+) -> tuple[dict[int, str], str | None, list[str]]:
+    """Merge BirdNET's location-derived species list with user must-haves.
+
+    birdnet_analyzer treats slist and lat/lon as mutually exclusive: a slist
+    file replaces location filtering entirely. To honor a must-have list in
+    location mode we compute the geographic list ourselves per week, union
+    the must-haves on top, and feed the union back as a slist file.
+
+    Returns a {week: slist_path} map (per-week deployments), a single slist
+    path (no week_NN folders), and any warnings. On failure both are empty
+    so the caller falls back to plain location filtering.
+    """
+    from birdnet_analyzer.species.utils import get_species_list  # type: ignore[import]
+
+    week_slists: dict[int, str] = {}
+    single: str | None = None
+    warnings: list[str] = []
+
+    def _merge(week: int) -> list[str]:
+        geo = get_species_list(lat, lon, week, threshold=0.03)
+        seen = set(geo)
+        return [*geo, *(s for s in must_haves if s not in seen)]
+
+    try:
+        if week_dirs:
+            weeks = sorted({w for d in week_dirs if (w := _week_from_path(d)) is not None})
+            for w in weeks:
+                path = output_dir / f"{campaign_name}-species-list-week-{w:02d}-input.txt"
+                path.write_text("\n".join(_merge(w)) + "\n", encoding="utf-8")
+                week_slists[w] = str(path)
+        else:
+            path = output_dir / f"{campaign_name}-species-list-input.txt"
+            path.write_text("\n".join(_merge(-1)) + "\n", encoding="utf-8")
+            single = str(path)
+    except Exception as exc:  # noqa: BLE001
+        msg = f"Failed to merge must-have species with location list: {exc}"
+        print(f"[birdnet] {msg}", file=sys.stderr)
+        warnings.append(msg)
+
+    return week_slists, single, warnings
+
+
 def _run_campaign(
     ci: CampaignRunInput,
     output_dir: Path,
@@ -587,6 +636,8 @@ def _run_campaign(
 
     week = -1
     slist: str | None = None
+    week_slists: dict[int, str] = {}
+    warnings: list[str] = []
     if ci.mode == FilterMode.LOCATION and ci.location is not None:
         lat: float | None = ci.location.latitude
         lon: float | None = ci.location.longitude
@@ -600,13 +651,32 @@ def _run_campaign(
             slist_path.write_text(ci.species_list_text, encoding="utf-8")
             slist = str(slist_path)
 
+    # Split user-supplied must-have species-list blob into stripped, non-empty lines.
+    must_haves = [
+        line.strip()
+        for line in (ci.must_have_species_text or "").splitlines()
+        if line.strip()
+    ]
+    # When in location mode: merge the must_haves on top of the location-derived list
+    if must_haves and lat is not None and lon is not None:
+        week_slists, merged_single, merge_warnings = _build_location_slists(
+            lat, lon, week_dirs, must_haves, output_dir, campaign_name
+        )
+        warnings.extend(merge_warnings)
+        if merged_single is not None:
+            slist = merged_single
+
+    # When a species list file drives the run (list mode or a must-have
+    # merge), birdnet derives species from the file, not lat/lon.
+    slist_active = slist is not None or bool(week_slists)
+
     wav_count = _count_audio_files(ci.folder)
     num_threads = min(os.cpu_count() or 4, 8)
     analyze_kwargs = {
         "min_conf": settings.min_conf,
         "slist": slist,
-        "lat": lat if lat is not None else -1,
-        "lon": lon if lon is not None else -1,
+        "lat": lat if lat is not None and not slist_active else -1,
+        "lon": lon if lon is not None and not slist_active else -1,
         "overlap": settings.overlap,
         "top_n": None,
         "rtype": "csv",
@@ -656,13 +726,16 @@ def _run_campaign(
                 continue
             week_out = output_dir / week_dir.relative_to(ci.folder)
             week_out.mkdir(parents=True, exist_ok=True)
+            week_kwargs = analyze_kwargs
+            if week_slists:
+                week_kwargs = {**analyze_kwargs, "slist": week_slists.get(dir_week)}
             _analyze_with_per_file_progress(
                 str(week_dir),
                 str(week_out),
                 on_file_done=_on_file_done,
                 cancel_check=progress.is_cancelled,
                 week=dir_week,
-                **analyze_kwargs,
+                **week_kwargs,
             )
     else:
         _analyze_with_per_file_progress(
@@ -779,7 +852,6 @@ def _run_campaign(
     # Export geographic species list(s) in location mode. Done before
     # _write_week_tables so each WeekRunResult can record whether its
     # species-list file actually exists.
-    warnings: list[str] = []
     species_list_txt: Path | None = None
     if lat is not None and lon is not None:
         try:

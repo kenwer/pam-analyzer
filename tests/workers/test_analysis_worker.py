@@ -33,6 +33,9 @@ class FakeCampaignRepo:
     def read_species_list(self, c: Campaign) -> str:
         return f"species_list_for_{c.name}"
 
+    def read_must_have_species(self, c: Campaign) -> str:
+        return f"must_have_for_{c.name}"
+
     def discover(self, audio_root: Path) -> list[Campaign]:
         return []
 
@@ -52,6 +55,9 @@ class FakeCampaignRepo:
         raise NotImplementedError
 
     def write_species_list(self, campaign: Campaign, content: str) -> None:
+        pass
+
+    def write_must_have_species(self, campaign: Campaign, content: str) -> None:
         pass
 
     def count_audio_files(self, campaign: Campaign) -> int:
@@ -88,6 +94,9 @@ def test_run_passes_species_list_text_only_for_list_mode(tmp_path: Path, qtbot) 
     inputs: list[CampaignRunInput] = runner.calls[0]["campaigns"]
     assert inputs[0].species_list_text is None
     assert inputs[1].species_list_text == "species_list_for_B"
+    # The must-have list is the mirror image: read for LOCATION, not LIST.
+    assert inputs[0].must_have_species_text == "must_have_for_A"
+    assert inputs[1].must_have_species_text is None
 
 
 def test_run_forwards_project_fields(tmp_path: Path, qtbot) -> None:

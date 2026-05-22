@@ -129,17 +129,30 @@ class CampaignsPanel(QWidget):
             self._open_view(new_campaign)
 
     def _open_view(self, campaign: Campaign) -> None:
-        species_text = self._species_text_for(campaign)
-        self._detail.open_view(campaign, self._existing_names(), species_text)
+        self._detail.open_view(
+            campaign,
+            self._existing_names(),
+            self._species_text_for(campaign),
+            self._must_have_text_for(campaign),
+        )
 
     def _open_edit(self, campaign: Campaign) -> None:
-        species_text = self._species_text_for(campaign)
-        self._detail.open_edit(campaign, self._existing_names(), species_text)
+        self._detail.open_edit(
+            campaign,
+            self._existing_names(),
+            self._species_text_for(campaign),
+            self._must_have_text_for(campaign),
+        )
 
     def _species_text_for(self, campaign: Campaign) -> str:
         if campaign.species_filter_mode != FilterMode.LIST:
             return ""
         return self._service.read_species_list(campaign)
+
+    def _must_have_text_for(self, campaign: Campaign) -> str:
+        if campaign.species_filter_mode != FilterMode.LOCATION:
+            return ""
+        return self._service.read_must_have_species(campaign)
 
     def _on_create_requested(
         self,
@@ -147,6 +160,7 @@ class CampaignsPanel(QWidget):
         mode: FilterMode,
         location: LatLon | None,
         species_text: str,
+        must_have_text: str,
     ) -> None:
         project = self._app_state.project
         if project is None:
@@ -168,6 +182,8 @@ class CampaignsPanel(QWidget):
             return
         if mode == FilterMode.LIST:
             self._service.write_species_list(campaign, species_text)
+        elif mode == FilterMode.LOCATION:
+            self._service.write_must_have_species(campaign, must_have_text)
         self._app_state.refresh_campaigns()
         self._select_by_name(name)
 
@@ -178,6 +194,7 @@ class CampaignsPanel(QWidget):
         mode: FilterMode,
         location: LatLon | None,
         species_text: str,
+        must_have_text: str,
     ) -> None:
         campaign = existing
         if new_name != existing.name:
@@ -190,6 +207,8 @@ class CampaignsPanel(QWidget):
         self._service.save(updated)
         if mode == FilterMode.LIST:
             self._service.write_species_list(updated, species_text)
+        elif mode == FilterMode.LOCATION:
+            self._service.write_must_have_species(updated, must_have_text)
         self._app_state.refresh_campaigns()
         self._select_by_name(new_name)
 
@@ -246,6 +265,7 @@ class CampaignsPanel(QWidget):
             audio_count,
             existing_names=self._existing_names(),
             species_text=self._species_text_for(campaign),
+            must_have_text=self._must_have_text_for(campaign),
         )
 
     def _rename_campaign(self, campaign: Campaign) -> None:

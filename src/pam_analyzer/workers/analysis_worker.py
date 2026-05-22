@@ -69,6 +69,11 @@ class AnalysisWorker(QObject):
                         if c.species_filter_mode == FilterMode.LIST
                         else None
                     ),
+                    must_have_species_text=(
+                        self._campaigns_repo.read_must_have_species(c)
+                        if c.species_filter_mode == FilterMode.LOCATION
+                        else None
+                    ),
                 )
                 for c in self._campaigns
             ]

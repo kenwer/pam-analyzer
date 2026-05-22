@@ -45,10 +45,10 @@ _Mode = Literal["empty", "view", "new", "edit", "confirm"]
 
 
 class CampaignDetailWidget(QWidget):
-    # name, mode, location|None, species_text
-    createRequested = Signal(str, object, object, str)
-    # existing campaign, new_name, mode, location|None, species_text
-    updateRequested = Signal(object, str, object, object, str)
+    # name, mode, location|None, species_text, must_have_text
+    createRequested = Signal(str, object, object, str, str)
+    # existing campaign, new_name, mode, location|None, species_text, must_have_text
+    updateRequested = Signal(object, str, object, object, str, str)
     # campaign to delete (after user confirmed on the confirm page)
     deleteRequested = Signal(object)
     # User clicked Delete on the view page; panel should fetch audio_count
@@ -75,6 +75,7 @@ class CampaignDetailWidget(QWidget):
         # set from it locally for uniqueness validation.
         self._existing_names: list[str] = []
         self._species_text: str = ""
+        self._must_have_text: str = ""
         self._mode: _Mode = "empty"
         self._location_set = False
 
@@ -127,6 +128,9 @@ class CampaignDetailWidget(QWidget):
         self.ui.species_import_button.clicked.connect(self._on_import_species)
         self.ui.species_text.textChanged.connect(self._validate)
 
+        self.ui.must_have_group.toggled.connect(self._on_must_have_toggled)
+        self.ui.must_have_import_button.clicked.connect(self._on_import_must_have)
+
         self.ui.name_edit.textChanged.connect(self._validate)
 
         self.ui.save_button.clicked.connect(self._on_save)
@@ -155,6 +159,7 @@ class CampaignDetailWidget(QWidget):
         self._orchestrator.result_ready.connect(self._app_state.append_import_result)
 
         _attach_text_drop_handler(self.ui.species_text, self._on_text_dropped)
+        _attach_text_drop_handler(self.ui.must_have_text, self._on_must_have_dropped)
 
     # state transitions
 
@@ -169,11 +174,13 @@ class CampaignDetailWidget(QWidget):
         campaign: Campaign,
         existing_names: list[str],
         species_text: str = "",
+        must_have_text: str = "",
     ) -> None:
         self._mode = "view"
         self._campaign = campaign
         self._existing_names = list(existing_names)
         self._species_text = species_text
+        self._must_have_text = must_have_text
         self._render_view()
         self.ui.stack.setCurrentWidget(self.ui.view_page)
         self._refresh_inventory()
@@ -185,8 +192,9 @@ class CampaignDetailWidget(QWidget):
         self._campaign = None
         self._existing_names = list(existing_names)
         self._species_text = ""
+        self._must_have_text = ""
         self._location_set = False
-        self._reset_form(None, "")
+        self._reset_form(None, "", "")
         self._on_mode_toggled()
         self.ui.stack.setCurrentWidget(self.ui.form_page)
         QTimer.singleShot(0, self._map.clear)
@@ -198,13 +206,15 @@ class CampaignDetailWidget(QWidget):
         campaign: Campaign,
         existing_names: list[str],
         species_text: str = "",
+        must_have_text: str = "",
     ) -> None:
         self._mode = "edit"
         self._campaign = campaign
         self._existing_names = list(existing_names)
         self._species_text = species_text
+        self._must_have_text = must_have_text
         self._location_set = campaign.location is not None
-        self._reset_form(campaign, species_text)
+        self._reset_form(campaign, species_text, must_have_text)
         self._on_mode_toggled()
         self.ui.stack.setCurrentWidget(self.ui.form_page)
         self.editingChanged.emit(True)
@@ -221,6 +231,7 @@ class CampaignDetailWidget(QWidget):
         audio_count: int,
         existing_names: list[str] | None = None,
         species_text: str | None = None,
+        must_have_text: str | None = None,
     ) -> None:
         self._mode = "confirm"
         self._campaign = campaign
@@ -228,6 +239,8 @@ class CampaignDetailWidget(QWidget):
             self._existing_names = list(existing_names)
         if species_text is not None:
             self._species_text = species_text
+        if must_have_text is not None:
+            self._must_have_text = must_have_text
         if audio_count == 0:
             msg = f'Delete campaign "{campaign.name}"?\nThis will remove the campaign folder.'
         else:
@@ -244,7 +257,9 @@ class CampaignDetailWidget(QWidget):
     def _on_edit_clicked(self) -> None:
         if self._campaign is None:
             return
-        self.open_edit(self._campaign, self._existing_names, self._species_text)
+        self.open_edit(
+            self._campaign, self._existing_names, self._species_text, self._must_have_text
+        )
 
     def _on_view_delete_clicked(self) -> None:
         if self._campaign is not None:
@@ -252,14 +267,18 @@ class CampaignDetailWidget(QWidget):
 
     def _on_form_cancel(self) -> None:
         if self._mode == "edit" and self._campaign is not None:
-            self.open_view(self._campaign, self._existing_names, self._species_text)
+            self.open_view(
+                self._campaign, self._existing_names, self._species_text, self._must_have_text
+            )
         else:
             # mode == "new": panel clears selection + shows empty.
             self.cancelled.emit()
 
     def _on_confirm_cancel(self) -> None:
         if self._campaign is not None:
-            self.open_view(self._campaign, self._existing_names, self._species_text)
+            self.open_view(
+                self._campaign, self._existing_names, self._species_text, self._must_have_text
+            )
         else:
             self.cancelled.emit()
 
@@ -274,7 +293,11 @@ class CampaignDetailWidget(QWidget):
             loc = campaign.location
             ns = "N" if loc.latitude >= 0 else "S"
             ew = "E" if loc.longitude >= 0 else "W"
-            return f"● Location  {abs(loc.latitude):.4f}°{ns}, {abs(loc.longitude):.4f}°{ew}"
+            summary = f"● Location  {abs(loc.latitude):.4f}°{ns}, {abs(loc.longitude):.4f}°{ew}"
+            must_have_count = sum(1 for line in self._must_have_text.splitlines() if line.strip())
+            if must_have_count:
+                summary += f"  ·  +{must_have_count} must-have species"
+            return summary
         species_count = sum(1 for line in self._species_text.splitlines() if line.strip())
         if species_count:
             return f"● Species list  ·  {species_count} species"
@@ -282,7 +305,9 @@ class CampaignDetailWidget(QWidget):
 
     # form helpers
 
-    def _reset_form(self, campaign: Campaign | None, species_text: str) -> None:
+    def _reset_form(
+        self, campaign: Campaign | None, species_text: str, must_have_text: str
+    ) -> None:
         """Populate every field. campaign=None gives the 'new' defaults."""
         mode = campaign.species_filter_mode if campaign else FilterMode.LOCATION
         location = campaign.location if campaign else None
@@ -301,6 +326,12 @@ class CampaignDetailWidget(QWidget):
                 self.ui.mode_location_radio.setChecked(True)
             else:
                 self.ui.mode_list_radio.setChecked(True)
+        self.ui.must_have_text.setPlainText(must_have_text)
+        self.ui.must_have_label.clear()
+        # Auto-expand the section when a saved must-have list exists; an
+        # empty list stays collapsed (the default location-only behavior).
+        self.ui.must_have_group.setChecked(bool(must_have_text.strip()))
+        self._on_must_have_toggled()
 
     # event handlers
 
@@ -322,6 +353,11 @@ class CampaignDetailWidget(QWidget):
         self.ui.species_group.setVisible(not is_location)
         self._validate()
 
+    def _on_must_have_toggled(self) -> None:
+        # The checkable QGroupBox only disables children when unchecked; we
+        # also hide them so the section visibly collapses to its title.
+        self.ui.must_have_content.setVisible(self.ui.must_have_group.isChecked())
+
     def _on_import_species(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Import species list", "", "Text files (*.txt)")
         if path:
@@ -338,17 +374,42 @@ class CampaignDetailWidget(QWidget):
         self.ui.species_text.setPlainText(text)
         self.ui.species_label.setText(path.name)
 
+    def _on_import_must_have(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import must-have species", "", "Text files (*.txt)"
+        )
+        if path:
+            self._load_must_have_file(Path(path))
+
+    def _on_must_have_dropped(self, path: Path) -> None:
+        self._load_must_have_file(path)
+
+    def _load_must_have_file(self, path: Path) -> None:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return
+        self.ui.must_have_text.setPlainText(text)
+        self.ui.must_have_label.setText(path.name)
+
     def _on_save(self) -> None:
         name = self.ui.name_edit.text().strip()
         is_loc = self.ui.mode_location_radio.isChecked()
         mode = FilterMode.LOCATION if is_loc else FilterMode.LIST
         location: LatLon | None = LatLon(self.ui.lat_spin.value(), self.ui.lon_spin.value()) if is_loc else None
         species_text = "" if is_loc else self.ui.species_text.toPlainText()
+        must_have_text = (
+            self.ui.must_have_text.toPlainText()
+            if is_loc and self.ui.must_have_group.isChecked()
+            else ""
+        )
 
         if self._mode == "new":
-            self.createRequested.emit(name, mode, location, species_text)
+            self.createRequested.emit(name, mode, location, species_text, must_have_text)
         elif self._mode == "edit" and self._campaign is not None:
-            self.updateRequested.emit(self._campaign, name, mode, location, species_text)
+            self.updateRequested.emit(
+                self._campaign, name, mode, location, species_text, must_have_text
+            )
 
     def _on_delete(self) -> None:
         if self._campaign is not None:

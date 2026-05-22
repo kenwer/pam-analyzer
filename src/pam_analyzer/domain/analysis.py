@@ -49,6 +49,8 @@ class CampaignRunInput:
     mode: FilterMode
     location: LatLon | None
     species_list_text: str | None  # LIST mode only
+    # LOCATION mode only: species merged on top of the location-derived list.
+    must_have_species_text: str | None = None
 
 
 class AnalysisRunner(Protocol):

@@ -15,6 +15,10 @@ def species_list_file(campaign_folder: Path) -> Path:
     return campaign_folder / "species_list.txt"
 
 
+def must_have_species_file(campaign_folder: Path) -> Path:
+    return campaign_folder / "must_have_species.txt"
+
+
 def campaign_csv(output_base: Path, campaign_name: str) -> Path:
     return output_base / campaign_name / f"{campaign_name}-detections.csv"
 

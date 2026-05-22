@@ -604,6 +604,99 @@ QPushButton:disabled { background-color: #c0c0c0; color: #f5f5f5; }</string>
             </item>
            </layout>
           </item>
+          <item>
+           <widget class="QGroupBox" name="must_have_group">
+            <property name="title">
+             <string>Always-include species</string>
+            </property>
+            <property name="checkable">
+             <bool>true</bool>
+            </property>
+            <property name="checked">
+             <bool>false</bool>
+            </property>
+            <layout class="QVBoxLayout" name="must_have_layout">
+             <item>
+              <widget class="QWidget" name="must_have_content" native="true">
+               <layout class="QVBoxLayout" name="must_have_content_layout">
+                <property name="leftMargin">
+                 <number>0</number>
+                </property>
+                <property name="topMargin">
+                 <number>0</number>
+                </property>
+                <property name="rightMargin">
+                 <number>0</number>
+                </property>
+                <property name="bottomMargin">
+                 <number>0</number>
+                </property>
+                <item>
+                 <widget class="QLabel" name="must_have_hint_label">
+                  <property name="text">
+                   <string>These species are always added to the list BirdNET derives from the location.</string>
+                  </property>
+                  <property name="styleSheet">
+                   <string>color: gray;</string>
+                  </property>
+                  <property name="wordWrap">
+                   <bool>true</bool>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <layout class="QHBoxLayout" name="must_have_import_row">
+                  <item>
+                   <widget class="QPushButton" name="must_have_import_button">
+                    <property name="text">
+                     <string>Import .txt…</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QLabel" name="must_have_label">
+                    <property name="styleSheet">
+                     <string>color: gray;</string>
+                    </property>
+                    <property name="text">
+                     <string/>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <spacer name="must_have_import_spacer">
+                    <property name="orientation">
+                     <enum>Qt::Orientation::Horizontal</enum>
+                    </property>
+                    <property name="sizeHint" stdset="0">
+                     <size>
+                      <width>40</width>
+                      <height>20</height>
+                     </size>
+                    </property>
+                   </spacer>
+                  </item>
+                 </layout>
+                </item>
+                <item>
+                 <widget class="QPlainTextEdit" name="must_have_text">
+                  <property name="maximumSize">
+                   <size>
+                    <width>16777215</width>
+                    <height>140</height>
+                   </size>
+                  </property>
+                  <property name="placeholderText">
+                   <string>One species name per line (or drag and drop a .txt file)</string>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </item>
          </layout>
         </widget>
        </item>
