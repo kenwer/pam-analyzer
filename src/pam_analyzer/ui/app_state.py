@@ -113,7 +113,7 @@ class AppState(QObject):
             _log.debug("load_project: refresh_audio_inventory %.2fs", time.perf_counter() - t)
 
         t = time.perf_counter() if dbg else 0.0
-        discovered = discover_analysis_result(project.output_base, project.name)
+        discovered = discover_analysis_result(project.output_base)
         if dbg:
             _log.debug("load_project: discover_analysis_result %.2fs", time.perf_counter() - t)
             _log.debug("load_project: total %.2fs", time.perf_counter() - t0)
@@ -145,7 +145,7 @@ class AppState(QObject):
             self.refresh_audio_inventory()
         # _apply_project always clears analysis results regardless of what changed,
         # so always re-discover them here. Discovery is cheap (0.00s) when nothing exists.
-        self.set_last_analysis_result(discover_analysis_result(project.output_base, project.name))
+        self.set_last_analysis_result(discover_analysis_result(project.output_base))
 
     def save_project(self) -> None:
         if self._project is None:

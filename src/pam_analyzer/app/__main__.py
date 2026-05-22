@@ -13,7 +13,6 @@ from PySide6.QtWidgets import QApplication
 
 from ..infrastructure import (
     AudioImporter,
-    BirdnetAnalyzer,
     BirdnetRunner,
     CsvDetectionRepository,
     PsutilSdCardScanner,
@@ -33,7 +32,7 @@ def build_main_window() -> MainWindow:
     campaign_repo = TomlCampaignRepository()
     detection_repo = CsvDetectionRepository()
     audio_extractor = SoundfileAudioExtractor()
-    analysis_runner = BirdnetAnalyzer(BirdnetRunner())
+    analysis_runner = BirdnetRunner()
     sdcard_scanner = PsutilSdCardScanner()
     audio_importer = AudioImporter()
     import_orchestrator = ImportOrchestrator(audio_importer, sdcard_scanner)

@@ -76,23 +76,11 @@ class Detection:
 
 
 @dataclass(frozen=True, slots=True)
-class WeekRunResult:
-    week: int
-    detections_csv: Path
-    per_aru_csv: Path
-    all_arus_csv: Path
-    species_list_txt: Path | None  # written only in location mode
-
-
-@dataclass(frozen=True, slots=True)
 class CampaignRunResult:
     campaign_name: str
     output_dir: Path
     detections_csv: Path
-    per_aru_csv: Path
-    all_arus_csv: Path
     species_list_txt: Path | None  # location mode only
-    week_results: tuple[WeekRunResult, ...]
     detection_count: int
     wav_count: int
     aru_count: int
@@ -103,9 +91,6 @@ class CampaignRunResult:
 @dataclass(frozen=True, slots=True)
 class AnalysisRunResult:
     campaigns: tuple[CampaignRunResult, ...]
-    combined_csv: Path | None = None
-    per_campaign_aru_csv: Path | None = None
-    all_campaigns_csv: Path | None = None
     elapsed: float = 0.0
     # True when synthesized from on-disk artifacts at project load, rather
     # than from a fresh BirdNET run. The UI uses this to show a different

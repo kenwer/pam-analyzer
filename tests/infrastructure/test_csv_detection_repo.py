@@ -80,11 +80,11 @@ def test_load_for_campaign_parses_numeric_and_annotation_columns(tmp_path: Path)
     assert detections[1].comment == "uncertain id"
 
 
-def test_load_combined_concatenates_when_no_combined_csv(tmp_path: Path) -> None:
+def test_load_combined_concatenates_campaign_csvs(tmp_path: Path) -> None:
     _seed_csv(tmp_path, "east", [_sample("east")])
     _seed_csv(tmp_path, "west", [_sample("west")])
     repo = CsvDetectionRepository()
-    detections = repo.load_combined(tmp_path, "proj")
+    detections = repo.load_combined(tmp_path)
     assert {d.campaign for d in detections} == {"east", "west"}
 
 

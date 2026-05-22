@@ -11,3 +11,12 @@
 - Examine panel with data table displaying detections, supporting filters, column visibility toggles, auto-sizing, and exporting visible columns and rows.
 - Integrated audio player in the file column for quick playback of detected snippets.
 - TODO: SD card watch hints to guide correct card mounting.
+
+### Changed
+- Analysis now writes only two kinds of CSV: BirdNET's own per-recording
+  `*.BirdNET.results.csv` and one `<campaign>-detections.csv` per campaign.
+  The project-wide combined CSV, the per-aru / all-aru / per-campaign / all-campaign
+  summary CSVs, and the per-week detection and summary CSVs are no longer
+  produced. The "All campaigns" view in the Examine panel concatenates the
+  per-campaign CSVs in memory, so it can no longer disagree with its sources.
+  Existing CSVs from earlier runs are left untouched on disk.

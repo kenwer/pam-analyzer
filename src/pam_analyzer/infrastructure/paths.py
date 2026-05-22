@@ -21,7 +21,3 @@ def must_have_species_file(campaign_folder: Path) -> Path:
 
 def campaign_csv(output_base: Path, campaign_name: str) -> Path:
     return output_base / campaign_name / f"{campaign_name}-detections.csv"
-
-
-def combined_csv(output_base: Path, project_name: str) -> Path:
-    return output_base / f"{project_name}-detections.csv"

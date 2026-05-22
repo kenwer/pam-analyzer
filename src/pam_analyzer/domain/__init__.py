@@ -26,7 +26,6 @@ from .entities import (
     Detection,
     Project,
     WeekInventory,
-    WeekRunResult,
 )
 from .enums import FilterMode, VerifiedState
 from .values import AnalysisSettings, LatLon
@@ -58,6 +57,5 @@ __all__ = [
     "Project",
     "VerifiedState",
     "WeekInventory",
-    "WeekRunResult",
     "birdnet_week",
 ]

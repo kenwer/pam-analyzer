@@ -114,4 +114,4 @@ def test_run_forwards_project_fields(tmp_path: Path, qtbot) -> None:
     call = runner.calls[0]
     assert call["preferred_lang"] == "de"
     assert call["audio_root"] == tmp_path / "audio"
-    assert call["project_name"] == "p"
+    assert call["output_base"] == proj.output_base

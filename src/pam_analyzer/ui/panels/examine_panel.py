@@ -186,7 +186,7 @@ class ExaminePanel(QWidget):
         data = self.ui.campaign_combo.itemData(index)
         try:
             if data == _ALL_CAMPAIGNS_DATA:
-                self._raw_detections = self._service.load_combined(project.output_base, project.name)
+                self._raw_detections = self._service.load_combined(project.output_base)
             else:
                 self._raw_detections = self._service.load_for_campaign(project.output_base, str(data))
         except Exception as exc:
@@ -234,14 +234,8 @@ class ExaminePanel(QWidget):
         # so we must pass the FULL set (rows the user filtered out via
         # max-per or header filters live in self._raw_detections, and edits
         # propagate there because Detection objects are shared by reference).
-        all_campaigns_loaded = self.ui.campaign_combo.currentData() == _ALL_CAMPAIGNS_DATA
         try:
-            self._service.save(
-                project.output_base,
-                self._raw_detections,
-                project_name=project.name,
-                write_combined=all_campaigns_loaded,
-            )
+            self._service.save(project.output_base, self._raw_detections)
         except Exception as exc:
             self._app_state.errorOccurred.emit(f"Auto-save failed: {exc}")
             return

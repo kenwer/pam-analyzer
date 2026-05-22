@@ -54,6 +54,7 @@ Passive Acoustic Monitoring for Bird Species Detection
     - [Project Settings](#project-settings)
     - [Campaigns](#campaigns)
     - [BirdNET](#birdnet)
+    - [Output files](#output-files)
     - [Examine Detections](#examine-detections)
   - [Keyboard shortcuts](#keyboard-shortcuts)
     - [Global](#global)
@@ -83,7 +84,7 @@ Note: On any supported OS you can also easily run PAM Analyzer from source using
 ## Features
 * **Project & campaign management**: Organizes monitoring deployments into projects (`.pamproj`) and campaigns, each supporting independent species filters (via geographic coordinates or custom species lists).
 * **SD card import**: Automatically detects ARU SD cards matching a configured volume name pattern and imports audio into a structured `campaign/ARU/week` directory layout with built-in deduplication and conflict resolution.
-* **BirdNET analysis**: Integrates BirdNET for per-campaign or batch processing across all campaigns, with configurable confidence threshold and segment overlap. Generates per-ARU and summary CSV outputs.
+* **BirdNET analysis**: Integrates BirdNET for per-campaign or batch processing across all campaigns, with configurable confidence threshold and segment overlap. Writes one annotatable detections CSV per campaign (see [Output files](#output-files)).
 * **Detection review**: Provides a tabular interface for detections with multi-column sorting, filtering, inline annotation (verification status, species correction, comments), and integrated audio playback.
 * **Data export**: Supports exporting filtered detections to CSV format and extracting annotated audio snippets with metadata embedded in filenames.
 
@@ -114,9 +115,13 @@ After setting up a project and importing ARU SD cards, the resulting directory s
 ```
 {audio_recordings_root_path}/
 └── {campaign}/
-    ├── campaign.toml
+    ├── campaign.toml             # species filter configuration sidecar
+    ├── species_list.txt          # species-list mode only: the campaign's species filter list
+    ├── must_have_species.txt     # optional: extra species forced into a location-mode run
     └── {aru}/
 ```
+
+`campaign.toml`, `species_list.txt`, and `must_have_species.txt` live in the campaign folder, beside the audio, so a campaign stays self-contained and can be moved, archived, or shared independently of the project file. The species-list files are present only when the corresponding filter option is used.
 
 Example:
 ```
@@ -173,7 +178,29 @@ Create and manage the campaigns that belong to a project. The panel shows all di
 Campaigns are discovered automatically from the audio recordings root: any subdirectory containing a `campaign.toml` sidecar is treated as a campaign.
 
 ### BirdNET
-Run bird species detection using BirdNET-Analyzer. Configurable parameters include minimum confidence threshold, segment overlap, and additional language columns for species names. Each 3-second detection is assigned a within-segment `Rank` (1 = highest-confidence species in that window), useful for deprioritising detections that are consistently outcompeted by other species in the same clip. Analyses can be run per-campaign or across all campaigns, producing per-campaign detection CSVs (grouped by ARU and week), per-ARU and all-ARUs summary CSVs, and project-level rollups when running all campaigns at once.
+Run bird species detection using BirdNET-Analyzer. Configurable parameters include minimum confidence threshold, segment overlap, and additional language columns for species names. Each 3-second detection is assigned a within-segment `Rank` (1 = highest-confidence species in that window), useful for deprioritising detections that are consistently outcompeted by other species in the same clip. Analyses can be run per-campaign or across all campaigns. See [Output files](#output-files) for what is written to disk.
+
+### Output files
+Analysis results are written to the **detections output path** set in Project Settings. When that path is left empty it defaults to `{audio_recordings_root}/{project}-detections/`. Each campaign gets its own subfolder there, and the app writes only two kinds of CSV:
+
+```
+{detections_output_path}/
+└── {campaign}/
+    ├── {campaign}-detections.csv      # one row per detection; reviewed and annotated in the Examine panel
+    ├── {campaign}-species-list.txt    # location mode only: the geographic species list BirdNET used
+    └── {aru}/.../week_NN/
+        └── *.BirdNET.results.csv      # BirdNET's own raw output, one file per recording
+```
+
+- **`{campaign}-detections.csv`** is the file you work with. It collects every detection in the campaign, carries the annotation columns (`Verified`, `Corrected_Species`, `Comment`), and is rewritten in place as you edit in the Examine panel.
+- **`*.BirdNET.results.csv`** are BirdNET-Analyzer's raw per-recording outputs. The app parses them to build the detections CSV and then leaves them on disk, so a re-run can reuse them.
+
+Alongside the CSVs the app saves the species lists involved in the run as plain `.txt` files:
+
+- **`{campaign}-species-list-input.txt`** (and, per week, `{campaign}-species-list-week-NN-input.txt`) is the list handed *to* BirdNET as input. It is written in species-list mode (a copy of your list) and in location mode when a must-have species list is merged on top of the geographic list. Plain location mode writes no input file, because BirdNET filters directly from the coordinates.
+- **`{campaign}-species-list.txt`** (and, per week, `{campaign}-species-list-week-NN.txt`) is the geographic species list BirdNET *derived* from the campaign's coordinates, exported in location mode for reference.
+
+No combined, summary, or per-week CSVs are produced: the "All campaigns" view in the Examine panel concatenates the per-campaign CSVs in memory, so it always reflects the current per-campaign files.
 
 ### Examine Detections
 Review and annotate results. Detection CSVs are loaded into a grid with multi-column sorting and filtering, inline annotation editing (Verified, Corrected_Species, Comment), and audio playback per detection. Annotations are written back to the source CSVs automatically. Filtered results can be exported to a new CSV, and audio snippets for selected detections can be extracted with configurable padding.

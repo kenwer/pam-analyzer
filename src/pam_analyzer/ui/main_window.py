@@ -13,8 +13,8 @@ from PySide6.QtWidgets import (
 )
 
 from ..app.settings import AppSettings
+from ..domain import AnalysisRunner
 from ..infrastructure import (
-    BirdnetAnalyzer,
     CsvDetectionRepository,
     SoundfileAudioExtractor,
     TomlCampaignRepository,
@@ -36,7 +36,7 @@ class MainWindow(QMainWindow):
         app_state: AppState,
         campaign_repo: TomlCampaignRepository,
         detections_repo: CsvDetectionRepository,
-        analysis_runner: BirdnetAnalyzer,
+        analysis_runner: AnalysisRunner,
         import_orchestrator: ImportOrchestrator,
         settings: AppSettings,
         audio_extractor: SoundfileAudioExtractor,

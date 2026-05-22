@@ -1,6 +1,6 @@
 """Ports and value objects for the BirdNET analysis boundary.
 
-AnalysisRunner is the structural seam for analysis: BirdnetAnalyzerRunner
+AnalysisRunner is the structural seam for analysis: BirdnetRunner
 implements it for production, and tests supply a FakeRunner that satisfies
 the protocol structurally (duck typing).
 """
@@ -22,7 +22,7 @@ class CancelledError(Exception):
 class AnalysisProgressSnapshot:
     """A single progress update from the runner.
 
-    phase is one of: 'preparing', 'analyzing', 'parsing', 'summarizing', 'done'.
+    phase is one of: 'preparing', 'analyzing', 'parsing', 'done'.
     files_total may be 0 before counting completes.
     phase_detail carries an optional extra string (e.g. current file basename)
     that the UI may render alongside the phase.
@@ -62,7 +62,6 @@ class AnalysisRunner(Protocol):
         *,
         campaigns: list[CampaignRunInput],
         output_base: Path,
-        project_name: str,
         settings: AnalysisSettings,
         preferred_lang: str,
         audio_root: Path,

@@ -50,7 +50,8 @@ The parent panel handles those signals by calling the appropriate repository or
 AppState method. This keeps child panels free of repository knowledge and makes
 them testable in isolation.
 
-Example: `CampaignDetailWidget` emits `createRequested(name, mode, location, text)`;
+Example: `CampaignDetailWidget` emits
+`createRequested(name, mode, location, species_text, must_have_text)`;
 `CampaignsPanel` receives it and calls `campaign_repo.create(...)`.
 
 ### AppState
@@ -81,7 +82,7 @@ knowledge of `AppState`; the panel relays relevant signals (`watching_started`,
 
 ### Protocol-based seams
 `domain/analysis.py` defines `AnalysisRunner` and `AnalysisProgress` as structural
-protocols. `BirdnetAnalyzerRunner` satisfies `AnalysisRunner`; tests use `FakeRunner`.
+protocols. `BirdnetRunner` satisfies `AnalysisRunner`; tests use `FakeRunner`.
 This is the main place where a concrete infrastructure adapter is substituted at test
 time.
 

@@ -124,14 +124,15 @@ def _write_csv(path: Path, detections: list[Detection], fieldnames: list[str]) -
 
 
 class CsvDetectionRepository:
-    """Stores per-campaign and combined detection CSVs.
+    """Reads and writes per-campaign detection CSVs.
 
-    Per-load original fieldnames are tracked so writes preserve column order.
+    The per-campaign CSV is the source of truth; the "all campaigns" view is
+    a concatenation built in memory rather than a file on disk. Per-load
+    original fieldnames are tracked so writes preserve column order.
     """
 
     def __init__(self) -> None:
         self._fieldnames_by_campaign: dict[str, list[str]] = {}
-        self._fieldnames_combined: list[str] = []
 
     def load_for_campaign(self, output_base: Path, campaign_name: str) -> list[Detection]:
         path = paths.campaign_csv(output_base, campaign_name)
@@ -141,13 +142,12 @@ class CsvDetectionRepository:
         self._fieldnames_by_campaign[campaign_name] = fieldnames
         return detections
 
-    def load_combined(self, output_base: Path, project_name: str) -> list[Detection]:
-        combined = paths.combined_csv(output_base, project_name)
-        if combined.exists():
-            detections, fieldnames = _read_csv(combined)
-            self._fieldnames_combined = fieldnames
-            return detections
+    def load_combined(self, output_base: Path) -> list[Detection]:
+        """Concatenate every campaign's detections into one in-memory list.
 
+        Each campaign CSV carries its own annotations, so the concatenation
+        is always current; there is no combined file to fall out of sync.
+        """
         all_detections: list[Detection] = []
         if not output_base.exists():
             return all_detections
@@ -158,20 +158,11 @@ class CsvDetectionRepository:
             if csv_path.exists():
                 detections, fieldnames = _read_csv(csv_path)
                 self._fieldnames_by_campaign[sub.name] = fieldnames
-                if not self._fieldnames_combined:
-                    self._fieldnames_combined = fieldnames
                 all_detections.extend(detections)
         return all_detections
 
-    def save(
-        self,
-        output_base: Path,
-        detections: list[Detection],
-        *,
-        project_name: str | None = None,
-        write_combined: bool = False,
-    ) -> None:
-        """Persist edits. Groups by campaign; optionally rewrites the combined CSV."""
+    def save(self, output_base: Path, detections: list[Detection]) -> None:
+        """Persist edits, grouped by campaign."""
         if not detections:
             return
         groups: dict[str, list[Detection]] = {}
@@ -180,13 +171,7 @@ class CsvDetectionRepository:
         for campaign_name, rows in groups.items():
             if campaign_name:
                 self.save_for_campaign(output_base, campaign_name, rows)
-        if write_combined and project_name:
-            self.save_combined(output_base, project_name, detections)
 
     def save_for_campaign(self, output_base: Path, campaign_name: str, detections: list[Detection]) -> None:
         fieldnames = self._fieldnames_by_campaign.get(campaign_name) or list(_CORE_FIELDS)
         _write_csv(paths.campaign_csv(output_base, campaign_name), detections, fieldnames)
-
-    def save_combined(self, output_base: Path, project_name: str, detections: list[Detection]) -> None:
-        fieldnames = self._fieldnames_combined or list(_CORE_FIELDS)
-        _write_csv(paths.combined_csv(output_base, project_name), detections, fieldnames)

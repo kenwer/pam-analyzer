@@ -411,14 +411,11 @@ class BirdNetPanel(QWidget):
 
     def _build_summary(self, result: AnalysisRunResult) -> str:
         total_det = sum(c.detection_count for c in result.campaigns)
-        weeks = sum(len(c.week_results) for c in result.campaigns)
         if result.from_disk:
             # No elapsed/wav/aru on disk; show only what we recovered.
             parts = [f"{total_det:,} detections"]
             if len(result.campaigns) > 1:
                 parts.append(f"{len(result.campaigns)} campaigns")
-            if weeks:
-                parts.append(f"{weeks} weeks")
             return "↺ Loaded previous results: " + "  ·  ".join(parts)
         total_wav = sum(c.wav_count for c in result.campaigns)
         total_aru = sum(c.aru_count for c in result.campaigns)
@@ -429,8 +426,6 @@ class BirdNetPanel(QWidget):
             parts.append(f"{len(result.campaigns)} campaigns")
         if total_aru:
             parts.append(f"{total_aru} ARUs")
-        if weeks:
-            parts.append(f"{weeks} weeks")
         parts.append(f"{total_wav} files")
         parts.append(dur)
         return "✓ " + "  ·  ".join(parts)
