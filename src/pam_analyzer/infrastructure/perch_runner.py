@@ -423,13 +423,13 @@ def _run_campaign(
     if lat is not None and ci.must_have_species_text:
         must_haves = _parse_species_lines(ci.must_have_species_text)
 
-    detections_csv = output_dir / f"{campaign_name}-detections.csv"
+    detections_csv = paths.campaign_csv_for_model(output_dir.parent, campaign_name, PerchRunner.model_key)
     run_context = {
         "Lat": lat if lat is not None else "",
         "Lon": lon if lon is not None else "",
         "Species_List": "",
         "Min_Conf": settings.min_conf,
-        "Model": "perch_v2_cpu",
+        "Model": PerchRunner.model_key,
     }
     locale_cols = [f"Species_{loc}" for loc in settings.locales]
     fieldnames = [
@@ -618,8 +618,12 @@ class PerchRunner:
 
     Loads the model once on the main thread and reuses it across campaigns
     and files. Inference is single-process, single-threaded at the Python
-    level; TensorFlow handles intra-op parallelism on CPU.
+    level; TensorFlow handles intra-op parallelism on CPU. Writes per-run
+    output to <campaign>/<campaign>-detections-perch.csv so it can coexist
+    with a parallel BirdNET run on the same campaign.
     """
+
+    model_key = "perch"
 
     def count_audio_files(self, campaign_dir: Path) -> int:
         return _count_audio_files(campaign_dir)

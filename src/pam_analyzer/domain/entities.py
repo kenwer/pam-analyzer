@@ -73,6 +73,11 @@ class Detection:
     verified: VerifiedState = VerifiedState.UNSET
     corrected_species: str = ""
     comment: str = ""
+    # CSV path this detection was loaded from. Not persisted (the field
+    # is omitted from CSV writes). Used by CsvDetectionRepository.save to
+    # route edits back to the file they came from when multiple model
+    # runs share a campaign directory.
+    source_path: Path | None = None
     extra: dict[str, str] = field(default_factory=dict)
 
 

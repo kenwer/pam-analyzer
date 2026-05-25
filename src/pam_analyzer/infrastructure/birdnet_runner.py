@@ -502,11 +502,6 @@ def _run_campaign(
     Called once per campaign by BirdnetRunner.run. Raises CancelledError
     when progress.is_cancelled() flips to True at any of the checked points.
     """
-    # Lazy import: see note in _analyze_with_per_file_progress. We read
-    # birdnet_cfg.MODEL_PATH below to record the model name in the run
-    # context, so the import has to happen before that point.
-    import birdnet_analyzer.config as birdnet_cfg
-
     campaign_name = ci.name
     t0 = time.monotonic()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -646,7 +641,7 @@ def _run_campaign(
 
     result_csvs = sorted(output_dir.rglob("*.BirdNET.results.csv"))
 
-    detections_csv = output_dir / f"{campaign_name}-detections.csv"
+    detections_csv = paths.campaign_csv_for_model(output_dir.parent, campaign_name, BirdnetRunner.model_key)
 
     if not result_csvs:
         return CampaignRunResult(
@@ -665,7 +660,7 @@ def _run_campaign(
         "Lon": lon if lon is not None else "",
         "Species_List": slist or "",
         "Min_Conf": settings.min_conf,
-        "Model": Path(birdnet_cfg.MODEL_PATH).name if birdnet_cfg.MODEL_PATH else "",
+        "Model": BirdnetRunner.model_key,
     }
 
     preferred_lang_map = _load_locale_labels(preferred_lang)
@@ -769,10 +764,12 @@ class BirdnetRunner:
     """AnalysisRunner implementation for BirdNET.
 
     Handles model prewarm, the Pool-based per-file analysis loop, CSV
-    parsing, and the per-campaign <campaign>-detections.csv. run() iterates
-    the campaigns and normalises progress across campaign boundaries via
-    _RunGlobalProgress.
+    parsing, and the per-campaign <campaign>-detections-birdnet.csv. run()
+    iterates the campaigns and normalises progress across campaign
+    boundaries via _RunGlobalProgress.
     """
+
+    model_key = "birdnet"
 
     def count_audio_files(self, campaign_dir: Path) -> int:
         return _count_audio_files(campaign_dir)

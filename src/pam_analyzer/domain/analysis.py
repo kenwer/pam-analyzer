@@ -54,6 +54,12 @@ class CampaignRunInput:
 
 
 class AnalysisRunner(Protocol):
+    # Short filesystem-safe identifier for this runner. Used as a suffix
+    # on output CSV filenames so multiple model runs can coexist in one
+    # campaign directory, and as the per-row Model column value so the
+    # repo can route edits back to the right file.
+    model_key: str
+
     def count_audio_files(self, campaign_dir: Path) -> int: ...
     def available_locales(self) -> list[str]: ...
 

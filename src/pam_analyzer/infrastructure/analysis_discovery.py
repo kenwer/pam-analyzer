@@ -27,10 +27,10 @@ def discover_analysis_result(output_base: Path) -> AnalysisRunResult | None:
     for sub in sorted(output_base.iterdir()):
         if not sub.is_dir():
             continue
-        det_csv = paths.campaign_csv(output_base, sub.name)
-        if not det_csv.exists():
+        csv_paths = paths.campaign_csvs(output_base, sub.name)
+        if not csv_paths:
             continue
-        campaigns.append(_synthesize_campaign(output_base, sub.name))
+        campaigns.append(_synthesize_campaign(output_base, sub.name, csv_paths))
 
     if not campaigns:
         return None
@@ -38,15 +38,25 @@ def discover_analysis_result(output_base: Path) -> AnalysisRunResult | None:
     return AnalysisRunResult(campaigns=tuple(campaigns), elapsed=0.0, from_disk=True)
 
 
-def _synthesize_campaign(output_base: Path, campaign_name: str) -> CampaignRunResult:
+def _synthesize_campaign(
+    output_base: Path, campaign_name: str, csv_paths: list[Path]
+) -> CampaignRunResult:
+    """Build a CampaignRunResult that covers every model CSV in the campaign.
+
+    detections_csv is a single Path field by contract, so we pick the most
+    recently modified one as the canonical "click to open" target; the
+    detection_count sums across every file so the results panel reflects
+    aggregated reality. csv_paths is the full list (legacy + per-model).
+    """
     output_dir = output_base / campaign_name
-    det_csv = paths.campaign_csv(output_base, campaign_name)
+    primary = max(csv_paths, key=lambda p: p.stat().st_mtime)
+    total_rows = sum(_count_csv_rows(p) for p in csv_paths)
     return CampaignRunResult(
         campaign_name=campaign_name,
         output_dir=output_dir,
-        detections_csv=det_csv,
+        detections_csv=primary,
         species_list_txt=_optional(output_dir / f"{campaign_name}-species-list.txt"),
-        detection_count=_count_csv_rows(det_csv),
+        detection_count=total_rows,
         wav_count=0,
         aru_count=0,
         elapsed=0.0,

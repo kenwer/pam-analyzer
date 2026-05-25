@@ -91,6 +91,10 @@ class ExaminePanel(QWidget):
     def _wire_signals(self) -> None:
         self._app_state.projectChanged.connect(self._on_project_changed)
         self._app_state.campaignsChanged.connect(self._on_campaigns_changed)
+        # Reload the currently-selected campaign whenever a fresh analysis
+        # finishes (or a discovery rebuilds the on-disk result), so the user
+        # doesn't have to bounce the campaign combo to see new rows.
+        self._app_state.lastAnalysisResultChanged.connect(self._on_last_analysis_changed)
 
         self.ui.campaign_combo.currentIndexChanged.connect(self._on_campaign_selected)
         self.ui.max_per_spin.valueChanged.connect(self._apply_filter)
@@ -167,6 +171,17 @@ class ExaminePanel(QWidget):
         after = float(getattr(project, "snippet_padding_after", 0.0) or 0.0)
         self._set_padding_widgets(before, after)
         self.ui.detections_table.setPlaybackPadding(before, after)
+
+    def _on_last_analysis_changed(self, _result: object) -> None:
+        """Re-read the current campaign after a run finishes or discovery completes.
+
+        Reuses _on_campaign_selected so the combo's current index drives the
+        load; on the All-Campaigns view this picks up new rows from every
+        campaign that just ran.
+        """
+        idx = self.ui.campaign_combo.currentIndex()
+        if idx >= 0:
+            self._on_campaign_selected(idx)
 
     def _on_campaigns_changed(self, campaigns: list[Campaign]) -> None:
         combo = self.ui.campaign_combo

@@ -107,7 +107,11 @@ def _read_csv(path: Path) -> tuple[list[Detection], list[str]]:
     with open(path, encoding="utf-8") as f:
         reader = csv.DictReader(f)
         fieldnames = list(reader.fieldnames or [])
-        detections = [_row_to_detection(row) for row in reader]
+        detections = []
+        for row in reader:
+            d = _row_to_detection(row)
+            d.source_path = path
+            detections.append(d)
     return detections, fieldnames
 
 
@@ -126,21 +130,25 @@ def _write_csv(path: Path, detections: list[Detection], fieldnames: list[str]) -
 class CsvDetectionRepository:
     """Reads and writes per-campaign detection CSVs.
 
-    The per-campaign CSV is the source of truth; the "all campaigns" view is
-    a concatenation built in memory rather than a file on disk. Per-load
-    original fieldnames are tracked so writes preserve column order.
+    Each model run lands in its own file (<campaign>-detections-<model_key>.csv)
+    so multiple runs can coexist for a campaign. Load enumerates every model
+    file plus the legacy single-file fallback, concatenating in memory. Save
+    routes each detection back to the file it was loaded from via
+    Detection.source_path; brand-new detections (no source_path) fall back
+    to the legacy file path. Per-file fieldnames are remembered so column
+    order survives a load/save round trip.
     """
 
     def __init__(self) -> None:
-        self._fieldnames_by_campaign: dict[str, list[str]] = {}
+        self._fieldnames_by_path: dict[Path, list[str]] = {}
 
     def load_for_campaign(self, output_base: Path, campaign_name: str) -> list[Detection]:
-        path = paths.campaign_csv(output_base, campaign_name)
-        if not path.exists():
-            return []
-        detections, fieldnames = _read_csv(path)
-        self._fieldnames_by_campaign[campaign_name] = fieldnames
-        return detections
+        all_detections: list[Detection] = []
+        for path in paths.campaign_csvs(output_base, campaign_name):
+            detections, fieldnames = _read_csv(path)
+            self._fieldnames_by_path[path] = fieldnames
+            all_detections.extend(detections)
+        return all_detections
 
     def load_combined(self, output_base: Path) -> list[Detection]:
         """Concatenate every campaign's detections into one in-memory list.
@@ -154,11 +162,7 @@ class CsvDetectionRepository:
         for sub in sorted(output_base.iterdir()):
             if not sub.is_dir():
                 continue
-            csv_path = paths.campaign_csv(output_base, sub.name)
-            if csv_path.exists():
-                detections, fieldnames = _read_csv(csv_path)
-                self._fieldnames_by_campaign[sub.name] = fieldnames
-                all_detections.extend(detections)
+            all_detections.extend(self.load_for_campaign(output_base, sub.name))
         return all_detections
 
     def save(self, output_base: Path, detections: list[Detection]) -> None:
@@ -173,5 +177,19 @@ class CsvDetectionRepository:
                 self.save_for_campaign(output_base, campaign_name, rows)
 
     def save_for_campaign(self, output_base: Path, campaign_name: str, detections: list[Detection]) -> None:
-        fieldnames = self._fieldnames_by_campaign.get(campaign_name) or list(_CORE_FIELDS)
-        _write_csv(paths.campaign_csv(output_base, campaign_name), detections, fieldnames)
+        """Write detections back, grouped by their source file.
+
+        Edits load_for_campaign annotated each row with its source path, so
+        a campaign with both birdnet and perch runs round-trips correctly:
+        each detection lands in the same file it came from. Detections with
+        no source_path (synthesized, not loaded) fall back to the legacy
+        unsuffixed path.
+        """
+        legacy_fallback = paths.campaign_csv(output_base, campaign_name)
+        groups: dict[Path, list[Detection]] = {}
+        for d in detections:
+            target = d.source_path or legacy_fallback
+            groups.setdefault(target, []).append(d)
+        for path, rows in groups.items():
+            fieldnames = self._fieldnames_by_path.get(path) or list(_CORE_FIELDS)
+            _write_csv(path, rows, fieldnames)
