@@ -1,8 +1,10 @@
 """Examine panel: review detections in a multi-column-sort table."""
 
 import csv
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction
@@ -22,7 +24,7 @@ from ...app.settings import AppSettings
 from ...domain import Campaign, Detection, filter_top_per_aru_species
 from ...infrastructure import CsvDetectionRepository, SoundfileAudioExtractor
 from ..app_state import AppState
-from ..models.detections_table_model import COLUMN_GETTERS, COLUMNS_BY_NAME, DetectionsTableModel
+from ..models.detections_table_model import DetectionsTableModel
 from .ui_examine_panel import Ui_ExaminePanel
 
 _ALL_CAMPAIGNS_LABEL = "All campaigns"
@@ -55,8 +57,9 @@ class ExaminePanel(QWidget):
         self._raw_detections: list[Detection] = []  # full unfiltered list for current campaign
 
         self.ui.detections_table.setModel(self._model)
-        self.ui.detections_table.setSortPriority([(COLUMNS_BY_NAME["Confidence"], Qt.DescendingOrder)])
-        # The Confidence/numeric columns sort fastest via the model's fast-path.
+        # Initial default sort. Re-resolved by name on every _apply_filter
+        # because dynamic Species_<locale> extras shift the index of Confidence
+        # after set_detections.
 
         # Restore hidden-column state from QSettings before any data loads, so
         # the first fitColumnsToContents skips hidden columns.
@@ -197,10 +200,44 @@ class ExaminePanel(QWidget):
     def _apply_filter(self) -> None:
         max_per = self.ui.max_per_spin.value()
         rows = filter_top_per_aru_species(self._raw_detections, max_per)
+        # Snapshot the user's current sort by column NAME before the model
+        # reset shifts indices, then re-resolve to current indices after.
+        # Falls back to Confidence desc when there's no active sort yet.
+        prior_names = self._sort_priority_by_name()
         self._model.set_detections(rows)
+        # New columns from set_detections (Species_<locale> extras) default
+        # to visible in Qt. Re-apply the persisted hidden set so anything
+        # the user previously hid stays hidden even after the model rebuild.
+        self.ui.detections_table.setHiddenColumnNames(self._settings.examine_hidden_columns)
+        self._restore_sort_priority(prior_names)
         # Refresh the Corrected_Species combo choices from the loaded data.
         self.ui.detections_table.setSpeciesChoices(sorted({d.species for d in self._raw_detections if d.species}))
         self.ui.detections_table.fitColumnsToContents()
+
+    def _sort_priority_by_name(self) -> list[tuple[str, Qt.SortOrder]]:
+        """Translate the current (col_idx, order) sort into (name, order).
+
+        Column-index-based priorities go stale when set_detections inserts
+        Species_<locale> extras, so we round-trip through column names.
+        """
+        all_cols = self._model.column_names(include_play=True)
+        out: list[tuple[str, Qt.SortOrder]] = []
+        for col, order in self.ui.detections_table.sortPriority():
+            if 0 <= col < len(all_cols):
+                out.append((all_cols[col], order))
+        return out
+
+    def _restore_sort_priority(self, prior_names: list[tuple[str, Qt.SortOrder]]) -> None:
+        new_priority: list[tuple[int, Qt.SortOrder]] = []
+        for name, order in prior_names:
+            idx = self._model.index_of(name)
+            if idx >= 0:
+                new_priority.append((idx, order))
+        if not new_priority:
+            conf_idx = self._model.index_of("Confidence")
+            if conf_idx >= 0:
+                new_priority.append((conf_idx, Qt.DescendingOrder))
+        self.ui.detections_table.setSortPriority(new_priority)
 
     def _on_detection_count_changed(self, shown: int) -> None:
         total = len(self._raw_detections)
@@ -260,7 +297,7 @@ class ExaminePanel(QWidget):
         if path.suffix.lower() != ".csv":
             path = path.with_suffix(".csv")
         try:
-            _write_visible_csv(path, rows, self._visible_column_names())
+            _write_visible_csv(path, rows, self._visible_column_names(), self._model.column_getter)
         except Exception as exc:
             self._app_state.errorOccurred.emit(f"Export failed: {exc}")
             return
@@ -333,22 +370,33 @@ class ExaminePanel(QWidget):
 
     def _visible_column_names(self) -> list[str]:
         hidden = set(self.ui.detections_table.hiddenColumnNames())
-        return [
-            name
-            for name, idx in sorted(COLUMNS_BY_NAME.items(), key=lambda kv: kv[1])
-            if not name.startswith("_") and name not in hidden
-        ]
+        # Pull from the model (not the static COLUMNS_BY_NAME) so dynamic
+        # Species_<locale> extras participate in CSV export when visible.
+        return [name for name in self._model.column_names() if name not in hidden]
 
 
-def _write_visible_csv(path: Path, detections: list[Detection], columns: list[str]) -> None:
-    """Write *detections* with *columns* as headers, in column order."""
+def _write_visible_csv(
+    path: Path,
+    detections: list[Detection],
+    columns: list[str],
+    getter_resolver: Callable[[str], Callable[[Detection], Any] | None],
+) -> None:
+    """Write *detections* with *columns* as headers, in column order.
+
+    *getter_resolver* lets us export dynamic Species_<locale> extras the
+    same way as static columns; the static COLUMN_GETTERS dict alone
+    can't reach into Detection.extra for locale lookups.
+    """
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(columns)
         for d in detections:
-            writer.writerow(
-                ("" if (v := COLUMN_GETTERS[c](d)) is None else v) for c in columns
-            )
+            cells: list[Any] = []
+            for c in columns:
+                get = getter_resolver(c)
+                v = get(d) if get is not None else ""
+                cells.append("" if v is None else v)
+            writer.writerow(cells)
 
 
 def _snippet_filename(d: Detection, start: float, end: float) -> str:

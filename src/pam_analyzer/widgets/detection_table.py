@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..ui.models.detections_table_model import COLUMNS_BY_NAME, NUMERIC_COLUMNS, PLAY_COLUMN_INDEX
+from ..ui.models.detections_table_model import PLAY_COLUMN_INDEX
 from .audio_player import AudioPlayerPanel
 from .combo_delegate import ComboDelegate, fixed
 from .filter_ops import FilterOp
@@ -145,6 +145,12 @@ class DetectionTable(QWidget):
         super().__init__(parent)
         self._audio_root = audio_root
         self._model: DetectionsTableModel | None = None
+        # Snapshot of the column signature last seen by _refresh_layout_for_model,
+        # used to skip the filter-row rebuild when a model reset (e.g. from
+        # set_column_filter) didn't actually change the column layout. Without
+        # this, every keystroke in a filter input would tear down and recreate
+        # all the input widgets, wiping the text the user just typed.
+        self._layout_signature: tuple | None = None
         self._playing_file: str = ""
         self._current_detection: Detection | None = None
         self._suppressing_row_change = False
@@ -185,12 +191,15 @@ class DetectionTable(QWidget):
             self._table.horizontalHeader().ResizeMode.Fixed,
         )
 
-        # combo delegates for fixed-value annotation columns
+        # Combo delegates for fixed-value annotation columns. Created here
+        # but not yet attached to a column, because the column indices for
+        # Verified / Corrected_Species depend on whether the loaded data
+        # has Species_<locale> extras (which insert before them). The actual
+        # setItemDelegateForColumn happens in _refresh_layout_for_model,
+        # which runs on every model reset.
         self._species_choices: tuple[str, ...] = ("",)
         self._verified_delegate = ComboDelegate(fixed(_VERIFIED_CHOICES), self._table)
-        self._table.setItemDelegateForColumn(COLUMNS_BY_NAME["Verified"], self._verified_delegate)
         self._species_delegate = ComboDelegate(lambda: self._species_choices, self._table)
-        self._table.setItemDelegateForColumn(COLUMNS_BY_NAME["Corrected_Species"], self._species_delegate)
 
         # filter row (embedded in the header)
         self._filter_row = HeaderFilterRow(self._table)
@@ -230,10 +239,7 @@ class DetectionTable(QWidget):
         self._table.setSourceModel(model)
         self._table.selectionModel().currentRowChanged.connect(self._on_row_changed)
 
-        col_count = model.columnCount()
-        self._filter_row.rebuild(col_count, numeric_cols=set(NUMERIC_COLUMNS))
-        # Hide play-column filter input
-        self._filter_row.set_column_visible(PLAY_COLUMN_INDEX, False)
+        self._refresh_layout_for_model()
 
         # When the model resets (filter, set_detections), refresh status and sync player.
         model.modelReset.connect(self._on_model_reset)
@@ -241,8 +247,43 @@ class DetectionTable(QWidget):
         model.rowsRemoved.connect(self._refresh_status)
         self._refresh_status()
 
+    def _refresh_layout_for_model(self) -> None:
+        """Re-anchor column-position-sensitive UI to the model's current layout.
+
+        Called on initial setModel and after each modelReset. Skips the
+        actual rebuild when the column signature is unchanged so a reset
+        triggered by set_column_filter or sort_by_priority does not wipe
+        the filter row's input widgets. Only set_detections with a new
+        set of locale extras should trigger the rebuild work.
+        """
+        if self._model is None:
+            return
+        signature = (
+            self._model.columnCount(),
+            tuple(self._model.column_names(include_play=True)),
+            frozenset(self._model.numeric_column_indices()),
+        )
+        if signature == self._layout_signature:
+            return
+        self._layout_signature = signature
+        self._filter_row.rebuild(
+            self._model.columnCount(),
+            numeric_cols=self._model.numeric_column_indices(),
+        )
+        self._filter_row.set_column_visible(PLAY_COLUMN_INDEX, False)
+        for name, delegate in (
+            ("Verified", self._verified_delegate),
+            ("Corrected_Species", self._species_delegate),
+        ):
+            idx = self._model.index_of(name)
+            if idx >= 0:
+                self._table.setItemDelegateForColumn(idx, delegate)
+
     def setSortPriority(self, priority: list) -> None:  # noqa: N802, Qt-style camelCase
         self._table.setSortPriority(priority)
+
+    def sortPriority(self) -> list:  # noqa: N802, Qt-style camelCase
+        return self._table.sortPriority()
 
     def setAudioRoot(self, path: Path | None) -> None:  # noqa: N802, Qt-style camelCase
         self._audio_root = path
@@ -305,7 +346,7 @@ class DetectionTable(QWidget):
         if not current.isValid():
             return
         src_row = self._table.mapToSourceRow(current.row())
-        src_index = self._model.index(src_row, COLUMNS_BY_NAME["Verified"])
+        src_index = self._model.index(src_row, self._model.index_of("Verified"))
         self._model.setData(src_index, value, Qt.ItemDataRole.EditRole)
 
     def _start_editing_column(self, col_name: str) -> None:
@@ -314,8 +355,8 @@ class DetectionTable(QWidget):
         current = self._table.currentIndex()
         if not current.isValid():
             return
-        col = COLUMNS_BY_NAME[col_name]
-        if self._table.isColumnHidden(col):
+        col = self._model.index_of(col_name)
+        if col < 0 or self._table.isColumnHidden(col):
             return
         proxy_index = self._table.model().index(current.row(), col)
         self._table.setCurrentIndex(proxy_index)
@@ -384,6 +425,7 @@ class DetectionTable(QWidget):
         ]
 
     def _on_model_reset(self) -> None:
+        self._refresh_layout_for_model()
         self._refresh_status()
         self._sync_player()
 
