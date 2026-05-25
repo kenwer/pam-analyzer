@@ -82,9 +82,13 @@ knowledge of `AppState`; the panel relays relevant signals (`watching_started`,
 
 ### Protocol-based seams
 `domain/analysis.py` defines `AnalysisRunner` and `AnalysisProgress` as structural
-protocols. `BirdnetRunner` satisfies `AnalysisRunner`; tests use `FakeRunner`.
-This is the main place where a concrete infrastructure adapter is substituted at test
-time.
+protocols. `BirdnetRunner` and `PerchRunner` both satisfy `AnalysisRunner` and are 
+wired into the composition root as `{model_key: runner}` dict. The `BirdNetPanel` 
+exposes them via a Model dropdown. Each runner declares a `model_key` string 
+(`"birdnet"`, `"perch"`) that doubles as the CSV filename suffix written by that
+runner, so multiple model runs coexist for one campaign. Tests use `FakeRunner`.
+This is the main place where a concrete infrastructure adapter is substituted at
+test time.
 
 
 ## Generated files

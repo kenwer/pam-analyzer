@@ -1,6 +1,6 @@
 # PAM Analyzer Tech info
 
-Native PySide6 desktop application for reviewing **Passive Acoustic Monitoring** field recordings: load a project, run BirdNET detection, and review/annotate species detections in a sortable table.
+Native PySide6 desktop application for reviewing **Passive Acoustic Monitoring** field recordings: load a project, run BirdNET or Perch v2 detection, and review/annotate species detections in a sortable table.
 
 Clean rewrite of the original NiceGUI-based PAM Analyzer with a layered, testable architecture.
 
@@ -53,7 +53,7 @@ Passive Acoustic Monitoring for Bird Species Detection
   - [Workflow](#workflow)
     - [Project Settings](#project-settings)
     - [Campaigns](#campaigns)
-    - [BirdNET](#birdnet)
+    - [Run bird species detection using BirdNET or Perch v2](#run-bird-species-detection-using-birdnet-or-perch-v2)
     - [Output files](#output-files)
     - [Examine Detections](#examine-detections)
   - [Keyboard shortcuts](#keyboard-shortcuts)
@@ -84,7 +84,7 @@ Note: On any supported OS you can also easily run PAM Analyzer from source using
 ## Features
 * **Project & campaign management**: Organizes monitoring deployments into projects (`.pamproj`) and campaigns, each supporting independent species filters (via geographic coordinates or custom species lists).
 * **SD card import**: Automatically detects ARU SD cards matching a configured volume name pattern and imports audio into a structured `campaign/ARU/week` directory layout with built-in deduplication and conflict resolution.
-* **BirdNET analysis**: Integrates BirdNET for per-campaign or batch processing across all campaigns, with configurable confidence threshold and segment overlap. Writes one annotatable detections CSV per campaign (see [Output files](#output-files)).
+* **Multi-model analysis**: Run BirdNET or Google's Perch v2 from the same panel via a model selector. Both support per-campaign or batch-across-campaigns runs with a configurable confidence threshold; BirdNET adds segment overlap. Each model writes its own CSV per campaign so multiple model runs can coexist (see [Output files](#output-files)).
 * **Detection review**: Provides a tabular interface for detections with multi-column sorting, filtering, inline annotation (verification status, species correction, comments), and integrated audio playback.
 * **Data export**: Supports exporting filtered detections to CSV format and extracting annotated audio snippets with metadata embedded in filenames.
 
@@ -177,33 +177,39 @@ Create and manage the campaigns that belong to a project. The panel shows all di
 
 Campaigns are discovered automatically from the audio recordings root: any subdirectory containing a `campaign.toml` sidecar is treated as a campaign.
 
-### BirdNET
-Run bird species detection using BirdNET-Analyzer. Configurable parameters include minimum confidence threshold, segment overlap, and additional language columns for species names. Each 3-second detection is assigned a within-segment `Rank` (1 = highest-confidence species in that window), useful for deprioritising detections that are consistently outcompeted by other species in the same clip. Analyses can be run per-campaign or across all campaigns. See [Output files](#output-files) for what is written to disk.
+### Run bird species detection using BirdNET or Perch v2
+The app bundles offers two models to detect birds in the specified campaigns:
+
+- **BirdNET**: TFLite model from BirdNET-Analyzer. Analyses 3-second segments at 48 kHz. Supports configurable segment overlap (0 - 2.9 s) and a per-week geographic species filter built from the campaign's coordinates.
+- **Perch v2**: Google's SavedModel for bird vocalization classification. Analyses 5-second windows at 32 kHz with no overlap. Honors the campaign's location filter by post-filtering its open-world output against BirdNET's regional whitelist.
+
+Common parameters include minimum confidence threshold and additional language columns for species names. Each detection is assigned a within-segment `Rank` (1 = highest-confidence species in that window), useful for deprioritising detections that are consistently outcompeted by other species in the same clip. Analyses can be run per-campaign or across all campaigns. See [Output files](#output-files) for what is written to disk.
 
 ### Output files
-Analysis results are written to the **detections output path** set in Project Settings. When that path is left empty it defaults to `{audio_recordings_root}/{project}-detections/`. Each campaign gets its own subfolder there, and the app writes only two kinds of CSV:
+Analysis results are written to the **detections output path** set in Project Settings. When that path is left empty it defaults to `{audio_recordings_root}/{project}-detections/`. Each campaign gets its own subfolder there, with one detections CSV **per model run**:
 
 ```
 {detections_output_path}/
 └── {campaign}/
-    ├── {campaign}-detections.csv      # one row per detection; reviewed and annotated in the Examine panel
-    ├── {campaign}-species-list.txt    # location mode only: the geographic species list BirdNET used
+    ├── {campaign}-detections-birdnet.csv   # one row per BirdNET detection
+    ├── {campaign}-detections-perch.csv     # one row per Perch v2 detection (only if Perch was run)
+    ├── {campaign}-species-list.txt         # location mode only: the geographic species list BirdNET used
     └── {aru}/.../week_NN/
-        └── *.BirdNET.results.csv      # BirdNET's own raw output, one file per recording
+        └── *.BirdNET.results.csv           # BirdNET's own raw output, one file per recording
 ```
 
-- **`{campaign}-detections.csv`** is the file you work with. It collects every detection in the campaign, carries the annotation columns (`Verified`, `Corrected_Species`, `Comment`), and is rewritten in place as you edit in the Examine panel.
-- **`*.BirdNET.results.csv`** are BirdNET-Analyzer's raw per-recording outputs. The app parses them to build the detections CSV and then leaves them on disk, so a re-run can reuse them.
+- **`{campaign}-detections-{model}.csv`** is the file you work with. Each model run writes its own file so BirdNET and Perch v2 outputs coexist for the same campaign. Every row carries a `Model` column identifying its source, plus the annotation columns (`Verified`, `Corrected_Species`, `Comment`). The Examine panel loads every model file it finds for the campaign and concatenates them; annotations are written back to the file the row came from. Legacy unsuffixed `{campaign}-detections.csv` files from earlier app versions are still loaded as a fallback.
+- **`*.BirdNET.results.csv`** are BirdNET-Analyzer's raw per-recording outputs. The app parses them to build the BirdNET detections CSV and then leaves them on disk, so a re-run can reuse them. (Perch v2 doesn't produce intermediate per-recording files.)
 
 Alongside the CSVs the app saves the species lists involved in the run as plain `.txt` files:
 
 - **`{campaign}-species-list-input.txt`** (and, per week, `{campaign}-species-list-week-NN-input.txt`) is the list handed *to* BirdNET as input. It is written in species-list mode (a copy of your list) and in location mode when a must-have species list is merged on top of the geographic list. Plain location mode writes no input file, because BirdNET filters directly from the coordinates.
-- **`{campaign}-species-list.txt`** (and, per week, `{campaign}-species-list-week-NN.txt`) is the geographic species list BirdNET *derived* from the campaign's coordinates, exported in location mode for reference.
+- **`{campaign}-species-list.txt`** (and, per week, `{campaign}-species-list-week-NN.txt`) is the geographic species list BirdNET *derived* from the campaign's coordinates, exported in location mode for reference. Perch v2 reuses these lists as its post-filter when run in location mode.
 
 No combined, summary, or per-week CSVs are produced: the "All campaigns" view in the Examine panel concatenates the per-campaign CSVs in memory, so it always reflects the current per-campaign files.
 
 ### Examine Detections
-Review and annotate results. Detection CSVs are loaded into a grid with multi-column sorting and filtering, inline annotation editing (Verified, Corrected_Species, Comment), and audio playback per detection. Annotations are written back to the source CSVs automatically. Filtered results can be exported to a new CSV, and audio snippets for selected detections can be extracted with configurable padding.
+Review and annotate results. Detection CSVs are loaded into a grid with multi-column sorting and filtering, inline annotation editing (Verified, Corrected_Species, Comment), and audio playback per detection. When more than one model has been run for a campaign, all detections appear in the same grid; sort or filter on the `Model` column to slice by source. Annotations are written back to the source CSV (the one the row was loaded from) automatically. Filtered results can be exported to a new CSV, and audio snippets for selected detections can be extracted with configurable padding.
 
 When exporting audio snippets, annotation values are reflected in the output filenames:
 - **Verified**: appends `_confirmed`, `_incorrect`, or `_uncertain` depending on the value.
