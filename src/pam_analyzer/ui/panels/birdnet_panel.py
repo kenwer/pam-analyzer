@@ -51,7 +51,7 @@ class BirdNetPanel(QWidget):
     def __init__(
         self,
         app_state: AppState,
-        runner: AnalysisRunner,
+        runners: dict[str, AnalysisRunner],
         campaign_repo: TomlCampaignRepository,
         parent: QWidget | None = None,
     ) -> None:
@@ -59,8 +59,13 @@ class BirdNetPanel(QWidget):
         self.ui = Ui_BirdNetPanel()
         self.ui.setupUi(self)
 
+        if not runners:
+            raise ValueError("BirdNetPanel requires at least one analysis runner")
         self._app_state = app_state
-        self._runner = runner
+        self._runners = runners
+        first_key = next(iter(runners))
+        self._runner: AnalysisRunner = runners[first_key]
+        self._runner_key: str = first_key
         self._campaign_repo = campaign_repo
         self._state = _PanelState()
         self._thread: QThread | None = None
@@ -71,21 +76,83 @@ class BirdNetPanel(QWidget):
 
         self._locale_checks: dict[str, QCheckBox] = {}
         self._state.available_locales = self._runner.available_locales()
+        self._populate_model_combo()
         self._build_locales_menu()
+        self._apply_model_capabilities()
         self._wire_signals()
         self._set_status_page(_StatusPage.IDLE)
         self._render_project(app_state.project)
         self._on_last_result_changed(app_state.last_analysis_result)
+
+    def _populate_model_combo(self) -> None:
+        combo = self.ui.model_combo
+        combo.blockSignals(True)
+        combo.clear()
+        for key in self._runners:
+            combo.addItem(key, key)
+        combo.setCurrentIndex(0)
+        combo.blockSignals(False)
+
+    def _apply_model_capabilities(self) -> None:
+        """Adjust per-model widget ranges and labels.
+
+        Both backends support locale-translated labels (via the BirdNET
+        sci-to-common tables) and an overlap parameter, but their overlap
+        caps differ: BirdNET's analyze.core enforces <= 2.9 s on the 3 s
+        window and Perch <= 4.9 s on the 5 s window. The slider max moves
+        with the model so a Perch-only overlap value gets clamped back
+        before a BirdNET run sees it.
+        """
+        max_overlap_dec = 49 if self._runner_key == "Perch v2" else 29
+        self.ui.overlap_slider.setMaximum(max_overlap_dec)
+        if self.ui.overlap_slider.value() > max_overlap_dec:
+            self.ui.overlap_slider.setValue(max_overlap_dec)
+        # Only update the button when we're idle; during a run the button shows Stop.
+        if not self._state.running:
+            self.ui.run_button.setText(self._idle_run_label())
+
+    def _idle_run_label(self) -> str:
+        return f"Run {self._runner_key}"
+
+    def _busy_run_label(self) -> str:
+        return f"Stop {self._runner_key}"
 
     def _wire_signals(self) -> None:
         self._app_state.projectChanged.connect(self._render_project)
         self._app_state.campaignsChanged.connect(self._rebuild_campaign_combo)
         self._app_state.lastAnalysisResultChanged.connect(self._on_last_result_changed)
 
+        self.ui.model_combo.currentIndexChanged.connect(self._on_model_changed)
         self.ui.campaign_combo.currentIndexChanged.connect(self._on_campaign_changed)
         self.ui.min_conf_slider.valueChanged.connect(self._on_min_conf_changed)
         self.ui.overlap_slider.valueChanged.connect(self._on_overlap_changed)
         self.ui.run_button.clicked.connect(self._on_run_clicked)
+
+    def _on_model_changed(self, index: int) -> None:
+        if index < 0:
+            return
+        key = str(self.ui.model_combo.itemData(index))
+        if key not in self._runners or key == self._runner_key:
+            return
+        self._runner_key = key
+        self._runner = self._runners[key]
+        # available_locales differs across runners, so rebuild the menu and
+        # restore the project's saved locale picks where they still apply.
+        self._state.available_locales = self._runner.available_locales()
+        self._rebuild_locales_menu()
+        self._apply_model_capabilities()
+        self._app_state.update_birdnet_settings(analysis_model=key)
+
+    def _rebuild_locales_menu(self) -> None:
+        """Tear down and recreate the locales popup after a model switch."""
+        old_menu = self.ui.locales_button.menu()
+        self.ui.locales_button.setMenu(None)
+        if old_menu is not None:
+            old_menu.deleteLater()
+        self._build_locales_menu()
+        project = self._app_state.project
+        if project is not None:
+            self._set_locale_checks(project.birdnet_locales)
 
         self.ui.output_path_label.linkActivated.connect(lambda _link: self._open_path(self._current_output_dir()))
 
@@ -110,12 +177,40 @@ class BirdNetPanel(QWidget):
             self._set_status_page(_StatusPage.IDLE)
             return
         assert project is not None
+        self._restore_model_from_project(project)
         self._set_slider_values(project)
         self._set_locale_checks(project.birdnet_locales)
         self._rebuild_campaign_combo(self._app_state.campaigns)
 
+    def _restore_model_from_project(self, project: Project) -> None:
+        """Select the model the project was last saved with, if still available.
+
+        A project saved with a model that no longer ships (renamed, removed)
+        falls back to whatever is currently the default first key. The combo
+        signal is blocked while we set the index so we don't trigger an
+        immediate save-back that would overwrite a legitimate unknown value
+        with our fallback.
+        """
+        target = project.analysis_model
+        idx = self.ui.model_combo.findData(target)
+        if idx < 0:
+            return  # unknown key; keep the current selection (the first runner)
+        if idx == self.ui.model_combo.currentIndex():
+            return
+        self.ui.model_combo.blockSignals(True)
+        try:
+            self.ui.model_combo.setCurrentIndex(idx)
+        finally:
+            self.ui.model_combo.blockSignals(False)
+        self._runner_key = target
+        self._runner = self._runners[target]
+        self._state.available_locales = self._runner.available_locales()
+        self._rebuild_locales_menu()
+        self._apply_model_capabilities()
+
     def _set_settings_enabled(self, enabled: bool) -> None:
         for w in (
+            self.ui.model_combo,
             self.ui.campaign_combo,
             self.ui.min_conf_slider,
             self.ui.overlap_slider,
@@ -123,6 +218,10 @@ class BirdNetPanel(QWidget):
             self.ui.run_button,
         ):
             w.setEnabled(enabled)
+        # Re-apply per-model gating so widgets the current model can't use
+        # stay greyed out even after a generic "enable everything" pass.
+        if enabled:
+            self._apply_model_capabilities()
 
     def _set_slider_values(self, project: Project) -> None:
         for slider, value in (
@@ -269,7 +368,7 @@ class BirdNetPanel(QWidget):
         self._set_status_page(_StatusPage.PROGRESS)
         self.ui.progress_bar.setRange(0, 0)  # indeterminate while preparing
         self.ui.progress_label.setText("Preparing…")
-        self.ui.run_button.setText("Stop BirdNET")
+        self.ui.run_button.setText(self._busy_run_label())
         self.ui.run_button.setChecked(True)
         self._set_settings_enabled(False)
         self.ui.run_button.setEnabled(True)  # keep Stop enabled
@@ -337,7 +436,7 @@ class BirdNetPanel(QWidget):
         return self._state.running
 
     def busy_label(self) -> str | None:
-        return "BirdNET analysis" if self._state.running else None
+        return f"{self._runner_key} analysis" if self._state.running else None
 
     def _on_failed(self, message: str) -> None:
         self._teardown_worker()
@@ -363,7 +462,7 @@ class BirdNetPanel(QWidget):
         if self._worker is not None:
             self._worker.deleteLater()
             self._worker = None
-        self.ui.run_button.setText("Run BirdNET")
+        self.ui.run_button.setText(self._idle_run_label())
         self.ui.run_button.setChecked(False)
         self._set_settings_enabled(True)
         self.ui.run_button.setEnabled(self._can_run())

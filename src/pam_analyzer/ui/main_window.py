@@ -36,7 +36,7 @@ class MainWindow(QMainWindow):
         app_state: AppState,
         campaign_repo: TomlCampaignRepository,
         detections_repo: CsvDetectionRepository,
-        analysis_runner: AnalysisRunner,
+        analysis_runners: dict[str, AnalysisRunner],
         import_orchestrator: ImportOrchestrator,
         settings: AppSettings,
         audio_extractor: SoundfileAudioExtractor,
@@ -74,7 +74,7 @@ class MainWindow(QMainWindow):
         if import_idx != -1:
             self.ui.tab_widget.removeTab(import_idx)
 
-        self._birdnet_panel = BirdNetPanel(app_state, analysis_runner, campaign_repo, self.ui.birdnet_tab)
+        self._birdnet_panel = BirdNetPanel(app_state, analysis_runners, campaign_repo, self.ui.birdnet_tab)
         self._mount_tab(self.ui.birdnet_tab, self._birdnet_panel, "BirdNET")
 
         self._examine_panel = ExaminePanel(

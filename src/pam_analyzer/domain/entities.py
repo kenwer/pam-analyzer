@@ -16,6 +16,7 @@ class Project:
     audio_recordings_path: Path
     sdcard_name_pattern: str = "^MSD-"
     detections_output_path: Path | None = None
+    analysis_model: str = "BirdNET"
     birdnet_min_conf: float = 0.25
     birdnet_overlap: float = 0.0
     birdnet_locales: tuple[str, ...] = ()

@@ -32,6 +32,7 @@ DIST_DIR = ROOT_DIR / 'dist'
 BUILD_DIR = DIST_DIR / 'build' / APP_NAME
 VENV_DIR = DIST_DIR / 'venv'
 BIRDNET_CHECKPOINT_CACHE = DIST_DIR / '.birdnet-checkpoints'
+PERCH_CHECKPOINT_CACHE = DIST_DIR / '.perch-checkpoints'
 
 # Modules to collect via --collect-all
 # QtQuick, QtQuick.Controls, QtLocation, QtPositioning are required by the MapPickerWidget
@@ -84,6 +85,22 @@ BIRDNET_PREDOWNLOAD = textwrap.dedent("""
         print(f'ERROR: BirdNET checkpoints still missing at {ckpt}', file=sys.stderr)
         sys.exit(1)
     print(f'Checkpoints ready: {ckpt}')
+""").strip()
+
+# Pre-download Perch v2 SavedModel into birdnet_analyzer's checkpoints/perch_v2.
+# ensure_perch_exists() pulls the model from kagglehub (no auth required for the
+# public CPU variant) and copytrees it into cfg.PERCH_V2_MODEL_PATH. From there,
+# --collect-data birdnet_analyzer bundles it into the frozen binary, so the
+# shipped app never touches kagglehub at runtime.
+PERCH_PREDOWNLOAD = textwrap.dedent("""
+    import os, sys
+    import birdnet_analyzer.config as cfg
+    from birdnet_analyzer.utils import ensure_perch_exists, check_perchv2_files
+    ensure_perch_exists()
+    if not check_perchv2_files():
+        print(f'ERROR: Perch v2 still missing at {cfg.PERCH_V2_MODEL_PATH}', file=sys.stderr)
+        sys.exit(1)
+    print(f'Perch v2 ready: {cfg.PERCH_V2_MODEL_PATH}')
 """).strip()
 
 
@@ -142,6 +159,31 @@ def main() -> None:
                 print(f'  Download failed (attempt {attempt}/{max_attempts}), retrying...')
         shutil.copytree(venv_ckpt, BIRDNET_CHECKPOINT_CACHE, dirs_exist_ok=True)
         print(f'  Cached checkpoints to {BIRDNET_CHECKPOINT_CACHE}')
+
+    # Perch v2 lives next to the BirdNET checkpoints inside the same package
+    # dir (checkpoints/perch_v2). Restoring it after the BirdNET copytree above
+    # is safe because dirs_exist_ok=True merges; the two model trees never
+    # overlap in file names.
+    venv_perch = venv_ckpt / 'perch_v2'
+    if PERCH_CHECKPOINT_CACHE.exists() and any(PERCH_CHECKPOINT_CACHE.iterdir()):
+        print('  Restoring Perch v2 checkpoints from cache')
+        shutil.copytree(PERCH_CHECKPOINT_CACHE, venv_perch, dirs_exist_ok=True)
+    else:
+        print('  Pre-downloading Perch v2 model (~391 MB, first build only)')
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            try:
+                run(
+                    ['uv', 'run', '--no-project', 'python', '-c', PERCH_PREDOWNLOAD],
+                    env=venv_env,
+                )
+                break
+            except subprocess.CalledProcessError:
+                if attempt == max_attempts:
+                    raise
+                print(f'  Download failed (attempt {attempt}/{max_attempts}), retrying...')
+        shutil.copytree(venv_perch, PERCH_CHECKPOINT_CACHE, dirs_exist_ok=True)
+        print(f'  Cached Perch v2 to {PERCH_CHECKPOINT_CACHE}')
 
     print('  Generating app icon')
     BUILD_DIR.mkdir(parents=True, exist_ok=True)

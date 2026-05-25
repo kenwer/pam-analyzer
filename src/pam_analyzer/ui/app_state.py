@@ -180,6 +180,7 @@ class AppState(QObject):
     def update_birdnet_settings(
         self,
         *,
+        analysis_model: str | None = None,
         min_conf: float | None = None,
         overlap: float | None = None,
         locales: tuple[str, ...] | None = None,
@@ -188,6 +189,8 @@ class AppState(QObject):
         if self._project is None:
             return
         fields: dict = {}
+        if analysis_model is not None:
+            fields["analysis_model"] = str(analysis_model)
         if min_conf is not None:
             fields["birdnet_min_conf"] = float(min_conf)
         if overlap is not None:

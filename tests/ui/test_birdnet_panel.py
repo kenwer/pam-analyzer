@@ -75,7 +75,7 @@ def state(project_and_campaigns) -> AppState:
 @pytest.fixture
 def panel(qtbot, state: AppState, project_and_campaigns) -> BirdNetPanel:
     proj, _ = project_and_campaigns
-    p = BirdNetPanel(state, _FakeRunner(), TomlCampaignRepository())
+    p = BirdNetPanel(state, {"BirdNET": _FakeRunner()}, TomlCampaignRepository())
     qtbot.addWidget(p)
     state.load_project(proj.path)
     return p
@@ -83,7 +83,7 @@ def panel(qtbot, state: AppState, project_and_campaigns) -> BirdNetPanel:
 
 def test_panel_loads_disabled_without_project(qtbot):
     state = AppState(TomlProjectRepository(), TomlCampaignRepository())
-    p = BirdNetPanel(state, _FakeRunner(), TomlCampaignRepository())
+    p = BirdNetPanel(state, {"BirdNET": _FakeRunner()}, TomlCampaignRepository())
     qtbot.addWidget(p)
 
     assert not p.ui.run_button.isEnabled()
@@ -177,7 +177,7 @@ def test_loads_previous_results_from_disk(qtbot, tmp_path: Path):
     )
 
     state = AppState(TomlProjectRepository(), TomlCampaignRepository())
-    panel = BirdNetPanel(state, _FakeRunner(), TomlCampaignRepository())
+    panel = BirdNetPanel(state, {"BirdNET": _FakeRunner()}, TomlCampaignRepository())
     qtbot.addWidget(panel)
 
     state.load_project(proj.path)

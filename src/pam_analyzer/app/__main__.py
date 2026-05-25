@@ -15,6 +15,7 @@ from ..infrastructure import (
     AudioImporter,
     BirdnetRunner,
     CsvDetectionRepository,
+    PerchRunner,
     PsutilSdCardScanner,
     SoundfileAudioExtractor,
     TomlCampaignRepository,
@@ -32,7 +33,11 @@ def build_main_window() -> MainWindow:
     campaign_repo = TomlCampaignRepository()
     detection_repo = CsvDetectionRepository()
     audio_extractor = SoundfileAudioExtractor()
-    analysis_runner = BirdnetRunner()
+    # Ordered: first key is the default model in the panel's dropdown.
+    analysis_runners = {
+        "BirdNET": BirdnetRunner(),
+        "Perch v2": PerchRunner(),
+    }
     sdcard_scanner = PsutilSdCardScanner()
     audio_importer = AudioImporter()
     import_orchestrator = ImportOrchestrator(audio_importer, sdcard_scanner)
@@ -43,7 +48,7 @@ def build_main_window() -> MainWindow:
         app_state,
         campaign_repo,
         detection_repo,
-        analysis_runner,
+        analysis_runners,
         import_orchestrator,
         settings,
         audio_extractor,
