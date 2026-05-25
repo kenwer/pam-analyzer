@@ -36,6 +36,7 @@ immediately instead of draining.
 from __future__ import annotations
 
 import csv
+import importlib.util
 import logging
 import os
 import re
@@ -48,12 +49,6 @@ from functools import lru_cache
 from multiprocessing import Pool
 from pathlib import Path
 
-import birdnet_analyzer
-import birdnet_analyzer.config as birdnet_cfg
-from birdnet_analyzer.analyze.core import _set_params
-from birdnet_analyzer.analyze.utils import analyze_file as _bn_analyze_file
-from birdnet_analyzer.analyze.utils import save_analysis_params
-
 from ..domain import (
     AnalysisProgress,
     AnalysisProgressSnapshot,
@@ -65,6 +60,14 @@ from ..domain import (
 )
 from ..domain.entities import CampaignRunResult
 from . import paths
+
+# Note: `birdnet_analyzer` is intentionally NOT imported here. Its package
+# __init__.py pulls in TensorFlow, which adds ~11 s to a frozen-binary
+# launch. Imports of birdnet_analyzer (and its config/analyze/species
+# submodules) are inlined into the specific functions that need them, so
+# the cost is paid once on first analyze click instead of on every app
+# start. _locale_file_map() avoids the import entirely by using
+# importlib.util.find_spec to locate the package directory.
 
 
 def _count_audio_files(campaign_dir: Path) -> int:
@@ -121,7 +124,12 @@ def _locale_file_map() -> dict[str, Path]:
     Consumed by _load_locale_labels and exposed to the UI via
     _get_available_locales.
     """
-    labels_dir = Path(birdnet_analyzer.__file__).parent / "labels" / "V2.4"
+    # find_spec locates the package directory without executing its __init__.py
+    # (which would import TensorFlow). We only need the on-disk path here.
+    spec = importlib.util.find_spec("birdnet_analyzer")
+    if spec is None or spec.origin is None:
+        return {}
+    labels_dir = Path(spec.origin).parent / "labels" / "V2.4"
     prefix = "BirdNET_GLOBAL_6K_V2.4_Labels_"
     return {
         p.stem[len(prefix):]: p
@@ -334,6 +342,8 @@ def _analyze_file_with_path(item):
     so this wrapper hands it back. Top-level so multiprocessing can
     pickle it under the 'spawn' start method (default on macOS/Windows).
     """
+    from birdnet_analyzer.analyze.utils import analyze_file as _bn_analyze_file
+
     _bn_analyze_file(item)
     return item[0]
 
@@ -359,6 +369,18 @@ def _analyze_with_per_file_progress(
     When: called from _run_campaign, once per week_dir in location mode or
     once for the whole campaign in list / global mode.
     """
+    # Lazy import: pulling birdnet_analyzer at module import time triggers a
+    # ~11 s TensorFlow load on the frozen binary, blocking app startup. We
+    # only need it once analysis actually runs, so we pay the cost here.
+    import birdnet_analyzer.config as birdnet_cfg
+    from birdnet_analyzer.analyze.core import _set_params
+    from birdnet_analyzer.analyze.utils import (
+        analyze_file as _bn_analyze_file,
+    )
+    from birdnet_analyzer.analyze.utils import (
+        save_analysis_params,
+    )
+
     flist = _set_params(
         audio_input=audio_input,
         output=output,
@@ -480,6 +502,11 @@ def _run_campaign(
     Called once per campaign by BirdnetRunner.run. Raises CancelledError
     when progress.is_cancelled() flips to True at any of the checked points.
     """
+    # Lazy import: see note in _analyze_with_per_file_progress. We read
+    # birdnet_cfg.MODEL_PATH below to record the model name in the run
+    # context, so the import has to happen before that point.
+    import birdnet_analyzer.config as birdnet_cfg
+
     campaign_name = ci.name
     t0 = time.monotonic()
     output_dir.mkdir(parents=True, exist_ok=True)
