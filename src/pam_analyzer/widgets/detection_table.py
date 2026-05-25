@@ -10,8 +10,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QEvent, QItemSelectionModel, QModelIndex, QPoint, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QColor, QPainter
+from PySide6.QtCore import QItemSelectionModel, QModelIndex, QPoint, Qt, QTimer, Signal
+from PySide6.QtGui import QAction, QColor, QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QMenu,
@@ -221,7 +221,7 @@ class DetectionTable(QWidget):
         layout.setSpacing(0)
         layout.addWidget(self._splitter)
 
-        self._table.installEventFilter(self)
+        self._setup_shortcuts()
 
     # public API
     def setModel(self, model: DetectionsTableModel) -> None:  # noqa: N802, Qt API
@@ -264,44 +264,39 @@ class DetectionTable(QWidget):
         return self._table
 
     # keyboard shortcuts
-    def eventFilter(self, obj: object, event: object) -> bool:  # noqa: N802 (Qt API)
-        if obj is not self._table or not hasattr(event, "type"):
-            return super().eventFilter(obj, event)
-        if event.type() != QEvent.Type.KeyPress:
-            return super().eventFilter(obj, event)
-        key = event.key()
-        if key == Qt.Key.Key_Space:
-            if self._player.isVisible():
-                self._player.toggle()
-                return True
-            return False
-        current = self._table.currentIndex()
-        if not current.isValid():
-            return super().eventFilter(obj, event)
-        if key == Qt.Key.Key_T:
-            self._set_verified("true")
-            return True
-        if key == Qt.Key.Key_F:
-            self._set_verified("false")
-            return True
-        if key == Qt.Key.Key_U:
-            self._set_verified("uncertain")
-            return True
-        if key == Qt.Key.Key_C:
-            self._start_editing_column("Comment")
-            return True
-        if key == Qt.Key.Key_S:
-            self._start_editing_column("Corrected_Species")
-            return True
-        if key == Qt.Key.Key_J:
-            if self._player.isVisible():
-                self._player.jump_to_detection()
-            return True
-        if key == Qt.Key.Key_B:
-            if self._player.isVisible():
-                self._player.seek_to_file_start()
-            return True
-        return super().eventFilter(obj, event)
+    def _setup_shortcuts(self) -> None:
+        """Bind table-level shortcuts via QShortcut.
+
+        QKeySequence does the modifier matching, so a bare "S" sequence
+        won't fire on Cmd+S / Ctrl+S. WidgetShortcut context scopes them
+        to the table, so an open editor delegate still receives raw keys.
+        """
+        bindings = (
+            ("Space", self._toggle_player),
+            ("T", lambda: self._set_verified("true")),
+            ("F", lambda: self._set_verified("false")),
+            ("U", lambda: self._set_verified("uncertain")),
+            ("C", lambda: self._start_editing_column("Comment")),
+            ("S", lambda: self._start_editing_column("Corrected_Species")),
+            ("J", self._player_jump_to_detection),
+            ("B", self._player_seek_to_file_start),
+        )
+        for sequence, handler in bindings:
+            shortcut = QShortcut(QKeySequence(sequence), self._table)
+            shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
+            shortcut.activated.connect(handler)
+
+    def _toggle_player(self) -> None:
+        if self._player.isVisible():
+            self._player.toggle()
+
+    def _player_jump_to_detection(self) -> None:
+        if self._player.isVisible():
+            self._player.jump_to_detection()
+
+    def _player_seek_to_file_start(self) -> None:
+        if self._player.isVisible():
+            self._player.seek_to_file_start()
 
     def _set_verified(self, value: str) -> None:
         if self._model is None:
