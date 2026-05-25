@@ -111,7 +111,7 @@ def _extra_column_getter(key: str) -> Callable[[Detection], Any]:
 _BLANK_OPS: frozenset[FilterOp] = frozenset({FilterOp.BLANK, FilterOp.NOT_BLANK})
 
 DEFAULT_HIDDEN_COLUMNS: frozenset[str] = frozenset(
-    {"Start_Time", "End_Time", "Lat", "Lon", "Species_List", "Min_Conf", "Model"}
+    {"Start_Time", "End_Time", "Lat", "Lon", "Species_List", "Min_Conf"}
 )
 """Column names hidden by default on first run (no saved state)."""
 

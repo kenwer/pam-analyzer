@@ -249,10 +249,28 @@ class ExaminePanel(QWidget):
             if idx >= 0:
                 new_priority.append((idx, order))
         if not new_priority:
-            conf_idx = self._model.index_of("Confidence")
-            if conf_idx >= 0:
-                new_priority.append((conf_idx, Qt.DescendingOrder))
+            new_priority = self._default_sort_priority()
         self.ui.detections_table.setSortPriority(new_priority)
+
+    def _default_sort_priority(self) -> list[tuple[int, Qt.SortOrder]]:
+        """Group rows by Campaign/ARU/Species, then surface high-confidence hits first.
+
+        Used when there's no user-chosen sort to restore (fresh app start or
+        first campaign load). Skips any column the current model layout
+        doesn't know about, so this stays robust if a column is renamed or
+        removed later.
+        """
+        defaults: list[tuple[str, Qt.SortOrder]] = [
+            ("ARU", Qt.AscendingOrder),
+            ("Species", Qt.AscendingOrder),
+            ("Confidence", Qt.DescendingOrder),
+        ]
+        priority: list[tuple[int, Qt.SortOrder]] = []
+        for name, order in defaults:
+            idx = self._model.index_of(name)
+            if idx >= 0:
+                priority.append((idx, order))
+        return priority
 
     def _on_detection_count_changed(self, shown: int) -> None:
         total = len(self._raw_detections)
