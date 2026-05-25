@@ -18,10 +18,10 @@ import re
 import time
 from pathlib import Path
 
-_log = logging.getLogger(__name__)
-
 from ..domain import AudioInventory, CampaignInventory, CardInventory, WeekInventory
 from . import paths
+
+_log = logging.getLogger(__name__)
 
 _AUDIO_SUFFIXES = paths.AUDIO_EXTENSIONS
 _WEEK_DIRNAME = re.compile(r"^week_(\d{2})$")

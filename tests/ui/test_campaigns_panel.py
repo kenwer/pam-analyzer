@@ -11,9 +11,9 @@ from pam_analyzer.infrastructure import (
     TomlCampaignRepository,
     TomlProjectRepository,
 )
-from pam_analyzer.workers import ImportOrchestrator
 from pam_analyzer.ui.app_state import AppState
 from pam_analyzer.ui.panels.campaigns_panel import CampaignsPanel
+from pam_analyzer.workers import ImportOrchestrator
 
 
 class _FakeScanner:

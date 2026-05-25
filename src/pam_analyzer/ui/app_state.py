@@ -11,8 +11,6 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
 
-_log = logging.getLogger(__name__)
-
 from ..domain import (
     AnalysisRunResult,
     AudioInventory,
@@ -26,6 +24,8 @@ from ..infrastructure import (
     discover_analysis_result,
     discover_audio_inventory,
 )
+
+_log = logging.getLogger(__name__)
 
 
 class AppState(QObject):

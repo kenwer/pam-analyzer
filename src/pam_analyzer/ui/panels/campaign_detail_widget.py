@@ -34,8 +34,8 @@ from ...domain.audio_import import (
     DetectedCard,
     ImportProgress,
 )
-from ...workers import ImportOrchestrator
 from ...widgets import MapPickerWidget
+from ...workers import ImportOrchestrator
 from ..app_state import AppState
 from ..dialogs.import_conflict_dialog import ImportConflictDialog
 from ..models.audio_inventory_tree_model import AudioInventoryTreeModel, format_bytes

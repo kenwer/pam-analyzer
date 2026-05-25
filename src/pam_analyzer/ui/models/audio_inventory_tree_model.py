@@ -58,7 +58,7 @@ class AudioInventoryTreeModel(QStandardItemModel):
         size = QStandardItem(format_bytes(week.total_bytes))
         for item in (name, files, size):
             item.setEditable(False)
-        for path, sz in zip(week.files, week.file_sizes):
+        for path, sz in zip(week.files, week.file_sizes, strict=True):
             name.appendRow(self._file_row(path, sz))
         return [name, files, size]
 
