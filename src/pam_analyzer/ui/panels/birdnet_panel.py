@@ -26,6 +26,7 @@ from ...domain import (
     Project,
 )
 from ...infrastructure import TomlCampaignRepository
+from ...widgets.no_hover_style import disable_item_hover
 from ...workers import AnalysisWorker
 from ..app_state import AppState
 from ..models.birdnet_results_model import BirdnetResultsModel
@@ -73,6 +74,7 @@ class BirdNetPanel(QWidget):
         self._results_model = BirdnetResultsModel(self)
         self.ui.results_tree.setModel(self._results_model)
         self.ui.results_tree.header().setStretchLastSection(True)
+        disable_item_hover(self.ui.results_tree)
 
         self._locale_checks: dict[str, QCheckBox] = {}
         self._state.available_locales = self._runner.available_locales()

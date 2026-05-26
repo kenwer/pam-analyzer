@@ -15,7 +15,6 @@ from PySide6.QtGui import QAction, QColor, QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QMenu,
-    QProxyStyle,
     QSplitter,
     QStyle,
     QStyledItemDelegate,
@@ -30,6 +29,7 @@ from .combo_delegate import ComboDelegate, fixed
 from .filter_ops import FilterOp
 from .header_filter_row import HeaderFilterRow
 from .multi_column_sort_table import MultiColumnSortTable
+from .no_hover_style import disable_item_hover
 
 # Verified column accepts the same fixed set the original AG Grid did.
 _VERIFIED_CHOICES = ("", "true", "false", "uncertain")
@@ -106,23 +106,6 @@ class _PersistentCheckMenu(QMenu):
         super().mouseReleaseEvent(event)
 
 
-class _NoHoverProxyStyle(QProxyStyle):
-    """Strips the per-cell hover highlight so only row selection is visible.
-
-    Windows' QWindowsVistaStyle sets State_MouseOver on every item under the
-    cursor. Clearing it here before delegating to the base style suppresses the
-    cell highlight across all delegates without modifying any of them.
-    """
-
-    def drawControl(self, element, option, painter, widget=None) -> None:
-        if element == QStyle.ControlElement.CE_ItemViewItem:
-            opt = QStyleOptionViewItem(option)
-            opt.state &= ~QStyle.StateFlag.State_MouseOver
-            super().drawControl(element, opt, painter, widget)
-        else:
-            super().drawControl(element, option, painter, widget)
-
-
 class DetectionTable(QWidget):
     """Compound widget: multi-column sort table + per-column filter row
     + play-button column + persistent audio player panel.
@@ -162,14 +145,7 @@ class DetectionTable(QWidget):
 
         # sort table
         self._table = MultiColumnSortTable()
-        # Pass no base style: QProxyStyle(style) reparents and thus takes
-        # ownership of the style it is given, and self._table.style() is the
-        # shared QApplication style. Owning it means destroying this proxy
-        # destroys the global style, crashing every later widget. With no base
-        # style QProxyStyle delegates to the app style without owning it. Keep
-        # a reference so the proxy outlives the table (setStyle does not own it).
-        self._table_style = _NoHoverProxyStyle()
-        self._table.setStyle(self._table_style)
+        disable_item_hover(self._table)
         self._table.setWordWrap(False)
         self._table.setAlternatingRowColors(True)
         self._table.verticalHeader().setVisible(False)
