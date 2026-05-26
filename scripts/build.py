@@ -104,7 +104,7 @@ def run(cmd: list, env: dict | None = None) -> None:
     subprocess.run(cmd, check=True, env=env)
 
 
-def _prewarm_models(python: Path, venv_env: dict) -> None:
+def _prewarm_models(python: Path, build_env: dict) -> None:
     """Download every model into MODEL_CACHE, with retry on transient failures.
 
     Skips the download when the cache already exists and is non-empty,
@@ -124,7 +124,7 @@ def _prewarm_models(python: Path, venv_env: dict) -> None:
     KAGGLEHUB_CACHE.mkdir(parents=True, exist_ok=True)
 
     download_env = {
-        **venv_env,
+        **build_env,
         'BIRDNET_APP_DATA': str(BIRDNET_APP_DATA_CACHE),
         'KAGGLEHUB_CACHE': str(KAGGLEHUB_CACHE),
     }
@@ -149,7 +149,15 @@ def main() -> None:
     is_mac = sys.platform == 'darwin'
     is_win = sys.platform == 'win32'
     python = VENV_DIR / ('Scripts/python.exe' if is_win else 'bin/python')
-    venv_env = {**os.environ, 'VIRTUAL_ENV': str(VENV_DIR)}
+
+    # Force uv to use our build venv instead of the default project .venv.
+    # VIRTUAL_ENV is for general python tool awareness, UV_PROJECT_ENVIRONMENT
+    # is specifically to stop uv from auto-discovering the root .venv.
+    build_env = {
+        **os.environ,
+        'VIRTUAL_ENV': str(VENV_DIR),
+        'UV_PROJECT_ENVIRONMENT': str(VENV_DIR),
+    }
 
     print(f'Building : {APP_NAME}')
     print(f'  Platform : {sys.platform}')
@@ -158,10 +166,26 @@ def main() -> None:
     DIST_DIR.mkdir(parents=True, exist_ok=True)
     run(['uv', 'venv', '--python', '3.12', '--clear', VENV_DIR])
 
-    print('  Installing dependencies')
-    run(['uv', 'pip', 'install', '--quiet', ROOT_DIR, 'pyinstaller', '--python', python])
+    print('  Syncing build venv (project + dev deps including kagglehub)')
+    # uv sync installs the project + all dependency groups.
+    # --group dev ensures kagglehub is installed (needed for Perch v2 model download).
+    # --no-install-project skips editable install so we can compile .ui/.qrc
+    # before the package is installed (compiled files are picked up by pip install).
+    run(
+        ['uv', 'sync', '--python', str(python), '--group', 'dev', '--no-install-project'],
+        env=build_env,
+    )
 
-    _prewarm_models(python, venv_env)
+    print('  Compiling Qt resources and UI files (before install)')
+    # Compile .ui -> ui_*.py and .qrc -> *_rc.py before installing the package
+    # so that `uv pip install` picks them up as part of the source tree.
+    run(['uv', 'run', '--no-project', 'python', str(PACKAGING_DIR / 'compile_ui.py')], env=build_env)
+    run(['uv', 'run', '--no-project', 'python', str(PACKAGING_DIR / 'compile_qrc.py')], env=build_env)
+
+    print('  Installing project + pyinstaller')
+    run(['uv', 'pip', 'install', '--quiet', ROOT_DIR, 'pyinstaller', '--python', python], env=build_env)
+
+    _prewarm_models(python, build_env)
 
     print('  Generating app icon')
     BUILD_DIR.mkdir(parents=True, exist_ok=True)
@@ -263,7 +287,7 @@ def main() -> None:
         #   (--noconsole detaches streams for double-click launches).
         cmd += ['--runtime-hook', PACKAGING_DIR / 'rthook_win_dll_path.py']
     cmd.append(ROOT_DIR / 'src' / 'pam_analyzer' / '__main__.py')
-    run(cmd, env=venv_env)
+    run(cmd, env=build_env)
 
     print(f'\nDone. Binary is in {DIST_DIR}/')
 
