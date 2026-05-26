@@ -24,7 +24,7 @@ _HEADERS = [
 
 
 def _seed_csv(out_base: Path, campaign: str, rows: list[list[str]]) -> None:
-    path = campaign_csv_for_model(out_base, campaign, "birdnet")
+    path = campaign_csv_for_model(out_base, campaign, "BirdNET-2.4")
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
@@ -105,7 +105,7 @@ def test_save_round_trip_preserves_edits(tmp_path: Path) -> None:
 def test_lat_lon_round_trip(tmp_path: Path) -> None:
     """Lat/Lon are core fields that map to named Detection attributes, not extra."""
     headers = _HEADERS + ["Lat", "Lon"]
-    path = campaign_csv_for_model(tmp_path, "east", "birdnet")
+    path = campaign_csv_for_model(tmp_path, "east", "BirdNET-2.4")
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
@@ -130,7 +130,7 @@ def test_lat_lon_round_trip(tmp_path: Path) -> None:
 def test_truly_unknown_columns_go_to_extra(tmp_path: Path) -> None:
     """Columns not in _CORE_FIELDS still land in Detection.extra."""
     headers = _HEADERS + ["CustomTag"]
-    path = campaign_csv_for_model(tmp_path, "east", "birdnet")
+    path = campaign_csv_for_model(tmp_path, "east", "BirdNET-2.4")
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)

@@ -33,7 +33,7 @@ def _isolated_qsettings(tmp_path, monkeypatch):
 
 
 class _FakeRunner:
-    model_key = "birdnet"
+    model_key = "BirdNET-2.4"
 
     def count_audio_files(self, _path: Path) -> int:
         return 0
@@ -77,7 +77,7 @@ def state(project_and_campaigns) -> AppState:
 @pytest.fixture
 def panel(qtbot, state: AppState, project_and_campaigns) -> BirdNetPanel:
     proj, _ = project_and_campaigns
-    p = BirdNetPanel(state, {"BirdNET": _FakeRunner()}, TomlCampaignRepository())
+    p = BirdNetPanel(state, {"BirdNET-2.4": _FakeRunner()}, TomlCampaignRepository())
     qtbot.addWidget(p)
     state.load_project(proj.path)
     return p
@@ -85,7 +85,7 @@ def panel(qtbot, state: AppState, project_and_campaigns) -> BirdNetPanel:
 
 def test_panel_loads_disabled_without_project(qtbot):
     state = AppState(TomlProjectRepository(), TomlCampaignRepository())
-    p = BirdNetPanel(state, {"BirdNET": _FakeRunner()}, TomlCampaignRepository())
+    p = BirdNetPanel(state, {"BirdNET-2.4": _FakeRunner()}, TomlCampaignRepository())
     qtbot.addWidget(p)
 
     assert not p.ui.run_button.isEnabled()
@@ -169,7 +169,7 @@ def test_loads_previous_results_from_disk(qtbot, tmp_path: Path):
     output_base = proj.output_base
     campaign_dir = output_base / "alpha"
     campaign_dir.mkdir(parents=True)
-    csv_path = campaign_dir / "alpha-detections-birdnet.csv"
+    csv_path = campaign_dir / "alpha-detections-BirdNET-2.4.csv"
     csv_path.write_text(
         "Species,Confidence\n"
         "Robin,0.9\n"
@@ -179,7 +179,7 @@ def test_loads_previous_results_from_disk(qtbot, tmp_path: Path):
     )
 
     state = AppState(TomlProjectRepository(), TomlCampaignRepository())
-    panel = BirdNetPanel(state, {"BirdNET": _FakeRunner()}, TomlCampaignRepository())
+    panel = BirdNetPanel(state, {"BirdNET-2.4": _FakeRunner()}, TomlCampaignRepository())
     qtbot.addWidget(panel)
 
     state.load_project(proj.path)
@@ -201,18 +201,18 @@ def test_panel_shows_perch_csv_when_model_switched(qtbot, tmp_path: Path):
 
     campaign_dir = proj.output_base / "alpha"
     campaign_dir.mkdir(parents=True)
-    bn = campaign_dir / "alpha-detections-birdnet.csv"
+    bn = campaign_dir / "alpha-detections-BirdNET-2.4.csv"
     bn.write_text("Species,Confidence\nRobin,0.9\n", encoding="utf-8")
-    pc = campaign_dir / "alpha-detections-perch.csv"
+    pc = campaign_dir / "alpha-detections-Perch-2.0.csv"
     pc.write_text("Species,Confidence\nCrow,0.7\nJay,0.6\n", encoding="utf-8")
 
     state = AppState(TomlProjectRepository(), TomlCampaignRepository())
     bn_runner = _FakeRunner()
     perch_runner = _FakeRunner()
-    perch_runner.model_key = "perch"
+    perch_runner.model_key = "Perch-2.0"
     panel = BirdNetPanel(
         state,
-        {"BirdNET": bn_runner, "Perch v2": perch_runner},
+        {"BirdNET-2.4": bn_runner, "Perch-2.0": perch_runner},
         TomlCampaignRepository(),
     )
     qtbot.addWidget(panel)
@@ -221,7 +221,7 @@ def test_panel_shows_perch_csv_when_model_switched(qtbot, tmp_path: Path):
     # Initially BirdNET is selected -> birdnet row only.
     assert "1 detection" in panel.ui.summary_label.text()
 
-    perch_idx = panel.ui.model_combo.findData("Perch v2")
+    perch_idx = panel.ui.model_combo.findData("Perch-2.0")
     panel.ui.model_combo.setCurrentIndex(perch_idx)
 
     # Now Perch is selected -> perch row (2 detections) is shown instead.

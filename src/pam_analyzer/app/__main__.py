@@ -62,10 +62,8 @@ def build_main_window() -> MainWindow:
     detection_repo = CsvDetectionRepository()
     audio_extractor = SoundfileAudioExtractor()
     # Ordered: first key is the default model in the panel's dropdown.
-    analysis_runners = {
-        "BirdNET": BirdnetRunner(),
-        "Perch v2": PerchRunner(),
-    }
+    # Keying by model_key keeps a single source of truth for model identity.
+    analysis_runners = {r.model_key: r for r in (BirdnetRunner(), PerchRunner())}
     sdcard_scanner = PsutilSdCardScanner()
     audio_importer = AudioImporter()
     import_orchestrator = ImportOrchestrator(audio_importer, sdcard_scanner)

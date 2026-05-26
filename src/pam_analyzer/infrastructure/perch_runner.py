@@ -21,7 +21,7 @@ Sequencing per campaign:
                  and triggers session.cancel() when is_cancelled() flips
            -> _emit_progress("parsing")
            -> walk structured array; assign per-(file, chunk) rank;
-              write campaign-detections-perch.csv
+              write campaign-detections-Perch-2.0.csv
            -> _emit_progress("done")
 
 Cancellation: the progress callback the lib invokes during inference
@@ -587,7 +587,7 @@ class PerchRunner:
     space (apply_sigmoid=False) and translate to a calibrated probability
     only at the CSV boundary; see _PERCH_LOGIT_OFFSET for why a vanilla
     sigmoid is not appropriate for Perch v2. Output goes to
-    <campaign>/<campaign>-detections-perch.csv so it can coexist with a
+    <campaign>/<campaign>-detections-Perch-2.0.csv so it can coexist with a
     parallel BirdNET run on the same campaign.
 
     Performance (Apple M4 Pro, CPU only, 4 h 3 min of audio, 243 WAV files):
@@ -600,7 +600,7 @@ class PerchRunner:
     set user-facing ETAs accordingly.
     """
 
-    model_key = "perch"
+    model_key = "Perch-2.0"
 
     def count_audio_files(self, campaign_dir: Path) -> int:
         return _count_audio_files(campaign_dir)

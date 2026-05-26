@@ -57,7 +57,7 @@ def project(tmp_path: Path) -> Project:
                 location=LatLon(48.0, 11.0),
             )
         )
-        csv_path = out_base / name / f"{name}-detections-birdnet.csv"
+        csv_path = out_base / name / f"{name}-detections-BirdNET-2.4.csv"
         csv_path.parent.mkdir()
         with open(csv_path, "w", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
@@ -146,7 +146,7 @@ def test_autosave_debounces_and_persists(qtbot, panel: ExaminePanel, project) ->
     # Pick the row whose campaign we'll re-read after the save.
     detection = panel._model.detection_at(0)
     assert detection is not None
-    csv_path = project.output_base / detection.campaign / f"{detection.campaign}-detections-birdnet.csv"
+    csv_path = project.output_base / detection.campaign / f"{detection.campaign}-detections-BirdNET-2.4.csv"
 
     panel._model.setData(idx, "true")
     # Auto-save runs after the debounce window. Wait for the timer to fire and
@@ -167,7 +167,7 @@ def test_autosave_preserves_unedited_rows(qtbot, panel: ExaminePanel, project) -
     idx = panel._model.index(0, col)
     detection = panel._model.detection_at(0)
     assert detection is not None
-    csv_path = project.output_base / detection.campaign / f"{detection.campaign}-detections-birdnet.csv"
+    csv_path = project.output_base / detection.campaign / f"{detection.campaign}-detections-BirdNET-2.4.csv"
 
     rows_before = csv_path.read_text(encoding="utf-8").splitlines()
     assert len(rows_before) == 4  # header + 3 fixture rows

@@ -103,7 +103,7 @@ class BirdNetPanel(QWidget):
         with the model so a Perch-only overlap value gets clamped back
         before a BirdNET run sees it.
         """
-        max_overlap_dec = 49 if self._runner_key == "Perch v2" else 29
+        max_overlap_dec = 49 if self._runner_key == "Perch-2.0" else 29
         self.ui.overlap_slider.setMaximum(max_overlap_dec)
         if self.ui.overlap_slider.value() > max_overlap_dec:
             self.ui.overlap_slider.setValue(max_overlap_dec)
@@ -338,7 +338,7 @@ class BirdNetPanel(QWidget):
                 return
             campaigns = [c]
         if not campaigns:
-            QMessageBox.information(self, "BirdNET", "No campaigns to run.")
+            QMessageBox.information(self, self._runner_key, "No campaigns to run.")
             return
 
         settings = AnalysisSettings(

@@ -5,7 +5,7 @@ loaded via the birdnet>=0.2 library. Audio I/O, 3 s window framing,
 batched inference, sigmoid scoring, and the confidence threshold all live
 inside the lib's predict_session pipeline; this module is responsible for
 the per-campaign loop, species-filter resolution, locale-aware row
-shaping, and the campaign-detections-birdnet.csv output.
+shaping, and the campaign-detections-BirdNET-2.4.csv output.
 
 Sequencing per campaign mirrors PerchRunner so the worker / progress code
 does not need to know which runner is active:
@@ -26,7 +26,7 @@ does not need to know which runner is active:
            -> _emit_progress("parsing")
            -> walk structured array; post-filter by per-week allow-list;
               assign per-(file, chunk) rank; write
-              campaign-detections-birdnet.csv
+              campaign-detections-BirdNET-2.4.csv
            -> _emit_progress("done")
 
 The lib's `species_name` in result rows is in 'Scientific_Common' format
@@ -590,11 +590,11 @@ class BirdnetRunner:
     I/O, 3 s window framing, batched TFLite inference, sigmoid scoring,
     and the confidence threshold; this runner adds the per-campaign loop,
     species-filter resolution, locale-aware row shaping, and writes
-    <campaign>/<campaign>-detections-birdnet.csv plus the per-week
+    <campaign>/<campaign>-detections-BirdNET-2.4.csv plus the per-week
     species-list TXT files.
     """
 
-    model_key = "birdnet"
+    model_key = "BirdNET-2.4"
 
     def count_audio_files(self, campaign_dir: Path) -> int:
         return _count_audio_files(campaign_dir)

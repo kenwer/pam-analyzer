@@ -16,7 +16,7 @@ class _ProjectToml:
     audio_recordings_path: str = ""
     sdcard_name_pattern: str = "^MSD-"
     detections_output_path: str = ""
-    analysis_model: str = "BirdNET"
+    analysis_model: str = "BirdNET-2.4"
     birdnet_min_conf: float = 0.25
     birdnet_overlap: float = 0.0
     birdnet_locales: list[str] = field(default_factory=list)
