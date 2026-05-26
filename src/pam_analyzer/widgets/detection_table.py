@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QItemSelectionModel, QModelIndex, QPoint, Qt, QTimer, Signal
+from PySide6.QtCore import QItemSelectionModel, QLocale, QModelIndex, QPoint, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -145,6 +145,9 @@ class DetectionTable(QWidget):
 
         # sort table
         self._table = MultiColumnSortTable()
+        # Force C locale so floats render with "." regardless of system locale,
+        # matching the header filter row's float() parser.
+        self._table.setLocale(QLocale.c())
         disable_item_hover(self._table)
         self._table.setWordWrap(False)
         self._table.setAlternatingRowColors(True)
