@@ -60,6 +60,7 @@ Passive Acoustic Monitoring for Bird Species Detection
     - [Global](#global)
     - [Examine panel: detection row selected](#examine-panel-detection-row-selected)
   - [Changelog](#changelog)
+  - [Acknowledgements](#acknowledgements)
   - [License](#license)
 
 <!--TOC-->
@@ -249,6 +250,15 @@ These shortcuts work whenever a row is selected in the Examine panel and no cell
 
 ## Changelog
 The changelog can be found at the [CHANGELOG page](CHANGELOG.md).
+
+
+## Acknowledgements
+
+The author would like to thank the following projects:
+
+* [BirdNET](https://github.com/birdnet-team/birdnet)
+* [Perch 2.0](https://arxiv.org/pdf/2508.04665)
+* [Qt](https://www.qt.io/) / [PySide6](https://doc.qt.io/qtforpython/)
 
 
 ## License
