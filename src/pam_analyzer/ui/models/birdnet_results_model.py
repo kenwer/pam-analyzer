@@ -31,7 +31,8 @@ class BirdnetResultsModel(QStandardItemModel):
 
     def _append_campaigns(self, parent: QStandardItem, campaigns: tuple[CampaignRunResult, ...]) -> None:
         for c in campaigns:
-            label = f"{c.campaign_name}  ({c.detection_count:,} detections)"
+            model_name = f"{c.model_key}" if c.model_key else ""
+            label = f"{c.campaign_name} · {c.detection_count:,} detections via {model_name}"
             item = QStandardItem(label)
             files: list[Path] = [c.detections_csv]
             if c.species_list_txt is not None:

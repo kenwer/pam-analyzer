@@ -130,28 +130,39 @@ def test_slider_autosave_calls_update_birdnet_settings(panel: BirdNetPanel, stat
     assert abs(saved_args[-1]["min_conf"] - 0.60) < 1e-9
 
 
-def _make_result(tmp_path: Path, count: int = 42) -> AnalysisRunResult:
-    dummy_csv = tmp_path / "dummy.csv"
-    dummy_csv.touch()
+def _make_result_on_disk(state: AppState, count: int = 42) -> AnalysisRunResult:
+    """Plant a real CSV under the project's output_base so the disk-discovery
+    triggered by _on_succeeded picks it up, and return a matching in-memory
+    AnalysisRunResult for completeness."""
+    project = state.project
+    assert project is not None
+    campaign_dir = project.output_base / "alpha"
+    campaign_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = campaign_dir / "alpha-detections-BirdNET-2.4.csv"
+    csv_path.write_text(
+        "Species,Confidence\n" + "Robin,0.9\n" * count,
+        encoding="utf-8",
+    )
     return AnalysisRunResult(
         campaigns=(
             CampaignRunResult(
                 campaign_name="alpha",
-                output_dir=tmp_path,
-                detections_csv=dummy_csv,
+                output_dir=campaign_dir,
+                detections_csv=csv_path,
                 species_list_txt=None,
                 detection_count=count,
                 wav_count=10,
                 aru_count=2,
                 elapsed=1.5,
+                model_key="BirdNET-2.4",
             ),
         ),
         elapsed=1.5,
     )
 
 
-def test_on_succeeded_switches_to_results_page(panel: BirdNetPanel, tmp_path: Path):
-    result = _make_result(tmp_path)
+def test_on_succeeded_switches_to_results_page(panel: BirdNetPanel, state: AppState):
+    result = _make_result_on_disk(state)
     panel._on_succeeded(result)
 
     assert panel.ui.status_stack.currentIndex() == 2  # page_results
@@ -186,14 +197,15 @@ def test_loads_previous_results_from_disk(qtbot, tmp_path: Path):
 
     assert panel.ui.status_stack.currentIndex() == 2  # page_results
     assert state.last_analysis_result is not None
-    assert state.last_analysis_result.from_disk is True
-    assert "Loaded previous results" in panel.ui.summary_label.text()
+    assert len(state.last_analysis_result.campaigns) == 1
     assert "3 detections" in panel.ui.summary_label.text()
 
 
-def test_panel_shows_perch_csv_when_model_switched(qtbot, tmp_path: Path):
-    """A project with both birdnet and perch CSVs should reveal the perch one
-    after the user switches the model combo to Perch v2."""
+def test_panel_shows_all_csvs_regardless_of_model_selection(qtbot, tmp_path: Path):
+    """All CSVs in a project are listed at once. The model combo picks what
+    to run next; it does not filter the result view, because the filename
+    suffix already tells the user which model each row belongs to.
+    """
     audio_root = tmp_path / "audio"
     audio_root.mkdir()
     proj = Project(path=tmp_path / "dual.pamproj", audio_recordings_path=audio_root)
@@ -218,14 +230,72 @@ def test_panel_shows_perch_csv_when_model_switched(qtbot, tmp_path: Path):
     qtbot.addWidget(panel)
     state.load_project(proj.path)
 
-    # Initially BirdNET is selected -> birdnet row only.
-    assert "1 detection" in panel.ui.summary_label.text()
+    # Both rows visible from the start: 1 (birdnet) + 2 (perch) = 3 detections.
+    assert "3 detections" in panel.ui.summary_label.text()
+    assert panel._results_model.rowCount() == 2
 
+    # Switching the model selector does not filter or rearrange the rows.
     perch_idx = panel.ui.model_combo.findData("Perch-2.0")
     panel.ui.model_combo.setCurrentIndex(perch_idx)
+    assert "3 detections" in panel.ui.summary_label.text()
+    assert panel._results_model.rowCount() == 2
 
-    # Now Perch is selected -> perch row (2 detections) is shown instead.
-    assert "2 detections" in panel.ui.summary_label.text()
+
+def test_panel_keeps_birdnet_after_perch_run(qtbot, tmp_path: Path):
+    """After running BirdNET then Perch, both CSVs are visible. Regression
+    test: previously the in-memory result was replaced with only the fresh
+    run's rows, so the earlier sibling-model CSV vanished from the view.
+    """
+    audio_root = tmp_path / "audio"
+    audio_root.mkdir()
+    proj = Project(path=tmp_path / "seq.pamproj", audio_recordings_path=audio_root)
+    TomlProjectRepository().save(proj)
+    campaign_dir = proj.output_base / "alpha"
+    campaign_dir.mkdir(parents=True)
+    # The on-disk artifact BirdNET would have written.
+    (campaign_dir / "alpha-detections-BirdNET-2.4.csv").write_text(
+        "Species,Confidence\nRobin,0.9\nWren,0.8\n", encoding="utf-8"
+    )
+    # And the artifact Perch wrote during its run.
+    perch_csv = campaign_dir / "alpha-detections-Perch-2.0.csv"
+    perch_csv.write_text("Species,Confidence\nCrow,0.7\n", encoding="utf-8")
+
+    state = AppState(TomlProjectRepository(), TomlCampaignRepository())
+    bn_runner = _FakeRunner()
+    perch_runner = _FakeRunner()
+    perch_runner.model_key = "Perch-2.0"
+    panel = BirdNetPanel(
+        state,
+        {"BirdNET-2.4": bn_runner, "Perch-2.0": perch_runner},
+        TomlCampaignRepository(),
+    )
+    qtbot.addWidget(panel)
+    state.load_project(proj.path)
+
+    # Simulate Perch finishing: the runner has already written its CSV, and
+    # _on_succeeded triggers a fresh on-disk discovery.
+    fresh_perch = AnalysisRunResult(
+        campaigns=(
+            CampaignRunResult(
+                campaign_name="alpha",
+                output_dir=campaign_dir,
+                detections_csv=perch_csv,
+                species_list_txt=None,
+                detection_count=1,
+                wav_count=1,
+                aru_count=1,
+                elapsed=0.5,
+                model_key="Perch-2.0",
+            ),
+        ),
+        elapsed=0.5,
+    )
+    panel._on_succeeded(fresh_perch)
+
+    # Both CSVs are present: 2 BirdNET detections + 1 Perch = 3.
+    assert panel.ui.status_stack.currentIndex() == 2  # page_results
+    assert "3 detections" in panel.ui.summary_label.text()
+    assert panel._results_model.rowCount() == 2
 
 
 def test_project_switch_clears_stale_results(
@@ -236,7 +306,7 @@ def test_project_switch_clears_stale_results(
     This locks in the cure for the original bug: panels showed stale BirdNET
     results from the previously opened project.
     """
-    panel._on_succeeded(_make_result(tmp_path))
+    panel._on_succeeded(_make_result_on_disk(state))
     assert panel.ui.status_stack.currentIndex() == 2  # page_results
     assert state.last_analysis_result is not None
 

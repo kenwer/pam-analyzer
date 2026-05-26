@@ -142,7 +142,6 @@ class BirdNetPanel(QWidget):
         self._rebuild_locales_menu()
         self._apply_model_capabilities()
         self._app_state.update_birdnet_settings(analysis_model=key)
-        self._on_last_result_changed(self._app_state.last_analysis_result)
 
     def _rebuild_locales_menu(self) -> None:
         """Tear down and recreate the locales popup after a model switch."""
@@ -417,46 +416,23 @@ class BirdNetPanel(QWidget):
     def _on_succeeded(self, result: AnalysisRunResult) -> None:
         self._teardown_worker()
         self._app_state.analysisFinished.emit(result)
-        self._app_state.set_last_analysis_result(result)
+        # The runner has already written its CSV to disk, so a fresh
+        # discovery rebuilds the full multi-model view in one shot.
+        self._app_state.refresh_analysis_result_from_disk()
 
     def _on_last_result_changed(self, result: AnalysisRunResult | None) -> None:
         # A run currently in progress owns the status page; don't fight it.
         if self._state.running:
             return
-        filtered = self._filter_for_current_model(result)
-        if filtered is None:
+        if result is None or not result.campaigns:
             self._results_model.clear()
             self._results_model.setHorizontalHeaderLabels(["Name", "Files"])
             self.ui.summary_label.clear()
             self.ui.output_path_label.clear()
             self._set_status_page(_StatusPage.IDLE)
         else:
-            self._render_results(filtered)
+            self._render_results(result)
             self._set_status_page(_StatusPage.RESULTS)
-
-    def _filter_for_current_model(
-        self, result: AnalysisRunResult | None
-    ) -> AnalysisRunResult | None:
-        """Keep rows tagged with the active runner's model_key.
-
-        An empty model_key on a row matches any model. That covers two cases:
-        fresh AnalysisRunResults built in tests without binding to a runner,
-        and any future caller that hasn't been migrated. Discovery and the
-        production runners always set a concrete model_key.
-        """
-        if result is None:
-            return None
-        target = self._runner.model_key
-        matching = tuple(
-            c for c in result.campaigns if c.model_key in ("", target)
-        )
-        if not matching:
-            return None
-        return AnalysisRunResult(
-            campaigns=matching,
-            elapsed=result.elapsed,
-            from_disk=result.from_disk,
-        )
 
     def is_busy(self) -> bool:
         return self._state.running
@@ -536,24 +512,10 @@ class BirdNetPanel(QWidget):
 
     def _build_summary(self, result: AnalysisRunResult) -> str:
         total_det = sum(c.detection_count for c in result.campaigns)
-        if result.from_disk:
-            # No elapsed/wav/aru on disk; show only what we recovered.
-            parts = [f"{total_det:,} detections"]
-            if len(result.campaigns) > 1:
-                parts.append(f"{len(result.campaigns)} campaigns")
-            return "↺ Loaded previous results: " + "  ·  ".join(parts)
-        total_wav = sum(c.wav_count for c in result.campaigns)
-        total_aru = sum(c.aru_count for c in result.campaigns)
-        m, s = divmod(int(result.elapsed), 60)
-        dur = f"{m}m {s:02d}s" if m else f"{s}s"
         parts = [f"{total_det:,} detections"]
         if len(result.campaigns) > 1:
-            parts.append(f"{len(result.campaigns)} campaigns")
-        if total_aru:
-            parts.append(f"{total_aru} ARUs")
-        parts.append(f"{total_wav} files")
-        parts.append(dur)
-        return "✓ " + "  ·  ".join(parts)
+            parts.append(f"{len(result.campaigns)} CSVs")
+        return "  ·  ".join(parts)
 
     def _current_output_dir(self) -> Path | None:
         if self._app_state.project is None:

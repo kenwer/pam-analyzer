@@ -1,10 +1,8 @@
 """Synthesize AnalysisRunResult from on-disk artifacts of a previous run.
 
-Used at project load: if the project's output_base already contains
-<campaign>-detections-<model>.csv files from earlier runs, the BirdNET
-panel can show them without the user re-running analysis. The synthesized
-result carries `from_disk=True` so the UI can distinguish 'just finished'
-from 'previously produced'.
+Used at project load and after every successful run: the panel asks for
+a fresh on-disk snapshot, so anything the user has accumulated under
+output_base/<campaign>/<campaign>-detections-<model>.csv shows up.
 """
 
 from pathlib import Path
@@ -37,7 +35,7 @@ def discover_analysis_result(output_base: Path) -> AnalysisRunResult | None:
     if not campaigns:
         return None
 
-    return AnalysisRunResult(campaigns=tuple(campaigns), elapsed=0.0, from_disk=True)
+    return AnalysisRunResult(campaigns=tuple(campaigns), elapsed=0.0)
 
 
 def _synthesize_campaign(

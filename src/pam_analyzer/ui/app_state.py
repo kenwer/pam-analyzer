@@ -235,6 +235,19 @@ class AppState(QObject):
         self._last_analysis_result = result
         self.lastAnalysisResultChanged.emit(result)
 
+    def refresh_analysis_result_from_disk(self) -> None:
+        """Rebuild the analysis result from the on-disk CSV inventory.
+
+        The panel calls this after every successful run so sibling-model
+        CSVs the user accumulated in earlier runs stay visible alongside
+        the new one. Discovery is the only source of truth for what's been
+        produced; the in-memory result is just a view of it.
+        """
+        if self._project is None:
+            self.set_last_analysis_result(None)
+            return
+        self.set_last_analysis_result(discover_analysis_result(self._project.output_base))
+
     def append_import_result(self, result: CardImportResult) -> None:
         self._import_results.append(result)
         self.importResultsChanged.emit(list(self._import_results))

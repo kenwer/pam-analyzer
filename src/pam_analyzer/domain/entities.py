@@ -92,19 +92,13 @@ class CampaignRunResult:
     aru_count: int
     elapsed: float
     warnings: tuple[str, ...] = ()
-    # Which model produced this row. Set by runners and by discovery from
-    # the filename suffix; the panel filters visible rows by this value.
-    model_key: str = ""
+    model_key: str = "" # Model that produced this row (allows the BirdNET panel to add hints)
 
 
 @dataclass(frozen=True, slots=True)
 class AnalysisRunResult:
     campaigns: tuple[CampaignRunResult, ...]
     elapsed: float = 0.0
-    # True when synthesized from on-disk artifacts at project load, rather
-    # than from a fresh BirdNET run. The UI uses this to show a different
-    # headline ("Loaded previous results" vs "Run finished").
-    from_disk: bool = False
 
 
 @dataclass(frozen=True, slots=True)
