@@ -132,11 +132,10 @@ class CsvDetectionRepository:
 
     Each model run lands in its own file (<campaign>-detections-<model_key>.csv)
     so multiple runs can coexist for a campaign. Load enumerates every model
-    file plus the legacy single-file fallback, concatenating in memory. Save
-    routes each detection back to the file it was loaded from via
-    Detection.source_path; brand-new detections (no source_path) fall back
-    to the legacy file path. Per-file fieldnames are remembered so column
-    order survives a load/save round trip.
+    file and concatenates them in memory. Save routes each detection back to
+    the file it was loaded from via Detection.source_path. Per-file
+    fieldnames are remembered so column order survives a load/save round
+    trip.
     """
 
     def __init__(self) -> None:
@@ -165,31 +164,17 @@ class CsvDetectionRepository:
             all_detections.extend(self.load_for_campaign(output_base, sub.name))
         return all_detections
 
-    def save(self, output_base: Path, detections: list[Detection]) -> None:
-        """Persist edits, grouped by campaign."""
-        if not detections:
-            return
-        groups: dict[str, list[Detection]] = {}
-        for d in detections:
-            groups.setdefault(d.campaign, []).append(d)
-        for campaign_name, rows in groups.items():
-            if campaign_name:
-                self.save_for_campaign(output_base, campaign_name, rows)
+    def save(self, detections: list[Detection]) -> None:
+        """Write detections back to whichever CSV each one came from.
 
-    def save_for_campaign(self, output_base: Path, campaign_name: str, detections: list[Detection]) -> None:
-        """Write detections back, grouped by their source file.
-
-        Edits load_for_campaign annotated each row with its source path, so
-        a campaign with both birdnet and perch runs round-trips correctly:
-        each detection lands in the same file it came from. Detections with
-        no source_path (synthesized, not loaded) fall back to the legacy
-        unsuffixed path.
+        load_for_campaign tags each row with its source path, so a campaign
+        with both birdnet and perch runs round-trips correctly: each
+        detection lands in the same file it came from.
         """
-        legacy_fallback = paths.campaign_csv(output_base, campaign_name)
         groups: dict[Path, list[Detection]] = {}
         for d in detections:
-            target = d.source_path or legacy_fallback
-            groups.setdefault(target, []).append(d)
+            assert d.source_path is not None, "Detection must carry source_path when saved"
+            groups.setdefault(d.source_path, []).append(d)
         for path, rows in groups.items():
             fieldnames = self._fieldnames_by_path.get(path) or list(_CORE_FIELDS)
             _write_csv(path, rows, fieldnames)

@@ -169,7 +169,7 @@ def test_loads_previous_results_from_disk(qtbot, tmp_path: Path):
     output_base = proj.output_base
     campaign_dir = output_base / "alpha"
     campaign_dir.mkdir(parents=True)
-    csv_path = campaign_dir / "alpha-detections.csv"
+    csv_path = campaign_dir / "alpha-detections-birdnet.csv"
     csv_path.write_text(
         "Species,Confidence\n"
         "Robin,0.9\n"

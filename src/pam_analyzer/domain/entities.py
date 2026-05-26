@@ -92,7 +92,9 @@ class CampaignRunResult:
     aru_count: int
     elapsed: float
     warnings: tuple[str, ...] = ()
-    model_key: str = "" # empty means "unknown / matches any
+    # Which model produced this row. Set by runners and by discovery from
+    # the filename suffix; the panel filters visible rows by this value.
+    model_key: str = ""
 
 
 @dataclass(frozen=True, slots=True)

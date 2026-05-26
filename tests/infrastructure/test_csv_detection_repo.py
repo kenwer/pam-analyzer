@@ -3,7 +3,7 @@ from pathlib import Path
 
 from pam_analyzer.domain import VerifiedState
 from pam_analyzer.infrastructure import CsvDetectionRepository
-from pam_analyzer.infrastructure.paths import campaign_csv
+from pam_analyzer.infrastructure.paths import campaign_csv_for_model
 
 _HEADERS = [
     "Campaign",
@@ -24,7 +24,7 @@ _HEADERS = [
 
 
 def _seed_csv(out_base: Path, campaign: str, rows: list[list[str]]) -> None:
-    path = campaign_csv(out_base, campaign)
+    path = campaign_csv_for_model(out_base, campaign, "birdnet")
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
@@ -94,7 +94,7 @@ def test_save_round_trip_preserves_edits(tmp_path: Path) -> None:
     detections = repo.load_for_campaign(tmp_path, "east")
     detections[0].verified = VerifiedState.TRUE
     detections[0].comment = "edited"
-    repo.save_for_campaign(tmp_path, "east", detections)
+    repo.save(detections)
 
     repo2 = CsvDetectionRepository()
     reloaded = repo2.load_for_campaign(tmp_path, "east")
@@ -105,7 +105,7 @@ def test_save_round_trip_preserves_edits(tmp_path: Path) -> None:
 def test_lat_lon_round_trip(tmp_path: Path) -> None:
     """Lat/Lon are core fields that map to named Detection attributes, not extra."""
     headers = _HEADERS + ["Lat", "Lon"]
-    path = campaign_csv(tmp_path, "east")
+    path = campaign_csv_for_model(tmp_path, "east", "birdnet")
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
@@ -119,7 +119,7 @@ def test_lat_lon_round_trip(tmp_path: Path) -> None:
     assert "Lat" not in detections[0].extra
     assert "Lon" not in detections[0].extra
 
-    repo.save_for_campaign(tmp_path, "east", detections)
+    repo.save(detections)
     with open(path, encoding="utf-8") as f:
         reader = csv.DictReader(f)
         row = next(reader)
@@ -130,7 +130,7 @@ def test_lat_lon_round_trip(tmp_path: Path) -> None:
 def test_truly_unknown_columns_go_to_extra(tmp_path: Path) -> None:
     """Columns not in _CORE_FIELDS still land in Detection.extra."""
     headers = _HEADERS + ["CustomTag"]
-    path = campaign_csv(tmp_path, "east")
+    path = campaign_csv_for_model(tmp_path, "east", "birdnet")
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)

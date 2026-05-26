@@ -305,7 +305,7 @@ class ExaminePanel(QWidget):
         # max-per or header filters live in self._raw_detections, and edits
         # propagate there because Detection objects are shared by reference).
         try:
-            self._service.save(project.output_base, self._raw_detections)
+            self._service.save(self._raw_detections)
         except Exception as exc:
             self._app_state.errorOccurred.emit(f"Auto-save failed: {exc}")
             return

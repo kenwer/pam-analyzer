@@ -1,10 +1,10 @@
 """Synthesize AnalysisRunResult from on-disk artifacts of a previous run.
 
 Used at project load: if the project's output_base already contains
-<campaign>-detections.csv files from earlier BirdNET runs, the BirdNET panel
-can show them without the user re-running analysis. The synthesized result
-carries `from_disk=True` so the UI can distinguish 'just finished' from
-'previously produced'.
+<campaign>-detections-<model>.csv files from earlier runs, the BirdNET
+panel can show them without the user re-running analysis. The synthesized
+result carries `from_disk=True` so the UI can distinguish 'just finished'
+from 'previously produced'.
 """
 
 from pathlib import Path
@@ -46,11 +46,9 @@ def _synthesize_campaign(
     """Build a CampaignRunResult for one on-disk detection CSV.
 
     model_key is inferred from the filename suffix: <campaign>-detections-<key>.csv.
-    The legacy unsuffixed <campaign>-detections.csv predates per-model files
-    and is treated as a BirdNET artifact, since BirdNET was the only backend
-    when that layout shipped.
     """
     output_dir = output_base / campaign_name
+    prefix = f"{campaign_name}-detections-"
     return CampaignRunResult(
         campaign_name=campaign_name,
         output_dir=output_dir,
@@ -60,16 +58,8 @@ def _synthesize_campaign(
         wav_count=0,
         aru_count=0,
         elapsed=0.0,
-        model_key=_model_key_from_filename(campaign_name, csv_path),
+        model_key=csv_path.stem.removeprefix(prefix),
     )
-
-
-def _model_key_from_filename(campaign_name: str, csv_path: Path) -> str:
-    prefix = f"{campaign_name}-detections-"
-    stem = csv_path.stem
-    if stem.startswith(prefix):
-        return stem[len(prefix):]
-    return "birdnet"  # legacy <campaign>-detections.csv from the single-model era
 
 
 def _optional(path: Path) -> Path | None:

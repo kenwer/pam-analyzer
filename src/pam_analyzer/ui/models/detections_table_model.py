@@ -52,7 +52,7 @@ _PLAY_COLUMN = _Column("_play", lambda _d: "")  # type: ignore[reportUnusedVaria
 
 # Static columns whose presence is independent of the loaded CSV. Order
 # matches the column order both BirdnetRunner and PerchRunner emit when
-# writing <campaign>-detections.csv, so the on-screen table is a direct
+# writing their per-model CSV, so the on-screen table is a direct
 # visual analog of the file on disk. The model may extend this list at
 # runtime with extras discovered in Detection.extra (e.g. Species_de /
 # Species_fr from a multi-locale Perch run); those land right after the
