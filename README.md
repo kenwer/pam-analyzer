@@ -1,75 +1,39 @@
-# PAM Analyzer Tech info
-
-Native PySide6 desktop application for reviewing **Passive Acoustic Monitoring** field recordings: load a project, run BirdNET or Perch v2 detection, and review/annotate species detections in a sortable table.
-
-Clean rewrite of the original NiceGUI-based PAM Analyzer with a layered, testable architecture.
-
-## Quick start
-
-```sh
-uv sync
-uv run poe run
-```
-
-Sub-commands:
-
-- `uv run poe compile-ui` — regenerate `ui_*.py` from `.ui` files
-- `uv run poe compile-qrc` — regenerate `*_rc.py` from `.qrc` files
-- `uv run poe test` — run the test suite
-- `uv run poe lint` / `uv run poe fmt` — ruff lint / format
-
-The implementation plan lives in [`plan.md`](./plan.md).
-
-## Layout
-
-```
-src/pam_analyzer/
-├── domain/          # Pure entities + repository protocols (no Qt)
-├── services/        # Application use-cases (no Qt)
-├── infrastructure/  # TOML/CSV repos, BirdNET adapter, audio I/O
-├── widgets/         # Reusable Qt widgets (multi-column-sort table, map)
-├── ui/              # App-specific panels, dialogs, models, .ui files
-├── workers/         # QThread-hosted background tasks
-└── app/             # Composition root + entry point
-```
-
-
 # PAM Analyzer
 Passive Acoustic Monitoring for Bird Species Detection
+
 <!--TOC-->
 
-- [PAM Analyzer Tech info](#pam-analyzer-tech-info)
-  - [Quick start](#quick-start)
-  - [Layout](#layout)
-- [PAM Analyzer](#pam-analyzer)
-  - [About](#about)
-  - [Download](#download)
-  - [Features](#features)
-  - [Core Concepts](#core-concepts)
-    - [Project](#project)
-    - [Campaign](#campaign)
-    - [ARU (Autonomous Recording Unit)](#aru-autonomous-recording-unit)
-  - [Usage](#usage)
-  - [Workflow](#workflow)
-    - [Project Settings](#project-settings)
-    - [Campaigns](#campaigns)
-    - [Run bird species detection using BirdNET or Perch v2](#run-bird-species-detection-using-birdnet-or-perch-v2)
-    - [Output files](#output-files)
-    - [Examine Detections](#examine-detections)
-  - [Keyboard shortcuts](#keyboard-shortcuts)
-    - [Global](#global)
-    - [Examine panel: detection row selected](#examine-panel-detection-row-selected)
-  - [Changelog](#changelog)
-  - [Acknowledgements](#acknowledgements)
-  - [License](#license)
+- [About](#about)
+- [Download](#download)
+- [Features](#features)
+- [Core Concepts](#core-concepts)
+  - [Project](#project)
+  - [Campaign](#campaign)
+  - [ARU (Autonomous Recording Unit)](#aru-autonomous-recording-unit)
+- [Usage](#usage)
+- [Workflow](#workflow)
+  - [Project Settings](#project-settings)
+  - [Campaigns](#campaigns)
+  - [Run bird species detection using BirdNET or Perch v2](#run-bird-species-detection-using-birdnet-or-perch-v2)
+  - [Output files](#output-files)
+  - [Examine Detections](#examine-detections)
+- [Keyboard shortcuts](#keyboard-shortcuts)
+  - [Global](#global)
+  - [Examine panel: detection row selected](#examine-panel-detection-row-selected)
+- [Models](#models)
+  - [BirdNET v2.4](#birdnet-v24)
+  - [Perch v2](#perch-v2)
+    - [Logit calibration](#logit-calibration)
+  - [Choosing a model](#choosing-a-model)
+- [Changelog](#changelog)
+- [Acknowledgements](#acknowledgements)
+- [License](#license)
 
 <!--TOC-->
 
 
 ## About
-PAM Analyzer is a desktop application designed for processing Autonomous Recording Unit (ARU) field recordings to **detect bird species**. It covers the full workflow: importing SD card contents, running BirdNET species detection, reviewing and annotating detections, and exporting results. Data is organized into hierarchical projects and campaigns.
-
-![Image](https://github.com/user-attachments/assets/93e71617-445c-47ed-ba3d-a3c279d3468c)
+PAM Analyzer is a desktop application designed for processing Autonomous Recording Unit (ARU) field recordings to **detect bird species**. It covers the full workflow: importing SD card contents, running  BirdNET-2.4/Perch-2.0 species detection, reviewing and annotating detections, and exporting results. Data is organized into hierarchical projects and campaigns.
 
 
 ## Download
@@ -179,10 +143,7 @@ Create and manage the campaigns that belong to a project. The panel shows all di
 Campaigns are discovered automatically from the audio recordings root: any subdirectory containing a `campaign.toml` sidecar is treated as a campaign.
 
 ### Run bird species detection using BirdNET or Perch v2
-The app bundles offers two models to detect birds in the specified campaigns:
-
-- **BirdNET**: TFLite model from BirdNET-Analyzer. Analyses 3-second segments at 48 kHz. Supports configurable segment overlap (0 - 2.9 s) and a per-week geographic species filter built from the campaign's coordinates.
-- **Perch v2**: Google's SavedModel for bird vocalization classification. Analyses 5-second windows at 32 kHz with no overlap. Honors the campaign's location filter by post-filtering its open-world output against BirdNET's regional whitelist.
+Pick a model from the dropdown and configure its parameters in the panel. See [Models](#models) for a side-by-side comparison of BirdNET v2.4 and Perch v2 and guidance on when to use each.
 
 Common parameters include minimum confidence threshold and additional language columns for species names. Each detection is assigned a within-segment `Rank` (1 = highest-confidence species in that window), useful for deprioritising detections that are consistently outcompeted by other species in the same clip. Analyses can be run per-campaign or across all campaigns. See [Output files](#output-files) for what is written to disk.
 
@@ -192,14 +153,14 @@ Analysis results are written to the **detections output path** set in Project Se
 ```
 {detections_output_path}/
 └── {campaign}/
-    ├── {campaign}-detections-birdnet.csv   # one row per BirdNET detection
-    ├── {campaign}-detections-perch.csv     # one row per Perch v2 detection (only if Perch was run)
-    ├── {campaign}-species-list.txt         # location mode only: the geographic species list BirdNET used
+    ├── {campaign}-detections-BirdNET-2.4.csv  # one row per BirdNET detection
+    ├── {campaign}-detections-Perch-2.0.csv    # one row per Perch v2 detection (only if Perch was run)
+    ├── {campaign}-species-list.txt            # location mode only: the geographic species list BirdNET used
     └── {aru}/.../week_NN/
-        └── *.BirdNET.results.csv           # BirdNET's own raw output, one file per recording
+        └── *.BirdNET.results.csv              # BirdNET's own raw output, one file per recording
 ```
 
-- **`{campaign}-detections-{model}.csv`** is the file you work with. Each model run writes its own file so BirdNET and Perch v2 outputs coexist for the same campaign. Every row carries a `Model` column identifying its source, plus the annotation columns (`Verified`, `Corrected_Species`, `Comment`). The Examine panel loads every model file it finds for the campaign and concatenates them; annotations are written back to the file the row came from. Legacy unsuffixed `{campaign}-detections.csv` files from earlier app versions are still loaded as a fallback.
+- **`{campaign}-detections-{model_key}.csv`** is the file you work with. The `{model_key}` suffix is the runner's identifier (`BirdNET-2.4` or `Perch-2.0`), so multiple model runs coexist for the same campaign. Every row carries a `Model` column identifying its source, plus the annotation columns (`Verified`, `Corrected_Species`, `Comment`). The Examine panel loads every model file it finds for the campaign and concatenates them; annotations are written back to the file the row came from. Legacy unsuffixed `{campaign}-detections.csv` files from earlier app versions are still loaded as a fallback.
 - **`*.BirdNET.results.csv`** are BirdNET-Analyzer's raw per-recording outputs. The app parses them to build the BirdNET detections CSV and then leaves them on disk, so a re-run can reuse them. (Perch v2 doesn't produce intermediate per-recording files.)
 
 Alongside the CSVs the app saves the species lists involved in the run as plain `.txt` files:
@@ -248,18 +209,57 @@ These shortcuts work whenever a row is selected in the Examine panel and no cell
 > **Tip:** While the Comment field or the Corrected Species dropdown is open, all single-key shortcuts are automatically suspended so you can type freely. Press `Escape` or `Enter` / `Return` to confirm and return to normal navigation.
 
 
+## Models
+PAM Analyzer ships two bird-detection models. Both run locally on CPU, write to the same per-detection CSV schema, and honor the campaign's species filter (location-mode or species-list mode). They can be run on the same campaign and their outputs coexist in separate files.
+
+| | **BirdNET v2.4** | **Perch v2** |
+|---|---|---|
+| Backend | TFLite via the [`birdnet`](https://github.com/birdnet-team/birdnet) library | TensorFlow SavedModel via the same library |
+| Audio window | 3 s | 5 s |
+| Sample rate | 48 kHz | 32 kHz |
+| Segment overlap | Configurable (0 to 2.9 s) | Configurable (0 to 4.9 s) |
+| Classes | ~6500 species | 14,795 classes |
+| Speed (Apple M4 Pro, CPU, ~4 h audio) | ~1050x real-time | ~77x real-time |
+| Confidence units in CSV | Sigmoid probability (0-1) | Calibrated probability (0-1), see [Logit calibration](#logit-calibration) |
+
+### BirdNET v2.4
+A compact CNN for global birdsong classification. The runner uses the campaign's coordinates to derive a per-week regional species list, so the model only emits species that are plausible at that location and time of year. BirdNET is the fast first-pass model: a four-hour campaign runs in under a minute on a modern laptop. Its confidence scores are sigmoid probabilities and need no calibration.
+
+### Perch v2
+A conformer-based open-world bird vocalization classifier from Google. Perch analyzes 5 s windows at 32 kHz with configurable overlap (0 to 4.9 s), emits the top-5 species per window, and recognizes ~14,795 classes globally. It is more sensitive than BirdNET at the cost of being roughly 13x slower (on my CPU). Perch's added value lies in low-amplitude calls (distant, partially-occluded, or under-modeled species) that BirdNET misses.
+
+In location mode the runner post-filters Perch's open-world output against the campaign's regional species list (derived from BirdNET's geographic filter), so Perch and BirdNET runs on the same campaign return comparably-scoped species sets.
+
+#### Logit calibration
+Perch's classification head emits raw logits, not probabilities. Pure silence sits around +4.5 and ambient noise (wind, distant traffic) sits higher still, so a naive sigmoid would mark every 5 s window as ~99% confident in something. The runner therefore applies a hardcoded offset before the sigmoid (`_PERCH_LOGIT_OFFSET`) that is currently set to 11.2. The that the probabilities written to the CSV are somewhat comparable (to BirdNET's units in the 0-1 range). This is not ideal and might change in the future.
+
+The offset was tuned (empirically) by cross-comparison against BirdNET (also not ideal, because we're missing ground truth). `scripts/calibrate_perch_offset.py` analyzues pairs of BirdNET/Perch detection CSVs and generates per-offset statistics and graphs (raw-logit histogram, per-species histograms, BN-agreement curves).
+
+### Choosing a model
+- Run **BirdNET** as the default first pass over every campaign. It is fast and has a low false-positive rate.
+- Add **Perch v2** when you suspect BirdNET is missing quiet or distant calls (e.g. for corvids and other low-pitched or sparse vocalizers), or when you want a second opinion on borderline detections. Perch's added detections live mostly in the 0.25 to 0.5 calibrated-confidence range, exactly where manual review is most useful.
+- Run **both** on the same campaign when you have the time budget. The Examine panel concatenates per-model CSVs and exposes the `Model` column for sorting and filtering, so each detection is traceable to its source.
+
+
 ## Changelog
 The changelog can be found at the [CHANGELOG page](CHANGELOG.md).
 
 
 ## Acknowledgements
-
 The author would like to thank the following projects:
 
 * [BirdNET](https://github.com/birdnet-team/birdnet)
 * [Perch 2.0](https://arxiv.org/pdf/2508.04665)
-* [Qt](https://www.qt.io/) / [PySide6](https://doc.qt.io/qtforpython/)
-
+* [Qt](https://www.qt.io/) / [PySide6](https://doc.qt.io/qtforpython)
+* [Python](https://www.python.org)
+* [Polars](https://pola.rs)
+* [SciPy](https://scipy.org)
+* [GUANO](https://github.com/riggsd/guano-py)
+* [NumPy](https://numpy.org)
+* [platformdirs](https://github.com/tox-dev/platformdirs)
+* [soundfile](https://github.com/bastibe/python-soundfile)
+* [psutil](https://github.com/giampaolo/psutil)
+     
 
 ## License
 This project is licensed under the AGPL-3.0 license. See the LICENSE file for the full text.

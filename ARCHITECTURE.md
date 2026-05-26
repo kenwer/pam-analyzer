@@ -1,16 +1,27 @@
 # Architecture
 PAM Analyzer is a PySide6 desktop application. The codebase is organised in layers
 with explicit dependency rules. All concrete dependencies are wired together in a
-single composition root; no panel constructs its own dependencies.
+single composition root.
 
 For domain concepts (Project, Campaign, ARU, Detection) see the [README](README.md).
 
+## Quick start
+```sh
+uv sync
+uv run poe run-dbg
+```
+
+Sub-commands:
+- `uv run poe compile-ui` — regenerate `ui_*.py` from `.ui` files
+- `uv run poe compile-qrc` — regenerate `*_rc.py` from `.qrc` files
+- `uv run poe lint` - ruff lint
+- `uv run poe test` — run the test suite
 
 ## Package layout
 ```
 src/pam_analyzer/
 ├── domain/          # Pure Python: entities, protocols, pure functions. No Qt, no I/O.
-├── infrastructure/  # I/O adapters: TOML/CSV repos, BirdNET subprocess, audio I/O.
+├── infrastructure/  # I/O adapters: TOML/CSV repos, in-process BirdNET + Perch runners (via the birdnet lib), audio I/O.
 ├── workers/         # Qt-aware background tasks: QThread workers + ImportOrchestrator.
 ├── widgets/         # Reusable Qt widgets with no domain knowledge.
 ├── ui/              # App-specific panels, dialogs, Qt models, generated .ui wrappers.
@@ -82,13 +93,20 @@ knowledge of `AppState`; the panel relays relevant signals (`watching_started`,
 
 ### Protocol-based seams
 `domain/analysis.py` defines `AnalysisRunner` and `AnalysisProgress` as structural
-protocols. `BirdnetRunner` and `PerchRunner` both satisfy `AnalysisRunner` and are 
-wired into the composition root as `{model_key: runner}` dict. The `BirdNetPanel` 
-exposes them via a Model dropdown. Each runner declares a `model_key` string 
-(`"birdnet"`, `"perch"`) that doubles as the CSV filename suffix written by that
-runner, so multiple model runs coexist for one campaign. Tests use `FakeRunner`.
-This is the main place where a concrete infrastructure adapter is substituted at
-test time.
+protocols. `BirdnetRunner` and `PerchRunner` both satisfy `AnalysisRunner` and are
+wired into the composition root as a `{model_key: runner}` dict. The `BirdNetPanel`
+exposes them via a Model dropdown. Each runner declares a `model_key` string
+(`"BirdNET-2.4"`, `"Perch-2.0"`) that doubles as the CSV filename suffix written
+by that runner, so multiple model runs coexist for one campaign. Tests use
+`FakeRunner`. This is the main place where a concrete infrastructure adapter is
+substituted at test time.
+
+Both concrete runners extend `BaseAnalysisRunner` (`infrastructure/base_analysis_runner.py`),
+which centralises the per-campaign loop, file iteration, species-filter resolution,
+ARU/rank computation, and CSV writing. Subclasses only fill three hooks: `_load_model`,
+`_open_predict_session`, and `_parse_row`. Adding a third model means writing a class
+with those three methods and a `model_key`, then registering it in the composition
+root, with no changes to the panel or the worker.
 
 
 ## Generated files

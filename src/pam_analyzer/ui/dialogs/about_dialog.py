@@ -18,9 +18,16 @@ The author would like to thank the following projects:
 
 - [BirdNET](https://github.com/birdnet-team/birdnet)
 - [Perch 2.0](https://arxiv.org/pdf/2508.04665)
-- [Qt](https://www.qt.io/) / [PySide6](https://doc.qt.io/qtforpython/)
+- [Qt](https://www.qt.io/) / [PySide6](https://doc.qt.io/qtforpython)
+- [Python](https://www.python.org)
+- [Polars](https://pola.rs)
+- [SciPy](https://scipy.org)
+- [GUANO](https://github.com/riggsd/guano-py)
+- [NumPy](https://numpy.org)
+- [platformdirs](https://github.com/tox-dev/platformdirs)
+- [soundfile](https://github.com/bastibe/python-soundfile)
+- [psutil](https://github.com/giampaolo/psutil)
 """
-
 
 def show_about_dialog(parent: QWidget | None = None) -> None:
     dialog = QDialog(parent)
