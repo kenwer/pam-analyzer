@@ -1,12 +1,27 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.13,<3.14"
+# requires-python = ">=3.12,<3.13"
 # dependencies = ["packaging"]
 # ///
 """Build PAM Analyzer distributable using PyInstaller.
 
 Creates an isolated venv, installs the project and PyInstaller into it,
-caches BirdNET model checkpoints, and runs PyInstaller.
+pre-downloads every model the app needs at runtime into a build-local
+cache directory, then runs PyInstaller with that cache bundled into the
+binary.
+
+Two environment variables control where the model files land during the
+download phase:
+
+- BIRDNET_APP_DATA -> acoustic v2.4 + geo v2.4 (model weights + per-locale
+  label .txt files). Honored by the birdnet>=0.2 library.
+- KAGGLEHUB_CACHE -> Perch v2 SavedModel. Honored by kagglehub, which the
+  birdnet library uses internally to fetch the Perch checkpoint.
+
+Both directories are placed inside one MODEL_CACHE root and shipped as a
+single --add-data entry. At runtime app/__main__.py points the same two
+env vars at the bundled location inside _MEIPASS, so the frozen app never
+touches the user's home directory or the network for model loading.
 
 Usage:
     uv run --script scripts/build.py
@@ -31,8 +46,13 @@ APP_NAME = 'pam-analyzer'
 DIST_DIR = ROOT_DIR / 'dist'
 BUILD_DIR = DIST_DIR / 'build' / APP_NAME
 VENV_DIR = DIST_DIR / 'venv'
-BIRDNET_CHECKPOINT_CACHE = DIST_DIR / '.birdnet-checkpoints'
-PERCH_CHECKPOINT_CACHE = DIST_DIR / '.perch-checkpoints'
+
+# All bundled model assets live under this single root, with one subdir
+# per env-var-driven cache (one for the birdnet lib, one for kagglehub).
+# Reused across builds; delete this directory to force a fresh download.
+MODEL_CACHE = DIST_DIR / '.birdnet-models'
+BIRDNET_APP_DATA_CACHE = MODEL_CACHE / 'birdnet-app-data'
+KAGGLEHUB_CACHE = MODEL_CACHE / 'kagglehub'
 
 # Modules to collect via --collect-all
 # QtQuick, QtQuick.Controls, QtLocation, QtPositioning are required by the MapPickerWidget
@@ -44,9 +64,9 @@ MODULES: tuple[str, ...] = (
     'PySide6.QtPositioning',
 )
 
-# Extra data files to bundle via --add-data. 
-# Each entry is (source, dest) where 
-#  *source* is an absolute Path and 
+# Extra data files to bundle via --add-data.
+# Each entry is (source, dest) where
+#  *source* is an absolute Path and
 #  *dest* is the folder inside the frozen bundle (or "." for the top-level _MEIPASS).
 DATA: tuple[tuple[Path, str], ...] = (
     (ROOT_DIR / 'CHANGELOG.md', '.'),
@@ -62,50 +82,67 @@ def _load_dependencies() -> list[str]:
     raw_deps = data.get("project", {}).get("dependencies", [])
     return [Requirement(d).name.replace("-", "_") for d in raw_deps]
 
-BIRDNET_PREDOWNLOAD = textwrap.dedent("""
-    import os, tempfile, wave, shutil, sys
-    import birdnet_analyzer
-    audio_dir = tempfile.mkdtemp()
-    aru_dir = os.path.join(audio_dir, 'TEST-ARU')
-    os.makedirs(aru_dir)
-    wav = os.path.join(aru_dir, '20240101_000000.wav')
-    with wave.open(wav, 'w') as wf:
-        wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(48000)
-        wf.writeframes(bytes(48000 * 3 * 2))
-    out = tempfile.mkdtemp()
-    try:
-        birdnet_analyzer.analyze(audio_dir, output=out, min_conf=0.99)
-    except Exception as e:
-        print(f'Note: {e}', file=sys.stderr)
-    finally:
-        shutil.rmtree(audio_dir, ignore_errors=True)
-        shutil.rmtree(out, ignore_errors=True)
-    ckpt = os.path.join(os.path.dirname(birdnet_analyzer.__file__), 'checkpoints')
-    if not os.path.isdir(ckpt) or not os.listdir(ckpt):
-        print(f'ERROR: BirdNET checkpoints still missing at {ckpt}', file=sys.stderr)
-        sys.exit(1)
-    print(f'Checkpoints ready: {ckpt}')
-""").strip()
 
-# Pre-download Perch v2 SavedModel into birdnet_analyzer's checkpoints/perch_v2.
-# ensure_perch_exists() pulls the model from kagglehub (no auth required for the
-# public CPU variant) and copytrees it into cfg.PERCH_V2_MODEL_PATH. From there,
-# --collect-data birdnet_analyzer bundles it into the frozen binary, so the
-# shipped app never touches kagglehub at runtime.
-PERCH_PREDOWNLOAD = textwrap.dedent("""
-    import os, sys
-    import birdnet_analyzer.config as cfg
-    from birdnet_analyzer.utils import ensure_perch_exists, check_perchv2_files
-    ensure_perch_exists()
-    if not check_perchv2_files():
-        print(f'ERROR: Perch v2 still missing at {cfg.PERCH_V2_MODEL_PATH}', file=sys.stderr)
-        sys.exit(1)
-    print(f'Perch v2 ready: {cfg.PERCH_V2_MODEL_PATH}')
+# Single prewarm script: load every model the app might reach for, so the
+# downloads happen here (with retry-on-failure) rather than on first user
+# click. BIRDNET_APP_DATA / KAGGLEHUB_CACHE point at the build cache, so
+# files land in a known location ready for PyInstaller bundling.
+MODEL_PREWARM = textwrap.dedent("""
+    import sys
+    import birdnet
+    print('Pre-downloading birdnet acoustic v2.4 (en_us)...', file=sys.stderr)
+    birdnet.load('acoustic', '2.4', 'tf', lang='en_us')
+    print('Pre-downloading birdnet geo v2.4 (en_us)...', file=sys.stderr)
+    birdnet.load('geo', '2.4', 'tf', lang='en_us')
+    print('Pre-downloading Perch v2 (CPU)...', file=sys.stderr)
+    birdnet.load_perch_v2(device='CPU')
+    print('All models cached.')
 """).strip()
 
 
 def run(cmd: list, env: dict | None = None) -> None:
     subprocess.run(cmd, check=True, env=env)
+
+
+def _prewarm_models(python: Path, venv_env: dict) -> None:
+    """Download every model into MODEL_CACHE, with retry on transient failures.
+
+    Skips the download when the cache already exists and is non-empty,
+    so repeat builds reuse the previous download. Delete MODEL_CACHE to
+    force a fresh fetch.
+    """
+    if MODEL_CACHE.exists() and any(MODEL_CACHE.rglob('*')):
+        # Sanity check: the two subdirs the lib expects should both
+        # contain files. If either is empty, fall through to a refetch.
+        a_ok = BIRDNET_APP_DATA_CACHE.exists() and any(BIRDNET_APP_DATA_CACHE.rglob('*'))
+        k_ok = KAGGLEHUB_CACHE.exists() and any(KAGGLEHUB_CACHE.rglob('*'))
+        if a_ok and k_ok:
+            print(f'  Using cached models at {MODEL_CACHE}')
+            return
+
+    BIRDNET_APP_DATA_CACHE.mkdir(parents=True, exist_ok=True)
+    KAGGLEHUB_CACHE.mkdir(parents=True, exist_ok=True)
+
+    download_env = {
+        **venv_env,
+        'BIRDNET_APP_DATA': str(BIRDNET_APP_DATA_CACHE),
+        'KAGGLEHUB_CACHE': str(KAGGLEHUB_CACHE),
+    }
+
+    print('  Pre-downloading model checkpoints (BirdNET acoustic + geo, Perch v2)')
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        try:
+            run(
+                ['uv', 'run', '--no-project', 'python', '-c', MODEL_PREWARM],
+                env=download_env,
+            )
+            break
+        except subprocess.CalledProcessError:
+            if attempt == max_attempts:
+                raise
+            print(f'  Download failed (attempt {attempt}/{max_attempts}), retrying...')
+    print(f'  Cached models to {MODEL_CACHE}')
 
 
 def main() -> None:
@@ -124,66 +161,7 @@ def main() -> None:
     print('  Installing dependencies')
     run(['uv', 'pip', 'install', '--quiet', ROOT_DIR, 'pyinstaller', '--python', python])
 
-    # BirdNET checkpoints are not bundled with the package; they must exist before
-    # PyInstaller runs so they can be included in the binary. Restored from local
-    # cache when available (avoids re-downloading ~260 MB on every build).
-    venv_ckpt = Path(
-        subprocess.run(
-            [
-                python,
-                '-c',
-                "import birdnet_analyzer, os; print(os.path.join(os.path.dirname(birdnet_analyzer.__file__), 'checkpoints'))",
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout.strip()
-    )
-
-    if BIRDNET_CHECKPOINT_CACHE.exists() and any(BIRDNET_CHECKPOINT_CACHE.iterdir()):
-        print('  Restoring BirdNET checkpoints from cache')
-        shutil.copytree(BIRDNET_CHECKPOINT_CACHE, venv_ckpt, dirs_exist_ok=True)
-    else:
-        print('  Pre-downloading BirdNET model checkpoints')
-        max_attempts = 3
-        for attempt in range(1, max_attempts + 1):
-            try:
-                run(
-                    ['uv', 'run', '--no-project', 'python', '-c', BIRDNET_PREDOWNLOAD],
-                    env=venv_env,
-                )
-                break
-            except subprocess.CalledProcessError:
-                if attempt == max_attempts:
-                    raise
-                print(f'  Download failed (attempt {attempt}/{max_attempts}), retrying...')
-        shutil.copytree(venv_ckpt, BIRDNET_CHECKPOINT_CACHE, dirs_exist_ok=True)
-        print(f'  Cached checkpoints to {BIRDNET_CHECKPOINT_CACHE}')
-
-    # Perch v2 lives next to the BirdNET checkpoints inside the same package
-    # dir (checkpoints/perch_v2). Restoring it after the BirdNET copytree above
-    # is safe because dirs_exist_ok=True merges; the two model trees never
-    # overlap in file names.
-    venv_perch = venv_ckpt / 'perch_v2'
-    if PERCH_CHECKPOINT_CACHE.exists() and any(PERCH_CHECKPOINT_CACHE.iterdir()):
-        print('  Restoring Perch v2 checkpoints from cache')
-        shutil.copytree(PERCH_CHECKPOINT_CACHE, venv_perch, dirs_exist_ok=True)
-    else:
-        print('  Pre-downloading Perch v2 model (~391 MB, first build only)')
-        max_attempts = 3
-        for attempt in range(1, max_attempts + 1):
-            try:
-                run(
-                    ['uv', 'run', '--no-project', 'python', '-c', PERCH_PREDOWNLOAD],
-                    env=venv_env,
-                )
-                break
-            except subprocess.CalledProcessError:
-                if attempt == max_attempts:
-                    raise
-                print(f'  Download failed (attempt {attempt}/{max_attempts}), retrying...')
-        shutil.copytree(venv_perch, PERCH_CHECKPOINT_CACHE, dirs_exist_ok=True)
-        print(f'  Cached Perch v2 to {PERCH_CHECKPOINT_CACHE}')
+    _prewarm_models(python, venv_env)
 
     print('  Generating app icon')
     BUILD_DIR.mkdir(parents=True, exist_ok=True)
@@ -242,8 +220,11 @@ def main() -> None:
         APP_NAME,
         '--icon',
         icon,
+        # Include any non-Python data the birdnet package itself ships.
+        # Model weights and labels live outside the package under
+        # BIRDNET_APP_DATA / KAGGLEHUB_CACHE; those are added via DATA below.
         '--collect-data',
-        'birdnet_analyzer',
+        'birdnet',
     ]
     # Inject hidden imports from pyproject.toml dependencies:
     # --hidden-import <module> --hidden-import <module> ...
@@ -253,6 +234,10 @@ def main() -> None:
     # the QML imports used by MapPickerWidget.
     for module in MODULES:
         cmd += ['--collect-all', module]
+    # Bundle the model cache as a single tree at <bundle>/birdnet-models.
+    # app/__main__.py reads sys._MEIPASS at startup and points
+    # BIRDNET_APP_DATA / KAGGLEHUB_CACHE at the subdirs of that path.
+    cmd += ['--add-data', f'{MODEL_CACHE}:birdnet-models']
     # Bundle extra data files (CHANGELOG, QML, etc.).
     for src, dest in DATA:
         cmd += ['--add-data', f'{src}:{dest}']

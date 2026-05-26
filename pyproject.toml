@@ -3,10 +3,11 @@ name = "pam-analyzer"
 version = "0.1.0"
 description = "Passive Acoustic Monitoring analyzer — review BirdNET detections from ARU field recordings."
 readme = "README.md"
-requires-python = ">=3.13,<3.14"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "PySide6>=6.11.0",
-    "birdnet-analyzer>=2.4.0",
+    "birdnet>=0.2.16",
+    #"birdnet-analyzer>=2.4.0",
     "platformdirs>=4.3.0",
     "psutil>=6.0.0",
     "guano>=1.0.16",

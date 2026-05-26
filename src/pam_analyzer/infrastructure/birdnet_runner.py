@@ -1,53 +1,51 @@
-"""BirdNET infrastructure adapter.
+"""BirdNET v2.4 infrastructure adapter.
 
-Wraps birdnet_analyzer in a per-campaign subprocess loop. All
-birdnet_analyzer imports are confined to this module so the rest of the
-codebase stays agnostic of the underlying analyzer.
+BirdnetRunner is an AnalysisRunner backed by BirdNET v2.4 (TFLite),
+loaded via the birdnet>=0.2 library. Audio I/O, 3 s window framing,
+batched inference, sigmoid scoring, and the confidence threshold all live
+inside the lib's predict_session pipeline; this module is responsible for
+the per-campaign loop, species-filter resolution, locale-aware row
+shaping, and the campaign-detections-birdnet.csv output.
 
-BirdnetRunner is the AnalysisRunner implementation: its run() iterates the
-campaigns, normalises progress across campaign boundaries via
-_RunGlobalProgress, and delegates each campaign to _run_campaign.
+Sequencing per campaign mirrors PerchRunner so the worker / progress code
+does not need to know which runner is active:
 
-Flow when BirdnetRunner.run is called:
+    BirdnetRunner.run(...)
+      -> birdnet.load("acoustic", "2.4", "tf", lang="en_us")  once
+      -> _run_campaign(...) per campaign
+           -> _emit_progress("preparing")
+           -> resolve per-week allow-list (geo whitelist + must-haves,
+              or fixed LIST set, or no filter)
+           -> in LOCATION mode, write the per-week species list TXT
+              files alongside the detections CSV (for the user's records)
+           -> _emit_progress("analyzing")
+           -> model.predict_session(...)         single session per campaign
+              -> session.run(all_files)
+              -> progress_callback maps stats to AnalysisProgressSnapshot
+                 and triggers session.cancel() when is_cancelled() flips
+           -> _emit_progress("parsing")
+           -> walk structured array; post-filter by per-week allow-list;
+              assign per-(file, chunk) rank; write
+              campaign-detections-birdnet.csv
+           -> _emit_progress("done")
 
-    BirdnetRunner.run(...)                    # public entry point
-      -> _run_campaign(...)                   # once per campaign
-           -> _emit_progress(phase="preparing")
-           -> _emit_progress(phase="analyzing")     # bar appears at 0/N
-           -> _analyze_with_per_file_progress() # one call per week_dir
-                                          # (location mode) or one call
-                                          # for the whole campaign
-                                          # (list / global)
-                -> Pool.imap_unordered(
-                       _analyze_file_with_path, flist)
-                     -> _emit_progress("analyzing", k/N) # per finished file
-           -> _emit_progress(phase="parsing")
-           -> _parse_result_csv() per
-              *.BirdNET.results.csv        # one file per audio input
-           -> writes <campaign>-detections.csv  # the only CSV this code emits
-           -> _emit_progress(phase="done")
-
-Cancellation: each week-dir boundary, each per-file Pool yield, and each
-result-CSV parse checks progress.is_cancelled(); the Pool loop also calls
-pool.terminate() before raising CancelledError so in-flight workers stop
-immediately instead of draining.
+The lib's `species_name` in result rows is in 'Scientific_Common' format
+because we load the model with lang='en_us'. We split each entry to get
+the scientific name (canonical axis for the allow-list check) and the
+English common name; other locales come from locale_label_map().
 """
 
 from __future__ import annotations
 
 import csv
-import importlib.util
 import logging
-import os
 import re
-import sys
 import time
-from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime
-from functools import lru_cache
-from multiprocessing import Pool
 from pathlib import Path
+from typing import Any
 
 from ..domain import (
     AnalysisProgress,
@@ -60,52 +58,30 @@ from ..domain import (
 )
 from ..domain.entities import CampaignRunResult
 from . import paths
-
-# Note: `birdnet_analyzer` is intentionally NOT imported here. Its package
-# __init__.py pulls in TensorFlow, which adds ~11 s to a frozen-binary
-# launch. Imports of birdnet_analyzer (and its config/analyze/species
-# submodules) are inlined into the specific functions that need them, so
-# the cost is paid once on first analyze click instead of on every app
-# start. _locale_file_map() avoids the import entirely by using
-# importlib.util.find_spec to locate the package directory.
+from .birdnet_lib import available_locales as _available_locales
+from .birdnet_lib import (
+    locale_label_map,
+    normalize_lang_code,
+    region_species_scientific,
+)
 
 
 def _count_audio_files(campaign_dir: Path) -> int:
-    """Count audio files under a campaign folder.
-
-    Called once at the start of each _run_campaign to populate files_total on
-    progress snapshots, and also exposed via the public port for the UI's
-    pre-run sanity check.
-    """
     return sum(
         1 for f in campaign_dir.rglob("*")
         if f.is_file() and f.suffix.lower() in paths.AUDIO_EXTENSIONS
     )
 
 
-def _week_from_path(path: Path) -> int | None:
-    """Extract the ISO week number from a 'week_NN' path segment, or None.
-
-    Location-mode campaigns are organised as <campaign>/<aru>/week_NN/...
-    so we can run birdnet_analyzer per week with the correct seasonal
-    species filter. Returns None when no such segment is present.
-    """
-    for part in path.parts:
-        if part.startswith("week_"):
-            try:
-                return int(part.split("_", 1)[1])
-            except (IndexError, ValueError):
-                pass
-    return None
+def _list_audio_files(campaign_dir: Path) -> list[Path]:
+    return sorted(
+        f for f in campaign_dir.rglob("*")
+        if f.is_file() and f.suffix.lower() in paths.AUDIO_EXTENSIONS
+    )
 
 
 def _parse_recording_time(stem: str) -> datetime | None:
-    """Pull a 'YYYYMMDD_HHMMSS' timestamp out of an audio filename.
-
-    ARU filenames produced in the field embed the start time; we surface
-    it on every detection row so downstream analysis has a real datetime
-    rather than just a file path.
-    """
+    """Pull a 'YYYYMMDD_HHMMSS' timestamp out of an audio filename."""
     match = re.search(r"(\d{8}_\d{6})", stem)
     if match:
         try:
@@ -115,193 +91,35 @@ def _parse_recording_time(stem: str) -> datetime | None:
     return None
 
 
-@lru_cache(maxsize=1)
-def _locale_file_map() -> dict[str, Path]:
-    """Map locale code (e.g. 'de', 'fr') to its BirdNET labels file path.
+def _week_from_path(path: Path) -> int | None:
+    """Extract the ISO week number from a 'week_NN' path segment, or None."""
+    for part in path.parts:
+        if part.startswith("week_"):
+            try:
+                return int(part.split("_", 1)[1])
+            except (IndexError, ValueError):
+                pass
+    return None
 
-    The list of label files shipped with the model is constant per
-    process, so the directory listing is cached after the first call.
-    Consumed by _load_locale_labels and exposed to the UI via
-    _get_available_locales.
+
+def _split_sci_common(species_name: str) -> tuple[str, str]:
+    """Split a 'Scientific_Common' label entry into (sci, common)."""
+    sci, _, common = species_name.partition("_")
+    return sci, common
+
+
+def _parse_species_lines(text: str) -> frozenset[str]:
+    """Parse a user-supplied species blob into a set of scientific names.
+
+    Accepts plain Latin names or 'Scientific_Common' entries copied from a
+    BirdNET-style species list, matching what the old slist file parser
+    accepted.
     """
-    # find_spec locates the package directory without executing its __init__.py
-    # (which would import TensorFlow). We only need the on-disk path here.
-    spec = importlib.util.find_spec("birdnet_analyzer")
-    if spec is None or spec.origin is None:
-        return {}
-    labels_dir = Path(spec.origin).parent / "labels" / "V2.4"
-    prefix = "BirdNET_GLOBAL_6K_V2.4_Labels_"
-    return {
-        p.stem[len(prefix):]: p
-        for p in sorted(labels_dir.glob(f"{prefix}*.txt"))
-    }
-
-
-@lru_cache(maxsize=3)
-def _load_locale_labels(locale: str) -> dict[str, str]:
-    """Load a {scientific_name: localized_common_name} mapping for a locale.
-
-    Cached because every detection row in a campaign looks up the same
-    handful of locales; reading the labels file once per locale per
-    process is enough. Returns {} for unknown locales rather than raising.
-    """
-    loc_path = _locale_file_map().get(locale)
-    if not loc_path:
-        return {}
-    mapping: dict[str, str] = {}
-    with open(loc_path, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if "_" in line:
-                sci, localized = line.split("_", 1)
-                mapping[sci] = localized
-    return mapping
-
-
-def _get_available_locales() -> list[str]:
-    """Return locale codes the language picker in the UI should offer."""
-    return list(_locale_file_map())
-
-
-def _prewarm_model() -> None:
-    """Force model extraction on the main thread before the worker Pool starts.
-
-    Called once at the top of BirdnetRunner.run. The TFLite model
-    file is unpacked from the wheel on first use; if several Pool workers
-    race that unpack we get sporadic 'file not found' or truncated-file
-    errors. Touching the model once up front sidesteps the race.
-    """
-    try:
-        from birdnet_analyzer.model import ensure_model_exists  # type: ignore[import]
-
-        ensure_model_exists()
-    except Exception:
-        pass
-
-
-def _parse_result_csv(
-    result_csv: Path,
-    campaign_name: str,
-    campaign_dir: Path,
-    audio_root: Path,
-    week: int,
-    settings: AnalysisSettings,
-    locale_maps: dict[str, dict[str, str]],
-    run_context: dict,
-    preferred_lang_map: dict[str, str] | None = None,
-) -> list[dict]:
-    """Turn one BirdNET per-file results CSV into normalised detection rows.
-
-    Called during the 'parsing' phase of _run_campaign, once for every
-    '*.BirdNET.results.csv' file that birdnet_analyzer wrote (one per
-    input audio file). The rows it returns are streamed straight into
-    the combined per-campaign detections CSV.
-
-    The function also derives the ARU id from the audio path, computes a
-    per-segment species rank (most confident species at that timestamp =
-    rank 1), and joins in localised common names from locale_maps.
-    """
-    try:
-        with open(result_csv, newline="", encoding="utf-8") as f:
-            file_rows = list(csv.DictReader(f))
-    except UnicodeDecodeError:
-        with open(result_csv, newline="", encoding="latin-1") as f:
-            file_rows = list(csv.DictReader(f))
-
-    seg_groups: dict[tuple, list] = defaultdict(list)
-    for row in file_rows:
-        seg_groups[(row["Start (s)"], row["End (s)"])].append(row)
-    seg_species_rank: dict[tuple, int] = {}
-    for seg_rows in seg_groups.values():
-        for rank, seg_row in enumerate(
-            sorted(seg_rows, key=lambda r: float(r["Confidence"]), reverse=True),
-            start=1,
-        ):
-            seg_species_rank[(seg_row["Start (s)"], seg_row["End (s)"], seg_row["Common name"])] = rank
-
-    detections = []
-    for row in file_rows:
-        # Re-apply the threshold: stale *.BirdNET.results.csv files from an
-        # earlier run with a lower min_conf may still linger in output_dir.
-        if float(row["Confidence"]) < settings.min_conf:
-            continue
-        rank = seg_species_rank.get((row["Start (s)"], row["End (s)"], row["Common name"]), 0)
-        scientific_name = row["Scientific name"]
-        file_path = Path(row["File"])
-        try:
-            aru_number = file_path.relative_to(campaign_dir).parts[0]
-        except ValueError:
-            logging.warning("File %s is not under campaign dir %s; guessing ARU from path index", file_path, campaign_dir)
-            aru_number = file_path.parts[-3] if len(file_path.parts) >= 3 else ""
-
-        try:
-            file_rel = file_path.relative_to(audio_root).as_posix()
-        except ValueError:
-            file_rel = file_path.as_posix()
-
-        recording_time = _parse_recording_time(file_path.stem)
-        locale_names = {
-            f"Species_{loc}": (row["Common name"] if loc == "en" else locale_maps[loc].get(scientific_name, ""))
-            for loc in settings.locales
-        }
-        species_name = (
-            (preferred_lang_map.get(scientific_name) or row["Common name"])
-            if preferred_lang_map
-            else row["Common name"]
-        )
-        detections.append(
-            {
-                "Campaign": campaign_name,
-                "ARU": aru_number,
-                "Start_Time": row["Start (s)"],
-                "End_Time": row["End (s)"],
-                "Scientific_Name": scientific_name,
-                "Species": species_name,
-                **locale_names,
-                "Confidence": row["Confidence"],
-                "Rank": rank,
-                "File": file_rel,
-                "Recording_Time": str(recording_time) if recording_time else "",
-                "Week": _week_from_path(result_csv) or week,
-                **run_context,
-                "Verified": "",
-                "Corrected_Species": "",
-                "Comment": "",
-            }
-        )
-    return detections
-
-
-class _RunGlobalProgress:
-    """Translate per-campaign snapshots from _run_campaign to run-global counts.
-
-    _run_campaign reports files_done/files_total scoped to one campaign so it
-    can be reasoned about in isolation. When the user runs more than one
-    campaign at once, that would make the UI bar fill to 100% and snap back
-    to 0% at every campaign boundary. This adapter sits between _run_campaign
-    and the real AnalysisProgress port and rewrites each snapshot's
-    files_done/files_total to refer to the entire run, while leaving phase,
-    campaign, and phase_detail untouched so the label still tells the user
-    which campaign is active.
-    """
-
-    def __init__(self, inner: AnalysisProgress, run_total: int) -> None:
-        self._inner = inner
-        self._run_total = run_total
-        self._baseline = 0
-
-    def start_campaign(self, files_done_so_far: int) -> None:
-        """Set the offset added to every subsequent snapshot's files_done."""
-        self._baseline = files_done_so_far
-
-    def report(self, snapshot: AnalysisProgressSnapshot) -> None:
-        global_done = min(self._baseline + snapshot.files_done, self._run_total)
-        self._inner.report(
-            replace(snapshot, files_done=global_done, files_total=self._run_total)
-        )
-
-    def is_cancelled(self) -> bool:
-        return self._inner.is_cancelled()
+    return frozenset(
+        line.split("_", 1)[0].strip()
+        for line in text.splitlines()
+        if line.strip()
+    )
 
 
 def _emit_progress(
@@ -315,12 +133,6 @@ def _emit_progress(
     phase: str,
     phase_detail: str | None = None,
 ) -> None:
-    """Build a snapshot and forward it to the AnalysisProgress port.
-
-    Single funnel for every progress report so we can't accidentally
-    omit a field. AnalysisWorker translates the report into a Qt signal
-    that the BirdNetPanel renders on the UI thread.
-    """
     progress.report(
         AnalysisProgressSnapshot(
             campaign=campaign,
@@ -334,145 +146,171 @@ def _emit_progress(
     )
 
 
-def _analyze_file_with_path(item):
-    """Pool worker shim: run birdnet analyze_file and return the input path.
+class _RunGlobalProgress:
+    """Rewrite per-campaign snapshots so a multi-campaign run shows monotonic progress.
 
-    birdnet_analyzer's analyze_file returns a dict of output paths, not
-    the input. We need the input filename to update the progress label,
-    so this wrapper hands it back. Top-level so multiprocessing can
-    pickle it under the 'spawn' start method (default on macOS/Windows).
+    Without this adapter the UI progress bar would refill to 0% at every
+    campaign boundary. We carry a baseline offset and rewrite files_done /
+    files_total to run-global counts, leaving phase and campaign untouched
+    so the label still tells the user which campaign is active.
     """
-    from birdnet_analyzer.analyze.utils import analyze_file as _bn_analyze_file
 
-    _bn_analyze_file(item)
-    return item[0]
+    def __init__(self, inner: AnalysisProgress, run_total: int) -> None:
+        self._inner = inner
+        self._run_total = run_total
+        self._baseline = 0
+
+    def start_campaign(self, files_done_so_far: int) -> None:
+        self._baseline = files_done_so_far
+
+    def report(self, snapshot: AnalysisProgressSnapshot) -> None:
+        global_done = min(self._baseline + snapshot.files_done, self._run_total)
+        self._inner.report(
+            replace(snapshot, files_done=global_done, files_total=self._run_total)
+        )
+
+    def is_cancelled(self) -> bool:
+        return self._inner.is_cancelled()
 
 
-def _analyze_with_per_file_progress(
-    audio_input: str,
-    output: str,
-    *,
-    on_file_done,  # callable(file_path_str: str) -> None
-    cancel_check,  # callable() -> bool
-    **analyze_kwargs,
-) -> None:
-    """Drop-in replacement for birdnet_analyzer.analyze with per-file callbacks.
+def _build_allowed_lookup(
+    ci: CampaignRunInput, wav_files: list[Path]
+) -> tuple[Callable[[Path], frozenset[str] | None], float | None, float | None, dict[int, frozenset[str]]]:
+    """Per-file species-allow-list resolver and the (lat, lon) for the run.
 
-    Why: the upstream analyze() runs Pool.map_async(...).wait(), which
-    blocks for the whole batch and offers no progress hook, so the UI
-    bar sat at 0% for the entire run. This function mirrors the upstream
-    body but uses Pool.imap_unordered so we get one yield per completed
-    file. After each yield we call on_file_done(path) for a progress
-    snapshot and re-check cancel_check() so a Stop click takes effect
-    within one file rather than one campaign.
+    The fourth tuple element is the per-week regional set (LOCATION mode
+    only, empty dict otherwise). The runner uses it to write the
+    <campaign>-species-list-week-NN.txt files the previous birdnet_analyzer
+    flow produced as a byproduct.
 
-    When: called from _run_campaign, once per week_dir in location mode or
-    once for the whole campaign in list / global mode.
+    Three regimes:
+
+    - GLOBAL or empty input -> callable always returns None, meaning
+      "no filter; keep every row".
+    - LIST with `species_list_text` -> callable returns one fixed
+      frozenset for any path. Same allow-list applies to every week.
+    - LOCATION with lat/lon -> callable looks up the file's week from its
+      path and returns the precomputed regional set for that week, with
+      must-have species unioned on top so a user-added bird never gets
+      filtered out by the geo model.
     """
-    # Lazy import: pulling birdnet_analyzer at module import time triggers a
-    # ~11 s TensorFlow load on the frozen binary, blocking app startup. We
-    # only need it once analysis actually runs, so we pay the cost here.
-    import birdnet_analyzer.config as birdnet_cfg
-    from birdnet_analyzer.analyze.core import _set_params
-    from birdnet_analyzer.analyze.utils import (
-        analyze_file as _bn_analyze_file,
-    )
-    from birdnet_analyzer.analyze.utils import (
-        save_analysis_params,
-    )
+    if ci.mode == FilterMode.LIST and ci.species_list_text:
+        fixed = _parse_species_lines(ci.species_list_text)
+        return (lambda _p: fixed), None, None, {}
 
-    flist = _set_params(
-        audio_input=audio_input,
-        output=output,
-        min_conf=analyze_kwargs.get("min_conf", 0.25),
-        custom_classifier=analyze_kwargs.get("classifier"),
-        lat=analyze_kwargs.get("lat", -1),
-        lon=analyze_kwargs.get("lon", -1),
-        week=analyze_kwargs.get("week", -1),
-        slist=analyze_kwargs.get("slist"),
-        sensitivity=analyze_kwargs.get("sensitivity", 1.0),
-        locale=analyze_kwargs.get("locale", "en"),
-        overlap=analyze_kwargs.get("overlap", 0),
-        fmin=analyze_kwargs.get("fmin", 0),
-        fmax=analyze_kwargs.get("fmax", 15000),
-        audio_speed=analyze_kwargs.get("audio_speed", 1.0),
-        bs=analyze_kwargs.get("batch_size", 1),
-        combine_results=False,
-        rtype=analyze_kwargs.get("rtype", "csv"),
-        skip_existing_results=analyze_kwargs.get("skip_existing_results", False),
-        sf_thresh=analyze_kwargs.get("sf_thresh", 0.03),
-        top_n=analyze_kwargs.get("top_n"),
-        merge_consecutive=analyze_kwargs.get("merge_consecutive", 1),
-        threads=analyze_kwargs.get("threads", 8),
-        labels_file=birdnet_cfg.LABELS_FILE,
-        additional_columns=analyze_kwargs.get("additional_columns"),
-        use_perch=False,
-    )
+    if ci.mode == FilterMode.LOCATION and ci.location is not None:
+        lat = ci.location.latitude
+        lon = ci.location.longitude
+        must_haves = _parse_species_lines(ci.must_have_species_text or "")
+        weeks_present: set[int] = set()
+        for f in wav_files:
+            w = _week_from_path(f)
+            weeks_present.add(w if w is not None else -1)
+        per_week_geo: dict[int, frozenset[str]] = {
+            w: region_species_scientific(lat, lon, w) for w in weeks_present
+        }
+        per_week_allowed: dict[int, frozenset[str]] = {
+            w: (geo | must_haves) if must_haves else geo
+            for w, geo in per_week_geo.items()
+        }
 
-    if birdnet_cfg.CPU_THREADS < 2 or len(flist) < 2:
-        for item in flist:
-            if cancel_check():
-                raise CancelledError()
-            _bn_analyze_file(item)
-            on_file_done(item[0])
-    else:
-        with Pool(birdnet_cfg.CPU_THREADS) as pool:
-            for finished_path in pool.imap_unordered(_analyze_file_with_path, flist):
-                on_file_done(finished_path)
-                if cancel_check():
-                    pool.terminate()
-                    raise CancelledError()
+        def lookup(path: Path) -> frozenset[str] | None:
+            w = _week_from_path(path)
+            return per_week_allowed.get(w if w is not None else -1)
 
-    save_analysis_params(os.path.join(birdnet_cfg.OUTPUT_PATH, birdnet_cfg.ANALYSIS_PARAMS_FILENAME))
+        return lookup, lat, lon, per_week_geo
+
+    return (lambda _p: None), None, None, {}
 
 
-def _build_location_slists(
-    lat: float,
-    lon: float,
-    week_dirs: list[Path],
-    must_haves: list[str],
+def _write_species_list_files(
     output_dir: Path,
     campaign_name: str,
-) -> tuple[dict[int, str], str | None, list[str]]:
-    """Merge BirdNET's location-derived species list with user must-haves.
+    per_week_geo: dict[int, frozenset[str]],
+) -> Path | None:
+    """Write the per-week geographic species list as plain text.
 
-    birdnet_analyzer treats slist and lat/lon as mutually exclusive: a slist
-    file replaces location filtering entirely. To honor a must-have list in
-    location mode we compute the geographic list ourselves per week, union
-    the must-haves on top, and feed the union back as a slist file.
-
-    Returns a {week: slist_path} map (per-week deployments), a single slist
-    path (no week_NN folders), and any warnings. On failure both are empty
-    so the caller falls back to plain location filtering.
+    Produces <campaign>-species-list[-week-NN].txt files matching the
+    naming the previous birdnet_analyzer-based runner wrote, so any
+    user-facing scripts that consume them keep working. When weeks are
+    present we write one file per week. When no week_NN segments exist
+    the per_week_geo dict has a single key (-1) and we write a single
+    <campaign>-species-list.txt; that path is returned for inclusion in
+    CampaignRunResult.species_list_txt.
     """
-    from birdnet_analyzer.species.utils import get_species_list  # type: ignore[import]
+    if not per_week_geo:
+        return None
 
-    week_slists: dict[int, str] = {}
-    single: str | None = None
-    warnings: list[str] = []
+    output_dir.mkdir(parents=True, exist_ok=True)
+    single_path: Path | None = None
+    weeks = sorted(per_week_geo)
+    if weeks == [-1]:
+        single_path = output_dir / f"{campaign_name}-species-list.txt"
+        single_path.write_text(
+            "\n".join(sorted(per_week_geo[-1])) + "\n", encoding="utf-8"
+        )
+        return single_path
 
-    def _merge(week: int) -> list[str]:
-        geo = get_species_list(lat, lon, week, threshold=0.03)
-        seen = set(geo)
-        return [*geo, *(s for s in must_haves if s not in seen)]
-
-    try:
-        if week_dirs:
-            weeks = sorted({w for d in week_dirs if (w := _week_from_path(d)) is not None})
-            for w in weeks:
-                path = output_dir / f"{campaign_name}-species-list-week-{w:02d}-input.txt"
-                path.write_text("\n".join(_merge(w)) + "\n", encoding="utf-8")
-                week_slists[w] = str(path)
+    for w, species in per_week_geo.items():
+        if w == -1:
+            # Files without a week_NN segment in a campaign that does have
+            # week folders are rare; fall back to a 'no-week' file so the
+            # list is still preserved.
+            (output_dir / f"{campaign_name}-species-list.txt").write_text(
+                "\n".join(sorted(species)) + "\n", encoding="utf-8"
+            )
         else:
-            path = output_dir / f"{campaign_name}-species-list-input.txt"
-            path.write_text("\n".join(_merge(-1)) + "\n", encoding="utf-8")
-            single = str(path)
-    except Exception as exc:  # noqa: BLE001
-        msg = f"Failed to merge must-have species with location list: {exc}"
-        print(f"[birdnet] {msg}", file=sys.stderr)
-        warnings.append(msg)
+            (output_dir / f"{campaign_name}-species-list-week-{w:02d}.txt").write_text(
+                "\n".join(sorted(species)) + "\n", encoding="utf-8"
+            )
+    return None
 
-    return week_slists, single, warnings
+
+def _build_progress_callback(
+    progress: AnalysisProgress,
+    *,
+    campaign: str,
+    campaign_index: int,
+    total_campaigns: int,
+    files_total: int,
+    session_ref: list[Any],
+) -> Callable[[Any], None]:
+    """Bridge AcousticProgressStats to our AnalysisProgressSnapshot.
+
+    Approximates files_done from `stats.progress_pct` because the lib
+    reports progress in segments processed, not files. The lib's own ETA
+    string is forwarded as `phase_detail` so the UI can render a 'time
+    remaining' string in place of the per-file path we no longer surface.
+
+    The callback also doubles as the cancellation hook: when Stop is
+    clicked, is_cancelled() flips True and we tell the lib's session to
+    wind down, which makes session.run raise RuntimeError on exit.
+    """
+
+    def cb(stats: Any) -> None:
+        session = session_ref[0]
+        if progress.is_cancelled() and session is not None:
+            try:
+                session.cancel()
+            except RuntimeError:
+                pass
+            return
+        files_done = min(
+            files_total, int(round(stats.progress_pct / 100.0 * files_total))
+        )
+        eta = stats.est_remaining_time_hhmmss
+        _emit_progress(
+            progress,
+            campaign=campaign,
+            campaign_index=campaign_index,
+            total_campaigns=total_campaigns,
+            files_done=files_done,
+            files_total=files_total,
+            phase="analyzing",
+            phase_detail=(f"ETA {eta}" if eta else None),
+        )
+
+    return cb
 
 
 def _run_campaign(
@@ -484,24 +322,8 @@ def _run_campaign(
     progress: AnalysisProgress,
     campaign_index: int,
     total_campaigns: int,
+    model: Any,
 ) -> CampaignRunResult:
-    """Run a single campaign through every phase and return its result row.
-
-    Sequencing:
-      1. preparing      - resolve species filter mode (location vs list vs
-                          global) and write the species list file when
-                          the user provided one.
-      2. analyzing      - delegate to _analyze_with_per_file_progress;
-                          this is the long phase the user mostly waits on.
-      3. parsing        - read every *.BirdNET.results.csv birdnet wrote
-                          and stream rows into <campaign>-detections.csv.
-                          In location mode, also write geographic species
-                          lists when lat/lon are set.
-      4. done           - terminal snapshot so the bar reaches 100%.
-
-    Called once per campaign by BirdnetRunner.run. Raises CancelledError
-    when progress.is_cancelled() flips to True at any of the checked points.
-    """
     campaign_name = ci.name
     t0 = time.monotonic()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -516,161 +338,30 @@ def _run_campaign(
         phase="preparing",
     )
 
-    week = -1
-    slist: str | None = None
-    week_slists: dict[int, str] = {}
-    warnings: list[str] = []
-    if ci.mode == FilterMode.LOCATION and ci.location is not None:
-        lat: float | None = ci.location.latitude
-        lon: float | None = ci.location.longitude
-        week_dirs = sorted(d for d in ci.folder.rglob("week_*") if d.is_dir())
-    else:
-        lat, lon = None, None
-        week_dirs = []
-        if ci.species_list_text is not None:
-            # Write the species list to a file that birdnet_analyzer can read
-            slist_path = output_dir / f"{campaign_name}-species-list-input.txt"
-            slist_path.write_text(ci.species_list_text, encoding="utf-8")
-            slist = str(slist_path)
+    wav_files = _list_audio_files(ci.folder)
+    wav_count = len(wav_files)
 
-    # Split user-supplied must-have species-list blob into stripped, non-empty lines.
-    must_haves = [
-        line.strip()
-        for line in (ci.must_have_species_text or "").splitlines()
-        if line.strip()
-    ]
-    # When in location mode: merge the must_haves on top of the location-derived list
-    if must_haves and lat is not None and lon is not None:
-        week_slists, merged_single, merge_warnings = _build_location_slists(
-            lat, lon, week_dirs, must_haves, output_dir, campaign_name
-        )
-        warnings.extend(merge_warnings)
-        if merged_single is not None:
-            slist = merged_single
-
-    # When a species list file drives the run (list mode or a must-have
-    # merge), birdnet derives species from the file, not lat/lon.
-    slist_active = slist is not None or bool(week_slists)
-
-    wav_count = _count_audio_files(ci.folder)
-    num_threads = min(os.cpu_count() or 4, 8)
-    analyze_kwargs = {
-        "min_conf": settings.min_conf,
-        "slist": slist,
-        "lat": lat if lat is not None and not slist_active else -1,
-        "lon": lon if lon is not None and not slist_active else -1,
-        "overlap": settings.overlap,
-        "top_n": None,
-        "rtype": "csv",
-        "combine_results": False,
-        "threads": num_threads,
-        "locale": "en",  # birdnet_analyzer outputs English labels; non-English locales are mapped post-hoc
-    }
-
-    done_counter = {"n": 0}
-
-    def _on_file_done(fpath: str) -> None:
-        done_counter["n"] += 1
-        finished = Path(fpath)
-        # Path relative to the campaign root surfaces the ARU and (in
-        # location mode) the week folder, e.g. "MSD-109/week_08/x.wav".
-        try:
-            detail = finished.relative_to(ci.folder).as_posix()
-        except ValueError:
-            detail = finished.name
-        _emit_progress(
-            progress,
-            campaign=campaign_name,
-            campaign_index=campaign_index,
-            total_campaigns=total_campaigns,
-            files_done=done_counter["n"],
-            files_total=wav_count,
-            phase="analyzing",
-            phase_detail=detail,
-        )
-
-    _emit_progress(
-        progress,
-        campaign=campaign_name,
-        campaign_index=campaign_index,
-        total_campaigns=total_campaigns,
-        files_done=0,
-        files_total=wav_count,
-        phase="analyzing",
+    detections_csv = paths.campaign_csv_for_model(
+        output_dir.parent, campaign_name, BirdnetRunner.model_key
     )
 
-    if week_dirs:
-        for week_dir in week_dirs:
-            if progress.is_cancelled():
-                raise CancelledError()
-            dir_week = _week_from_path(week_dir)
-            if dir_week is None:
-                continue
-            week_out = output_dir / week_dir.relative_to(ci.folder)
-            week_out.mkdir(parents=True, exist_ok=True)
-            week_kwargs = analyze_kwargs
-            if week_slists:
-                week_kwargs = {**analyze_kwargs, "slist": week_slists.get(dir_week)}
-            _analyze_with_per_file_progress(
-                str(week_dir),
-                str(week_out),
-                on_file_done=_on_file_done,
-                cancel_check=progress.is_cancelled,
-                week=dir_week,
-                **week_kwargs,
-            )
-    else:
-        _analyze_with_per_file_progress(
-            str(ci.folder),
-            str(output_dir),
-            on_file_done=_on_file_done,
-            cancel_check=progress.is_cancelled,
-            week=week,
-            **analyze_kwargs,
-        )
+    # Resolve the species filter before opening the inference session: in
+    # LOCATION mode this pre-warms the geo model and computes per-week
+    # whitelists, so any geo lookup cost is paid during 'preparing'.
+    allowed_for, lat, lon, per_week_geo = _build_allowed_lookup(ci, wav_files)
 
-    _emit_progress(
-        progress,
-        campaign=campaign_name,
-        campaign_index=campaign_index,
-        total_campaigns=total_campaigns,
-        files_done=wav_count,
-        files_total=wav_count,
-        phase="parsing",
-    )
-
-    result_csvs = sorted(output_dir.rglob("*.BirdNET.results.csv"))
-
-    detections_csv = paths.campaign_csv_for_model(output_dir.parent, campaign_name, BirdnetRunner.model_key)
-
-    if not result_csvs:
-        return CampaignRunResult(
-            campaign_name=campaign_name,
-            output_dir=output_dir,
-            detections_csv=detections_csv,
-            species_list_txt=None,
-            detection_count=0,
-            wav_count=wav_count,
-            aru_count=0,
-            elapsed=time.monotonic() - t0,
-        )
+    # Preserve the species-list TXT side outputs the previous flow wrote.
+    # These are user-facing artifacts independent of the detections CSV.
+    species_list_txt = _write_species_list_files(output_dir, campaign_name, per_week_geo)
 
     run_context = {
         "Lat": lat if lat is not None else "",
         "Lon": lon if lon is not None else "",
-        "Species_List": slist or "",
+        "Species_List": "",
         "Min_Conf": settings.min_conf,
         "Model": BirdnetRunner.model_key,
     }
-
-    preferred_lang_map = _load_locale_labels(preferred_lang)
-    locale_maps = {
-        loc: _load_locale_labels(loc)
-        for loc in settings.locales
-        if loc != "en"
-    }
     locale_cols = [f"Species_{loc}" for loc in settings.locales]
-
     fieldnames = [
         "Campaign",
         "ARU",
@@ -690,52 +381,182 @@ def _run_campaign(
         "Comment",
     ]
 
-    detections: list[dict] = []
-    with open(detections_csv, "w", newline="", encoding="utf-8") as outfile:
-        writer = csv.DictWriter(outfile, fieldnames=fieldnames)
-        writer.writeheader()
-        for result_csv in result_csvs:
+    if wav_count == 0:
+        with open(detections_csv, "w", newline="", encoding="utf-8") as outfile:
+            csv.DictWriter(outfile, fieldnames=fieldnames).writeheader()
+        _emit_progress(
+            progress,
+            campaign=campaign_name,
+            campaign_index=campaign_index,
+            total_campaigns=total_campaigns,
+            files_done=0,
+            files_total=0,
+            phase="done",
+        )
+        return CampaignRunResult(
+            campaign_name=campaign_name,
+            output_dir=output_dir,
+            detections_csv=detections_csv,
+            species_list_txt=species_list_txt,
+            detection_count=0,
+            wav_count=0,
+            aru_count=0,
+            elapsed=time.monotonic() - t0,
+        )
+
+    _emit_progress(
+        progress,
+        campaign=campaign_name,
+        campaign_index=campaign_index,
+        total_campaigns=total_campaigns,
+        files_done=0,
+        files_total=wav_count,
+        phase="analyzing",
+    )
+
+    session_ref: list[Any] = [None]
+    on_stats = _build_progress_callback(
+        progress,
+        campaign=campaign_name,
+        campaign_index=campaign_index,
+        total_campaigns=total_campaigns,
+        files_total=wav_count,
+        session_ref=session_ref,
+    )
+
+    # custom_species_list is intentionally None: we apply the per-week
+    # allow-list as a post-filter on result rows below. The lib's mask is
+    # session-bound and cannot change between weeks, so a single global
+    # session plus our row-level check yields the same filtered output as
+    # one-session-per-week without the per-week model warmup.
+    with model.predict_session(
+        default_confidence_threshold=settings.min_conf,
+        custom_species_list=None,
+        overlap_duration_s=settings.overlap,
+        top_k=None,
+        apply_sigmoid=True,
+        sigmoid_sensitivity=1.0,
+        n_producers=1,
+        n_workers=None,
+        batch_size=8,
+        show_stats="progress",
+        progress_callback=on_stats,
+        max_n_files=wav_count,
+        device="CPU",
+    ) as session:
+        session_ref[0] = session
+        try:
+            result = session.run(wav_files)
+        except RuntimeError as exc:
             if progress.is_cancelled():
-                raise CancelledError()
-            rows = _parse_result_csv(
-                result_csv,
-                campaign_name,
-                ci.folder,
-                audio_root,
-                week,
-                settings,
-                locale_maps,
-                run_context,
-                preferred_lang_map,
-            )
-            writer.writerows(rows)
-            detections.extend(rows)
+                raise CancelledError() from exc
+            raise
 
     if progress.is_cancelled():
         raise CancelledError()
 
-    # Export geographic species list(s) in location mode.
-    species_list_txt: Path | None = None
-    if lat is not None and lon is not None:
-        try:
-            from birdnet_analyzer.species.utils import get_species_list  # type: ignore[import]
+    _emit_progress(
+        progress,
+        campaign=campaign_name,
+        campaign_index=campaign_index,
+        total_campaigns=total_campaigns,
+        files_done=wav_count,
+        files_total=wav_count,
+        phase="parsing",
+    )
 
-            if week_dirs:
-                unique_weeks = sorted({w for d in week_dirs if (w := _week_from_path(d)) is not None})
-                for w in unique_weeks:
-                    geo_species = get_species_list(lat, lon, w, threshold=0.03)
-                    (output_dir / f"{campaign_name}-species-list-week-{w:02d}.txt").write_text(
-                        "\n".join(geo_species) + "\n", encoding="utf-8"
-                    )
+    preferred_lang_map = locale_label_map(preferred_lang)
+    locale_maps = {loc: locale_label_map(loc) for loc in settings.locales}
+
+    detection_count = 0
+    filtered_count = 0
+    aru_set: set[str] = set()
+
+    arr = result.to_structured_array()
+
+    with open(detections_csv, "w", newline="", encoding="utf-8") as outfile:
+        writer = csv.DictWriter(outfile, fieldnames=fieldnames)
+        writer.writeheader()
+
+        # Rank is recomputed per (file, chunk_start) over rows that survive
+        # the per-week allow-list. The lib already sorts rows by (file_idx
+        # asc, chunk_idx asc, confidence desc); dropping out-of-region rows
+        # preserves that order, so the streaming counter below assigns the
+        # correct rank without re-sorting.
+        prev_key: tuple[str, float] | None = None
+        rank = 0
+        for row in arr:
+            file_path = Path(str(row["input"]))
+            start_t = float(row["start_time"])
+            end_t = float(row["end_time"])
+            species_name = str(row["species_name"])
+            conf = float(row["confidence"])
+
+            sci, common_en = _split_sci_common(species_name)
+
+            allowed = allowed_for(file_path)
+            if allowed is not None and sci not in allowed:
+                filtered_count += 1
+                continue
+
+            try:
+                aru = file_path.relative_to(ci.folder).parts[0]
+            except (ValueError, IndexError):
+                aru = ""
+            aru_set.add(aru)
+
+            try:
+                file_rel = file_path.relative_to(audio_root).as_posix()
+            except ValueError:
+                file_rel = file_path.as_posix()
+
+            recording_time = _parse_recording_time(file_path.stem)
+            file_week = _week_from_path(file_path)
+
+            key = (str(file_path), start_t)
+            if key != prev_key:
+                prev_key = key
+                rank = 1
             else:
-                geo_species = get_species_list(lat, lon, week, threshold=0.03)
-                sl_path = output_dir / f"{campaign_name}-species-list.txt"
-                sl_path.write_text("\n".join(geo_species) + "\n", encoding="utf-8")
-                species_list_txt = sl_path
-        except Exception as exc:
-            msg = f"Failed to export geographic species list: {exc}"
-            print(f"[birdnet] {msg}", file=sys.stderr)
-            warnings.append(msg)
+                rank += 1
+
+            # Preferred-language common name. Fall back to the lib's en_us
+            # common name if the locale lookup misses (e.g. a recently
+            # added species not yet translated in the user's lang).
+            common = preferred_lang_map.get(sci, common_en or sci)
+            locale_names = {
+                f"Species_{loc}": (
+                    common_en if loc == "en_us" else locale_maps[loc].get(sci, "")
+                )
+                for loc in settings.locales
+            }
+
+            writer.writerow({
+                "Campaign": campaign_name,
+                "ARU": aru,
+                "Start_Time": f"{start_t:.1f}",
+                "End_Time": f"{end_t:.1f}",
+                "Scientific_Name": sci,
+                "Species": common,
+                **locale_names,
+                "Confidence": f"{conf:.4f}",
+                "Rank": rank,
+                "File": file_rel,
+                "Recording_Time": str(recording_time) if recording_time else "",
+                "Week": file_week if file_week is not None else -1,
+                **run_context,
+                "Verified": "",
+                "Corrected_Species": "",
+                "Comment": "",
+            })
+            detection_count += 1
+
+    if filtered_count:
+        logging.info(
+            "birdnet: per-week species filter dropped %d row(s); %d kept",
+            filtered_count,
+            detection_count,
+        )
 
     _emit_progress(
         progress,
@@ -752,21 +573,23 @@ def _run_campaign(
         output_dir=output_dir,
         detections_csv=detections_csv,
         species_list_txt=species_list_txt,
-        detection_count=len(detections),
+        detection_count=detection_count,
         wav_count=wav_count,
-        aru_count=len({row["ARU"] for row in detections}),
+        aru_count=len(aru_set),
         elapsed=time.monotonic() - t0,
-        warnings=tuple(warnings),
     )
 
 
 class BirdnetRunner:
-    """AnalysisRunner implementation for BirdNET.
+    """AnalysisRunner implementation backed by BirdNET v2.4 (TFLite).
 
-    Handles model prewarm, the Pool-based per-file analysis loop, CSV
-    parsing, and the per-campaign <campaign>-detections-birdnet.csv. run()
-    iterates the campaigns and normalises progress across campaign
-    boundaries via _RunGlobalProgress.
+    Loads the model once via birdnet.load('acoustic', '2.4', 'tf') and
+    reuses it across campaigns and files. The lib handles 48 kHz audio
+    I/O, 3 s window framing, batched TFLite inference, sigmoid scoring,
+    and the confidence threshold; this runner adds the per-campaign loop,
+    species-filter resolution, locale-aware row shaping, and writes
+    <campaign>/<campaign>-detections-birdnet.csv plus the per-week
+    species-list TXT files.
     """
 
     model_key = "birdnet"
@@ -775,7 +598,7 @@ class BirdnetRunner:
         return _count_audio_files(campaign_dir)
 
     def available_locales(self) -> list[str]:
-        return _get_available_locales()
+        return list(_available_locales())
 
     def run(
         self,
@@ -787,9 +610,20 @@ class BirdnetRunner:
         audio_root: Path,
         progress: AnalysisProgress,
     ) -> AnalysisRunResult:
-        _prewarm_model()
+        import birdnet
+
         output_base.mkdir(parents=True, exist_ok=True)
         t0 = time.monotonic()
+
+        # Project files saved under birdnet_analyzer used short locale
+        # codes ('en', 'de'); the new lib uses 'en_us' / 'en_uk' / 'de'.
+        # Normalise so a stale 'en' degrades to 'en_us' silently.
+        preferred_lang = normalize_lang_code(preferred_lang)
+
+        # Load with en_us so result rows carry English common names in
+        # the 'Sci_Common' species_name string. Other locales come from
+        # locale_label_map() lookups in the row loop.
+        model = birdnet.load("acoustic", "2.4", "tf", lang="en_us")
 
         per_campaign_totals = [_count_audio_files(ci.folder) for ci in campaigns]
         run_total = sum(per_campaign_totals)
@@ -803,9 +637,25 @@ class BirdnetRunner:
                 raise CancelledError()
             run_progress.start_campaign(files_completed)
             camp_out = output_base / ci.name
-            results.append(
-                _run_campaign(ci, camp_out, settings, preferred_lang, audio_root, run_progress, i, total)
-            )
+            try:
+                results.append(
+                    _run_campaign(
+                        ci,
+                        camp_out,
+                        settings,
+                        preferred_lang,
+                        audio_root,
+                        run_progress,
+                        i,
+                        total,
+                        model,
+                    )
+                )
+            except CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                logging.exception("birdnet: campaign %s failed: %s", ci.name, exc)
+                raise
             files_completed += ci_total
 
         return AnalysisRunResult(

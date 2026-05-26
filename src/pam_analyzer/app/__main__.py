@@ -7,11 +7,39 @@ import os
 import sys
 from pathlib import Path
 
-from platformdirs import user_log_dir
-from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QApplication
 
-from ..infrastructure import (
+def _configure_frozen_model_paths() -> None:
+    """Point the birdnet lib and kagglehub at the bundled model cache.
+
+    PyInstaller stages our bundled birdnet-models/ tree under sys._MEIPASS at
+    runtime. Both BIRDNET_APP_DATA (read by the birdnet library) and
+    KAGGLEHUB_CACHE (read by kagglehub, which the lib uses for Perch v2)
+    have to be set before any `import birdnet` call triggers a model load,
+    or the frozen app will try to write to the user's home directory and
+    re-download.
+
+    setdefault() rather than [] = so a user can still override either
+    variable from the shell for development or one-off builds.
+
+    No-op when not running frozen, so dev runs still use the per-user
+    cache and stay independent of the build artifact.
+    """
+    if not getattr(sys, "frozen", False):
+        return
+    base = Path(getattr(sys, "_MEIPASS", "."))
+    bundled = base / "birdnet-models"
+    os.environ.setdefault("BIRDNET_APP_DATA", str(bundled / "birdnet-app-data"))
+    os.environ.setdefault("KAGGLEHUB_CACHE", str(bundled / "kagglehub"))
+
+
+_configure_frozen_model_paths()
+
+
+from platformdirs import user_log_dir  # noqa: E402
+from PySide6.QtGui import QIcon  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
+
+from ..infrastructure import (  # noqa: E402
     AudioImporter,
     BirdnetRunner,
     CsvDetectionRepository,
@@ -21,11 +49,11 @@ from ..infrastructure import (
     TomlCampaignRepository,
     TomlProjectRepository,
 )
-from ..ui import resources_rc  # noqa: F401  registers :/icons/* resources
-from ..ui.app_state import AppState
-from ..ui.main_window import MainWindow
-from ..workers import ImportOrchestrator
-from .settings import AppSettings
+from ..ui import resources_rc  # noqa: F401, E402  registers :/icons/* resources
+from ..ui.app_state import AppState  # noqa: E402
+from ..ui.main_window import MainWindow  # noqa: E402
+from ..workers import ImportOrchestrator  # noqa: E402
+from .settings import AppSettings  # noqa: E402
 
 
 def build_main_window() -> MainWindow:

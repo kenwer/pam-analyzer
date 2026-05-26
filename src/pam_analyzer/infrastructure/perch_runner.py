@@ -1,44 +1,48 @@
-"""Perch v2 infrastructure adapter (sketch, not yet wired into the UI).
+"""Perch v2 infrastructure adapter.
 
-PerchRunner is an alternative AnalysisRunner implementation that uses
-Google's Perch v2 SavedModel instead of BirdNET. It exists alongside
-BirdnetRunner, not as a branch inside it, because the two models differ
-in ways that would otherwise litter birdnet_runner.py with conditionals:
+PerchRunner is an AnalysisRunner backed by Google's Perch v2 SavedModel,
+loaded via the birdnet>=0.2 library. Most of the heavy lifting (audio I/O,
+resampling, 5 s window framing, batched inference, threshold filtering)
+lives inside the lib's predict_session pipeline; this module is responsible
+for the per-campaign loop, the species-filter resolution, and shaping the
+result into our existing detections CSV schema.
 
-  - Perch is one TensorFlow SavedModel loaded once in-process. BirdNET
-    runs as a TFLite model inside a multiprocessing.Pool of workers.
-  - Perch's classifier head is a single global softmax over eBird six
-    letter codes. There is no per-week or per-region species filter.
-  - Perch wants 5 s windows at 32 kHz. BirdNET wants 3 s at 48 kHz.
-
-Sequencing per campaign mirrors BirdnetRunner so the UI progress code
-does not need to know which runner is active:
+Sequencing per campaign:
 
     PerchRunner.run(...)
-      -> _ensure_model() once at the top of the run
+      -> birdnet.load_perch_v2(...)               once at the top
       -> _run_campaign(...) per campaign
            -> _emit_progress("preparing")
+           -> resolve species filter (LIST text, LOCATION whitelist, or None)
            -> _emit_progress("analyzing")
-           -> per audio file:
-                read, resample to 32 kHz, window into 5 s segments,
-                batch through saved_model.signatures["serving_default"],
-                softmax, threshold by min_conf, append rows
-                _emit_progress("analyzing", k/N)
-           -> _emit_progress("parsing")  # row write happens inline
+           -> model.predict_session(...)          one session per campaign
+              -> session.run(all_files)           lib walks files in workers
+              -> progress_callback maps stats to AnalysisProgressSnapshot
+                 and triggers session.cancel() when is_cancelled() flips
+           -> _emit_progress("parsing")
+           -> walk structured array; assign per-(file, chunk) rank;
+              write campaign-detections-perch.csv
            -> _emit_progress("done")
+
+Cancellation: the progress callback the lib invokes during inference
+checks progress.is_cancelled() each tick and calls session.cancel(), which
+makes the lib raise RuntimeError on exit. We translate that into our
+CancelledError. Mid-campaign granularity is limited to whatever cadence
+the lib's progress callback fires at.
 """
 
 from __future__ import annotations
 
 import csv
 import logging
+import math
 import re
 import time
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime
-from functools import cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from ..domain import (
     AnalysisProgress,
@@ -51,20 +55,58 @@ from ..domain import (
 )
 from ..domain.entities import CampaignRunResult
 from . import paths
-from .birdnet_runner import _get_available_locales, _load_locale_labels
+from .birdnet_lib import available_locales as _available_locales
+from .birdnet_lib import (
+    locale_label_map,
+    normalize_lang_code,
+    region_species_scientific,
+)
 
-if TYPE_CHECKING:
-    import numpy as np
+# Perch v2's class head emits positive logits everywhere: pure silence
+# sits around +4.5, and real ambient noise (wind, distant traffic) sits
+# higher still. Without an offset, every 5 s window emits its top-k
+# species at ~0.99 sigmoid even when no bird is calling.
+#
+# The offset was tuned by cross-comparison against BirdNET v2.4 on the
+# Camp1 campaign at min_conf=0.2 (843 BirdNET rows, 1547 Perch rows at
+# OFFSET=11.0). Initial calibration looked at where BirdNET and Perch
+# agreed on species in the same window; refined after the user spot-
+# checked the borderline detections and confirmed that low-confidence
+# Perch rows for at least Corvus corone are real distant/quiet calls,
+# not noise.
+#
+# The 11.2 setting was chosen because per-species recall vs BirdNET
+# shows a sharp cliff between 11.2 and 11.3: Corvus corone holds at
+# 100% up to 11.2 then collapses to 87% at 11.3 and 69% at 11.5. That
+# cliff marks the boundary between genuine quiet calls and noise.
+# Quantitatively: 1391 Perch rows (1.65x BirdNET), 97.4% retention of
+# cross-validated agreements, 10% reduction vs OFFSET=11.0's 1547 rows.
+#
+# BirdNET v2.4 does not need this: its logits are centred around 0.
+_PERCH_LOGIT_OFFSET = 11.2
 
-PERCH_SAMPLE_RATE = 32000
-PERCH_WINDOW_SECONDS = 5.0
-# Tunable. Larger = fewer Python/TF round trips but more memory.
-PERCH_BATCH_SIZE = 8
+
+def _perch_logit_threshold(min_conf: float) -> float:
+    """Map a probability-space threshold to Perch's logit space."""
+    p = min(max(min_conf, 1e-6), 1.0 - 1e-6)
+    return math.log(p / (1.0 - p)) + _PERCH_LOGIT_OFFSET
+
+
+def _perch_logit_to_prob(logit: float) -> float:
+    """Calibrated probability for a Perch v2 logit, inverse of the threshold map."""
+    return 1.0 / (1.0 + math.exp(-(logit - _PERCH_LOGIT_OFFSET)))
 
 
 def _count_audio_files(campaign_dir: Path) -> int:
     return sum(
         1 for f in campaign_dir.rglob("*")
+        if f.is_file() and f.suffix.lower() in paths.AUDIO_EXTENSIONS
+    )
+
+
+def _list_audio_files(campaign_dir: Path) -> list[Path]:
+    return sorted(
+        f for f in campaign_dir.rglob("*")
         if f.is_file() and f.suffix.lower() in paths.AUDIO_EXTENSIONS
     )
 
@@ -80,12 +122,7 @@ def _parse_recording_time(stem: str) -> datetime | None:
 
 
 def _week_from_path(path: Path) -> int | None:
-    """Extract the ISO week number from a 'week_NN' path segment, or None.
-
-    Location-mode campaigns are organised as <campaign>/<aru>/week_NN/...
-    Duplicated from birdnet_runner._week_from_path rather than imported so
-    the two infrastructure adapters stay independent.
-    """
+    """Extract the ISO week number from a 'week_NN' path segment, or None."""
     for part in path.parts:
         if part.startswith("week_"):
             try:
@@ -98,225 +135,15 @@ def _week_from_path(path: Path) -> int | None:
 def _parse_species_lines(text: str) -> frozenset[str]:
     """Parse a user-supplied species blob into a set of scientific names.
 
-    Accepts either plain Latin names ('Parus major') or BirdNET's
-    'Scientific_Common' format ('Parus major_Great Tit'), so users can
-    copy-paste a slist from a BirdNET run as the input to a Perch run
-    without converting it.
+    Accepts either plain Latin names ('Parus major') or 'Scientific_Common'
+    entries copied from a BirdNET-style species list, so users can paste
+    either format without converting.
     """
     return frozenset(
         line.split("_", 1)[0].strip()
         for line in text.splitlines()
         if line.strip()
     )
-
-
-def _prime_birdnet_for_species_list() -> None:
-    """Populate cfg.LABELS so birdnet's get_species_list can run standalone.
-
-    birdnet_analyzer's explore() reads cfg.LABELS to label its model output,
-    but only the analyze and species-list entry points populate it. We call
-    get_species_list directly, so we replicate that one-time setup here.
-    Idempotent.
-    """
-    import birdnet_analyzer.config as cfg
-    from birdnet_analyzer.utils import read_lines
-
-    if not cfg.LABELS:
-        cfg.LABELS = read_lines(cfg.BIRDNET_LABELS_FILE)
-
-
-@cache
-def _region_species(lat: float, lon: float, week: int) -> frozenset[str]:
-    """Scientific names BirdNET considers possible at (lat, lon, week).
-
-    Used to filter Perch's open-world output to a regional whitelist. Perch
-    has no built-in geographic filter; without one, North American birds and
-    iNat amphibians sneak into runs over European data. We delegate to
-    BirdNET's get_species_list because the project already depends on it
-    and the threshold semantics match what birdnet_runner uses (sf_thresh
-    0.03).
-
-    BirdNET formats list entries as 'Scientific_Common'; we keep only the
-    scientific half because Perch's class axis is scientific names. Results
-    are cached because a Perch run hits the same (lat, lon, week) triplet
-    repeatedly across files from one ARU and week folder.
-    """
-    from birdnet_analyzer.species.utils import get_species_list  # type: ignore[import]
-
-    _prime_birdnet_for_species_list()
-    items = get_species_list(lat, lon, week, threshold=0.03)
-    return frozenset(s.split("_", 1)[0] for s in items)
-
-
-_PERCH_REQUIRED_FILES = (
-    "fingerprint.pb",
-    "saved_model.pb",
-    "variables/variables.index",
-    "variables/variables.data-00000-of-00001",
-    "assets/labels.csv",
-    "assets/perch_v2_ebird_classes.csv",
-)
-
-
-def _ensure_perch_model() -> Path:
-    """Locate the Perch v2 SavedModel, downloading into the package dir if needed.
-
-    The model always lives at birdnet_analyzer's cfg.PERCH_V2_MODEL_PATH, the
-    same canonical location BirdNET uses for its own checkpoints. Build
-    artifacts ship the directory pre-populated (scripts/build.py runs the
-    download before PyInstaller, and --collect-data birdnet_analyzer sweeps
-    it up). Dev runs from source hit the download path on first use; from
-    then on the cached copy in the venv's package dir is reused.
-
-    We use kagglehub.model_download with an explicit output_dir so the
-    files land straight in the package dir rather than via a copytree from
-    ~/.cache/kagglehub. That keeps dev and frozen runs reading from the
-    same path and avoids the transient double-storage you would get with
-    birdnet_analyzer.utils.ensure_perch_exists (which copytrees from the
-    kagglehub cache).
-    """
-    import birdnet_analyzer.config as cfg
-
-    in_package = Path(cfg.PERCH_V2_MODEL_PATH)
-    if all((in_package / f).exists() for f in _PERCH_REQUIRED_FILES):
-        return in_package
-
-    import kagglehub
-
-    in_package.mkdir(parents=True, exist_ok=True)
-    kagglehub.model_download(
-        "google/bird-vocalization-classifier/tensorFlow2/perch_v2_cpu",
-        output_dir=str(in_package),
-    )
-    return in_package
-
-
-@cache
-def _english_common_names() -> dict[str, str]:
-    """sci -> English common name from BirdNET's base labels file.
-
-    BirdNET treats English as the model's native output, so its locale
-    directory has no 'en' file; the canonical English mapping lives in
-    cfg.BIRDNET_LABELS_FILE in 'Scientific_Common' format. Perch reuses
-    it as the English common-name source so the user sees real names in
-    the Species column instead of Latin binomials.
-    """
-    import birdnet_analyzer.config as cfg
-
-    mapping: dict[str, str] = {}
-    with open(cfg.BIRDNET_LABELS_FILE, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if "_" in line:
-                sci, common = line.split("_", 1)
-                mapping[sci] = common
-    return mapping
-
-
-def _localized_common_names(locale: str) -> dict[str, str]:
-    """sci -> common-name dict for any locale BirdNET ships.
-
-    'en' is handled specially because BirdNET ships English inside its
-    main label file rather than as a separate locale file. All other
-    locale codes delegate to birdnet_runner's cached loader.
-    """
-    if locale == "en":
-        return _english_common_names()
-    return _load_locale_labels(locale)
-
-
-def _load_label_axis(model_path: Path) -> list[str]:
-    """Read the per-class scientific names. Row order matches the model axis.
-
-    labels.csv is a single-column CSV with one row per output class. Common
-    names are not shipped by Google; the Species column ends up being the
-    Latin name unless an external sci-to-common mapping is added later. A
-    parallel perch_v2_ebird_classes.csv exists with eBird codes, but we
-    don't surface it yet (most rows are 'no_ebird_code' anyway).
-    """
-    sci_path = model_path / "assets" / "labels.csv"
-    with open(sci_path, encoding="utf-8", newline="") as f:
-        rdr = csv.reader(f)
-        next(rdr, None)  # header
-        return [row[0] if row else "" for row in rdr]
-
-
-def _read_audio_mono_32k(file_path: Path) -> np.ndarray:
-    """Read an audio file as mono float32 at 32 kHz.
-
-    Uses soundfile (already a project dep) for I/O and scipy.signal.resample_poly
-    for the resample. Stereo inputs are averaged to mono. We do not stream;
-    PAM recordings are typically minutes long, which fits comfortably in RAM
-    even with the 32 kHz upsample.
-    """
-    import soundfile as sf
-    from scipy.signal import resample_poly
-
-    data, sr = sf.read(str(file_path), dtype="float32", always_2d=False)
-    if data.ndim == 2:
-        data = data.mean(axis=1).astype("float32", copy=False)
-    if sr != PERCH_SAMPLE_RATE:
-        from math import gcd
-
-        g = gcd(int(sr), PERCH_SAMPLE_RATE)
-        data = resample_poly(data, PERCH_SAMPLE_RATE // g, sr // g).astype("float32", copy=False)
-    return data
-
-
-def _frame_into_windows(samples: np.ndarray, overlap_seconds: float = 0.0) -> np.ndarray:
-    """Slice a 1-D signal into 5 s windows with optional overlap.
-
-    Returns an (n_windows, win) float32 array. Final window is zero-padded
-    when the input length is not an exact multiple of the stride. Overlap
-    is clamped to [0, 4.9] s to match birdnet_analyzer's Perch upper bound
-    (anything closer to the full window length would produce a stride
-    near zero and explode window count for no analytical benefit).
-    """
-    import numpy as np
-    from numpy.lib.stride_tricks import sliding_window_view
-
-    win = int(PERCH_SAMPLE_RATE * PERCH_WINDOW_SECONDS)
-    overlap_seconds = max(0.0, min(overlap_seconds, PERCH_WINDOW_SECONDS - 0.1))
-    stride = int(round((PERCH_WINDOW_SECONDS - overlap_seconds) * PERCH_SAMPLE_RATE))
-
-    n = len(samples)
-    if n == 0:
-        return np.zeros((0, win), dtype="float32")
-    if n < win:
-        out = np.zeros((1, win), dtype="float32")
-        out[0, :n] = samples
-        return out
-    n_windows = 1 + (n - win + stride - 1) // stride
-    needed = (n_windows - 1) * stride + win
-    if needed > n:
-        samples = np.concatenate([samples, np.zeros(needed - n, dtype="float32")])
-    # sliding_window_view is zero-copy; slicing with [::stride] picks the
-    # subset of starts we want. ascontiguousarray gives TF a packed tensor.
-    return np.ascontiguousarray(sliding_window_view(samples, win)[::stride])
-
-
-def _predict_batches(
-    model: Any,
-    windows: np.ndarray,
-    batch_size: int,
-) -> np.ndarray:
-    """Run the SavedModel over batches of windows, return per-window softmax.
-
-    Output shape is (n_windows, n_classes). softmax is taken across the class
-    axis because the SavedModel returns logits under the 'label' key, matching
-    birdnet_analyzer/model.py:1107.
-    """
-    import numpy as np
-    import tensorflow as tf
-
-    parts: list[np.ndarray] = []
-    for start in range(0, len(windows), batch_size):
-        batch = tf.constant(windows[start : start + batch_size])
-        out = model.signatures["serving_default"](inputs=batch)
-        parts.append(tf.nn.softmax(out["label"], axis=-1).numpy())
-    if not parts:
-        return np.zeros((0, 0), dtype="float32")
-    return np.concatenate(parts, axis=0)
 
 
 def _emit_progress(
@@ -344,7 +171,13 @@ def _emit_progress(
 
 
 class _RunGlobalProgress:
-    """Same shape as BirdnetRunner's adapter, duplicated to avoid a cross-import."""
+    """Translate per-campaign snapshots to run-global counts.
+
+    Multi-campaign runs would otherwise see the progress bar reset to 0% at
+    every campaign boundary; this adapter rewrites files_done/files_total
+    so the UI bar advances monotonically across the whole run while phase
+    and phase_detail still tell the user which campaign is active.
+    """
 
     def __init__(self, inner: AnalysisProgress, run_total: int) -> None:
         self._inner = inner
@@ -364,6 +197,105 @@ class _RunGlobalProgress:
         return self._inner.is_cancelled()
 
 
+def _build_allowed_lookup(
+    ci: CampaignRunInput, wav_files: list[Path]
+) -> tuple[Callable[[Path], frozenset[str] | None], float | None, float | None]:
+    """Per-file species-allow-list resolver, plus the (lat, lon) for the run.
+
+    Returns a callable `allowed_for(path)` that the row loop calls once per
+    detection to decide whether to keep it. Three regimes:
+
+    - GLOBAL or empty input -> callable always returns None, meaning
+      "no filter; keep every row". The caller short-circuits the check.
+    - LIST with `species_list_text` -> callable returns a single fixed
+      frozenset for any path. Same allow-list applies to every week.
+    - LOCATION with lat/lon -> callable looks up the file's week from its
+      path and returns the precomputed regional set for that week. Must-
+      have species are unioned on top so a user-added bird never gets
+      filtered out even if BirdNET's geo model considers it implausible.
+
+    The per-week sets are computed lazily as new weeks are encountered and
+    memoised, so the geo model gets called at most once per distinct week
+    in the campaign.
+    """
+    if ci.mode == FilterMode.LIST and ci.species_list_text:
+        fixed = _parse_species_lines(ci.species_list_text)
+        return (lambda _p: fixed), None, None
+
+    if ci.mode == FilterMode.LOCATION and ci.location is not None:
+        lat = ci.location.latitude
+        lon = ci.location.longitude
+        must_haves = _parse_species_lines(ci.must_have_species_text or "")
+        # Pre-warm the per-week cache from the wav file list, so any geo
+        # downloads happen during the 'preparing' phase rather than mid-
+        # inference. Week=-1 stands in for files with no 'week_NN' segment.
+        weeks_present: set[int] = set()
+        for f in wav_files:
+            w = _week_from_path(f)
+            weeks_present.add(w if w is not None else -1)
+        per_week: dict[int, frozenset[str]] = {}
+        for w in weeks_present:
+            base = region_species_scientific(lat, lon, w)
+            per_week[w] = (base | must_haves) if must_haves else base
+
+        def lookup(path: Path) -> frozenset[str] | None:
+            w = _week_from_path(path)
+            return per_week.get(w if w is not None else -1)
+
+        return lookup, lat, lon
+
+    return (lambda _p: None), None, None
+
+
+def _build_progress_callback(
+    progress: AnalysisProgress,
+    *,
+    campaign: str,
+    campaign_index: int,
+    total_campaigns: int,
+    files_total: int,
+    session_ref: list[Any],
+) -> Callable[[Any], None]:
+    """Bridge AcousticProgressStats from the lib to our snapshot port.
+
+    Approximates files_done from `stats.progress_pct` because the new
+    library reports progress in segments processed, not files. The lib's
+    own estimated time remaining is forwarded verbatim as `phase_detail`
+    so the UI can render an ETA in place of the per-file path we dropped
+    when moving to single-session inference.
+
+    The callback also serves as our cancellation hook: when the user
+    clicks Stop, is_cancelled() flips True and we tell the lib's session
+    to wind down, which makes session.run raise RuntimeError on exit.
+    """
+
+    def cb(stats: Any) -> None:
+        session = session_ref[0]
+        if progress.is_cancelled() and session is not None:
+            try:
+                session.cancel()
+            except RuntimeError:
+                # Session already torn down; nothing to do.
+                pass
+            return
+        files_done = min(
+            files_total, int(round(stats.progress_pct / 100.0 * files_total))
+        )
+        eta = stats.est_remaining_time_hhmmss
+        _emit_progress(
+            progress,
+            campaign=campaign,
+            campaign_index=campaign_index,
+            total_campaigns=total_campaigns,
+            files_done=files_done,
+            files_total=files_total,
+            phase="analyzing",
+            phase_detail=(f"ETA {eta}" if eta else None),
+        )
+
+    return cb
+
+
 def _run_campaign(
     ci: CampaignRunInput,
     output_dir: Path,
@@ -374,16 +306,7 @@ def _run_campaign(
     campaign_index: int,
     total_campaigns: int,
     model: Any,
-    sci_axis: list[str],
 ) -> CampaignRunResult:
-    """Analyze one campaign with the Perch v2 SavedModel.
-
-    The detections CSV schema matches what BirdnetRunner writes, so downstream
-    panels (examine, charts) need no changes. Filter mode and location are
-    accepted but ignored, because Perch has no geographic species filter.
-    """
-    import numpy as np
-
     campaign_name = ci.name
     t0 = time.monotonic()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -398,32 +321,19 @@ def _run_campaign(
         phase="preparing",
     )
 
-    wav_files = sorted(
-        f for f in ci.folder.rglob("*")
-        if f.is_file() and f.suffix.lower() in paths.AUDIO_EXTENSIONS
-    )
+    wav_files = _list_audio_files(ci.folder)
     wav_count = len(wav_files)
 
-    # Filter resolution mirrors BirdnetRunner: LIST mode with a non-empty
-    # species_list_text supersedes any geographic filter; LOCATION mode
-    # builds a per-week regional whitelist, optionally unioned with
-    # must-have species. With neither, Perch's full 14,795 class axis is
-    # emitted (modulo the min_conf threshold).
-    lat: float | None = None
-    lon: float | None = None
-    if ci.mode == FilterMode.LOCATION and ci.location is not None:
-        lat = ci.location.latitude
-        lon = ci.location.longitude
+    detections_csv = paths.campaign_csv_for_model(
+        output_dir.parent, campaign_name, PerchRunner.model_key
+    )
 
-    list_set: frozenset[str] | None = None
-    if ci.mode == FilterMode.LIST and ci.species_list_text:
-        list_set = _parse_species_lines(ci.species_list_text)
+    # Resolve the species allow-list before opening the session: in
+    # LOCATION mode this triggers the geo model download / lookup once per
+    # week present in the campaign, which we want paid during the
+    # 'preparing' phase rather than mid-inference.
+    allowed_for, lat, lon = _build_allowed_lookup(ci, wav_files)
 
-    must_haves: frozenset[str] = frozenset()
-    if lat is not None and ci.must_have_species_text:
-        must_haves = _parse_species_lines(ci.must_have_species_text)
-
-    detections_csv = paths.campaign_csv_for_model(output_dir.parent, campaign_name, PerchRunner.model_key)
     run_context = {
         "Lat": lat if lat is not None else "",
         "Lon": lon if lon is not None else "",
@@ -451,23 +361,30 @@ def _run_campaign(
         "Comment",
     ]
 
-    detection_count = 0
-    filtered_count = 0  # classes above threshold but not in the region whitelist
-    aru_set: set[str] = set()
-
-    # Load locale dictionaries up front so per-row lookups are O(1) string
-    # hits instead of file reads. Each map is sci -> localized common name;
-    # missing keys fall back to the scientific name (or empty for non-default
-    # locale columns) when written below.
-    locale_maps = {loc: _localized_common_names(loc) for loc in settings.locales}
-    preferred_lang_map = _localized_common_names(preferred_lang)
-
-    # Effective window step after the user's overlap is applied. Stays at
-    # PERCH_WINDOW_SECONDS when overlap is 0 (the default), and shrinks
-    # linearly as overlap grows. Used for both framing and Start_Time math
-    # below so the two never drift.
-    overlap_clamped = max(0.0, min(settings.overlap, PERCH_WINDOW_SECONDS - 0.1))
-    step_seconds = PERCH_WINDOW_SECONDS - overlap_clamped
+    if wav_count == 0:
+        # Write an empty CSV so downstream readers find the file with the
+        # expected header even when the campaign had no audio.
+        with open(detections_csv, "w", newline="", encoding="utf-8") as outfile:
+            csv.DictWriter(outfile, fieldnames=fieldnames).writeheader()
+        _emit_progress(
+            progress,
+            campaign=campaign_name,
+            campaign_index=campaign_index,
+            total_campaigns=total_campaigns,
+            files_done=0,
+            files_total=0,
+            phase="done",
+        )
+        return CampaignRunResult(
+            campaign_name=campaign_name,
+            output_dir=output_dir,
+            detections_csv=detections_csv,
+            species_list_txt=None,
+            detection_count=0,
+            wav_count=0,
+            aru_count=0,
+            elapsed=time.monotonic() - t0,
+        )
 
     _emit_progress(
         progress,
@@ -479,114 +396,160 @@ def _run_campaign(
         phase="analyzing",
     )
 
+    # session_ref is a one-slot list so the progress callback (constructed
+    # before the session exists) can reach the session via closure once we
+    # bind it inside the `with` block below.
+    session_ref: list[Any] = [None]
+    on_stats = _build_progress_callback(
+        progress,
+        campaign=campaign_name,
+        campaign_index=campaign_index,
+        total_campaigns=total_campaigns,
+        files_total=wav_count,
+        session_ref=session_ref,
+    )
+
+    # custom_species_list is intentionally None: we apply the per-week
+    # allow-list as a post-filter on result rows below. The lib's mask is
+    # session-bound (cannot change between weeks), so a single global
+    # session plus our row-level check gives the same filtered output as
+    # one-session-per-week would, without paying the SavedModel reload
+    # cost on every week boundary.
+    #
+    # apply_sigmoid=False follows the library's own default for Perch v2.
+    # The model emits raw class logits and we threshold in logit space via
+    # _perch_logit_threshold(); rows are converted back to a calibrated
+    # probability below before being written, so CSV Confidence stays in
+    # 0-1 and matches the BirdNET runner's units.
+    #
+    # top_k=5 caps per-segment emissions. Perch is multi-label across
+    # 14,795 classes; without a top-K cap a single campaign produced ~300k
+    # rows, most of them low-quality co-activations. 5 matches the lib's
+    # own default and the 1-3 species per segment a well-tuned acoustic
+    # model typically surfaces.
+    with model.predict_session(
+        default_confidence_threshold=_perch_logit_threshold(settings.min_conf),
+        custom_species_list=None,
+        overlap_duration_s=settings.overlap,
+        top_k=5,
+        apply_sigmoid=False,
+        n_producers=1,
+        n_workers=None,
+        batch_size=8,
+        show_stats="progress",
+        progress_callback=on_stats,
+        max_n_files=wav_count,
+        device="CPU",
+    ) as session:
+        session_ref[0] = session
+        try:
+            result = session.run(wav_files)
+        except RuntimeError as exc:
+            if progress.is_cancelled():
+                raise CancelledError() from exc
+            raise
+
+    if progress.is_cancelled():
+        raise CancelledError()
+
+    _emit_progress(
+        progress,
+        campaign=campaign_name,
+        campaign_index=campaign_index,
+        total_campaigns=total_campaigns,
+        files_done=wav_count,
+        files_total=wav_count,
+        phase="parsing",
+    )
+
+    preferred_lang_map = locale_label_map(preferred_lang)
+    locale_maps = {loc: locale_label_map(loc) for loc in settings.locales}
+
+    detection_count = 0
+    filtered_count = 0
+    aru_set: set[str] = set()
+
+    arr = result.to_structured_array()
+
     with open(detections_csv, "w", newline="", encoding="utf-8") as outfile:
         writer = csv.DictWriter(outfile, fieldnames=fieldnames)
         writer.writeheader()
 
-        for i, wav in enumerate(wav_files, start=1):
-            if progress.is_cancelled():
-                raise CancelledError()
+        # Rank is recomputed per (file, chunk_start) group over the rows
+        # that survive the per-week allow-list. The library already sorts
+        # rows by (file_idx asc, chunk_idx asc, confidence desc); dropping
+        # out-of-region rows preserves that order, so a streaming pass that
+        # resets on key change yields the right rank without re-sorting.
+        prev_key: tuple[str, float] | None = None
+        rank = 0
+        for row in arr:
+            file_path = Path(str(row["input"]))
+            start_t = float(row["start_time"])
+            end_t = float(row["end_time"])
+            sci = str(row["species_name"])
+            # The lib returned a raw logit because apply_sigmoid=False;
+            # convert here so CSV Confidence stays a 0-1 probability and
+            # matches the BirdNET runner's units. See _PERCH_LOGIT_OFFSET.
+            conf = _perch_logit_to_prob(float(row["confidence"]))
 
-            try:
-                samples = _read_audio_mono_32k(wav)
-                windows = _frame_into_windows(samples, overlap_seconds=overlap_clamped)
-                probs = _predict_batches(model, windows, PERCH_BATCH_SIZE)
-            except Exception as exc:  # noqa: BLE001
-                logging.warning("perch: skipping %s: %s", wav, exc)
-                _emit_progress(
-                    progress,
-                    campaign=campaign_name,
-                    campaign_index=campaign_index,
-                    total_campaigns=total_campaigns,
-                    files_done=i,
-                    files_total=wav_count,
-                    phase="analyzing",
-                    phase_detail=wav.name,
-                )
+            # Per-week / per-list post-filter. None means 'no filter for
+            # this file' (GLOBAL mode, or LOCATION mode where the file's
+            # week has no recognised geo whitelist).
+            allowed = allowed_for(file_path)
+            if allowed is not None and sci not in allowed:
+                filtered_count += 1
                 continue
 
             try:
-                aru = wav.relative_to(ci.folder).parts[0]
+                aru = file_path.relative_to(ci.folder).parts[0]
             except (ValueError, IndexError):
                 aru = ""
             aru_set.add(aru)
 
             try:
-                file_rel = wav.relative_to(audio_root).as_posix()
+                file_rel = file_path.relative_to(audio_root).as_posix()
             except ValueError:
-                file_rel = wav.as_posix()
+                file_rel = file_path.as_posix()
 
-            recording_time = _parse_recording_time(wav.stem)
-            file_week = _week_from_path(wav)
+            recording_time = _parse_recording_time(file_path.stem)
+            file_week = _week_from_path(file_path)
 
-            # Region filter applies when the campaign has lat/lon. For files
-            # outside a week_NN tree we fall back to week=-1, which makes
-            # BirdNET return the annual whitelist for the location.
-            allowed: frozenset[str] | None = None
-            if list_set is not None:
-                allowed = list_set
-            elif lat is not None and lon is not None:
-                region = _region_species(lat, lon, file_week if file_week is not None else -1)
-                allowed = region | must_haves if must_haves else region
+            key = (str(file_path), start_t)
+            if key != prev_key:
+                prev_key = key
+                rank = 1
+            else:
+                rank += 1
 
-            for w_idx in range(probs.shape[0]):
-                # argsort descending gives rank order over classes at this segment.
-                # We only emit classes above the threshold to keep the CSV small.
-                order = np.argsort(-probs[w_idx])
-                rank = 0
-                start_t = w_idx * step_seconds
-                end_t = start_t + PERCH_WINDOW_SECONDS
-                for cls_idx in order:
-                    conf = float(probs[w_idx, cls_idx])
-                    if conf < settings.min_conf:
-                        break  # softmax is monotonically decreasing across argsort
-                    sci_name = sci_axis[cls_idx] if cls_idx < len(sci_axis) else ""
-                    if allowed is not None and sci_name not in allowed:
-                        filtered_count += 1
-                        continue  # skip out-of-region class, keep scanning
-                    rank += 1
-                    # Resolve common name via BirdNET's shipped sci->common
-                    # tables. Falls back to the Latin name when no entry
-                    # exists (e.g. iNat-only classes BirdNET never trained on).
-                    common = preferred_lang_map.get(sci_name, sci_name)
-                    locale_names = {
-                        f"Species_{loc}": locale_maps[loc].get(sci_name, "")
-                        for loc in settings.locales
-                    }
-                    writer.writerow({
-                        "Campaign": campaign_name,
-                        "ARU": aru,
-                        "Start_Time": f"{start_t:.1f}",
-                        "End_Time": f"{end_t:.1f}",
-                        "Scientific_Name": sci_name,
-                        "Species": common,
-                        **locale_names,
-                        "Confidence": f"{conf:.4f}",
-                        "Rank": rank,
-                        "File": file_rel,
-                        "Recording_Time": str(recording_time) if recording_time else "",
-                        "Week": file_week if file_week is not None else -1,
-                        **run_context,
-                        "Verified": "",
-                        "Corrected_Species": "",
-                        "Comment": "",
-                    })
-                    detection_count += 1
+            common = preferred_lang_map.get(sci, sci)
+            locale_names = {
+                f"Species_{loc}": locale_maps[loc].get(sci, "")
+                for loc in settings.locales
+            }
 
-            _emit_progress(
-                progress,
-                campaign=campaign_name,
-                campaign_index=campaign_index,
-                total_campaigns=total_campaigns,
-                files_done=i,
-                files_total=wav_count,
-                phase="analyzing",
-                phase_detail=wav.name,
-            )
+            writer.writerow({
+                "Campaign": campaign_name,
+                "ARU": aru,
+                "Start_Time": f"{start_t:.1f}",
+                "End_Time": f"{end_t:.1f}",
+                "Scientific_Name": sci,
+                "Species": common,
+                **locale_names,
+                "Confidence": f"{conf:.4f}",
+                "Rank": rank,
+                "File": file_rel,
+                "Recording_Time": str(recording_time) if recording_time else "",
+                "Week": file_week if file_week is not None else -1,
+                **run_context,
+                "Verified": "",
+                "Corrected_Species": "",
+                "Comment": "",
+            })
+            detection_count += 1
 
-    if filtered_count and (list_set is not None or lat is not None):
+    if filtered_count:
         logging.info(
-            "perch: species filter removed %d detections (%d kept)",
+            "perch: per-week species filter dropped %d row(s); %d kept",
             filtered_count,
             detection_count,
         )
@@ -614,13 +577,25 @@ def _run_campaign(
 
 
 class PerchRunner:
-    """AnalysisRunner implementation backed by Google's Perch v2 SavedModel.
+    """AnalysisRunner implementation backed by Google's Perch v2 model.
 
-    Loads the model once on the main thread and reuses it across campaigns
-    and files. Inference is single-process, single-threaded at the Python
-    level; TensorFlow handles intra-op parallelism on CPU. Writes per-run
-    output to <campaign>/<campaign>-detections-perch.csv so it can coexist
-    with a parallel BirdNET run on the same campaign.
+    Loads the model once via birdnet.load_perch_v2() and reuses it across
+    campaigns and files. The lib handles audio I/O, resampling to 32 kHz,
+    5 s window framing, and batched TF inference. We operate in raw-logit
+    space (apply_sigmoid=False) and translate to a calibrated probability
+    only at the CSV boundary; see _PERCH_LOGIT_OFFSET for why a vanilla
+    sigmoid is not appropriate for Perch v2. Output goes to
+    <campaign>/<campaign>-detections-perch.csv so it can coexist with a
+    parallel BirdNET run on the same campaign.
+
+    Performance (Apple M4 Pro, CPU only, 4 h 3 min of audio, 243 WAV files):
+        Perch v2:     ~3 min 25 s wall, ~77x real-time   (RTF ~0.013)
+        BirdNET v2.4: ~15 s wall,     ~1050x real-time (RTF ~0.001)
+    Perch is roughly 13x slower per second of audio than BirdNET. The
+    gap is the cost of Perch's larger conformer-style architecture vs
+    BirdNET's small CNN; on GPU the gap narrows considerably. Plan for
+    roughly 50 s of wall time per 1 h of audio on this hardware, and
+    set user-facing ETAs accordingly.
     """
 
     model_key = "perch"
@@ -629,11 +604,7 @@ class PerchRunner:
         return _count_audio_files(campaign_dir)
 
     def available_locales(self) -> list[str]:
-        # Perch's class axis is scientific names, so any BirdNET locale file
-        # (which is a plain sci-to-common lookup) is reusable as-is. 'en'
-        # is added because BirdNET ships English inside its main label file
-        # rather than as a separate locale.
-        return ["en", *_get_available_locales()]
+        return list(_available_locales())
 
     def run(
         self,
@@ -645,14 +616,16 @@ class PerchRunner:
         audio_root: Path,
         progress: AnalysisProgress,
     ) -> AnalysisRunResult:
-        import tensorflow as tf
+        import birdnet
 
         output_base.mkdir(parents=True, exist_ok=True)
         t0 = time.monotonic()
 
-        model_path = _ensure_perch_model()
-        model = tf.saved_model.load(str(model_path))
-        sci_axis = _load_label_axis(model_path)
+        # Normalize the preferred-lang code in case the project was saved
+        # under the old short-code scheme ('en' -> 'en_us').
+        preferred_lang = normalize_lang_code(preferred_lang)
+
+        model = birdnet.load_perch_v2(device="CPU")
 
         per_campaign_totals = [_count_audio_files(ci.folder) for ci in campaigns]
         run_total = sum(per_campaign_totals)
@@ -666,20 +639,25 @@ class PerchRunner:
                 raise CancelledError()
             run_progress.start_campaign(files_completed)
             camp_out = output_base / ci.name
-            results.append(
-                _run_campaign(
-                    ci,
-                    camp_out,
-                    settings,
-                    preferred_lang,
-                    audio_root,
-                    run_progress,
-                    i,
-                    total,
-                    model,
-                    sci_axis,
+            try:
+                results.append(
+                    _run_campaign(
+                        ci,
+                        camp_out,
+                        settings,
+                        preferred_lang,
+                        audio_root,
+                        run_progress,
+                        i,
+                        total,
+                        model,
+                    )
                 )
-            )
+            except CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                logging.exception("perch: campaign %s failed: %s", ci.name, exc)
+                raise
             files_completed += ci_total
 
         return AnalysisRunResult(
