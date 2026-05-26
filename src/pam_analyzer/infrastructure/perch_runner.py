@@ -137,13 +137,17 @@ def _parse_species_lines(text: str) -> frozenset[str]:
 
     Accepts either plain Latin names ('Parus major') or 'Scientific_Common'
     entries copied from a BirdNET-style species list, so users can paste
-    either format without converting.
+    either format without converting. Everything after a `#` on a line is
+    treated as a comment, so users can annotate their lists or paste back
+    lines this runner emitted with `  # must-have` markers.
     """
-    return frozenset(
-        line.split("_", 1)[0].strip()
-        for line in text.splitlines()
-        if line.strip()
-    )
+    out: set[str] = set()
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        out.add(line.split("_", 1)[0].strip())
+    return frozenset(out)
 
 
 def _emit_progress(
@@ -199,11 +203,19 @@ class _RunGlobalProgress:
 
 def _build_allowed_lookup(
     ci: CampaignRunInput, wav_files: list[Path]
-) -> tuple[Callable[[Path], frozenset[str] | None], float | None, float | None]:
+) -> tuple[
+    Callable[[Path], frozenset[str] | None],
+    float | None,
+    float | None,
+    dict[int, frozenset[str]],
+    frozenset[str],
+]:
     """Per-file species-allow-list resolver, plus the (lat, lon) for the run.
 
     Returns a callable `allowed_for(path)` that the row loop calls once per
-    detection to decide whether to keep it. Three regimes:
+    detection to decide whether to keep it, plus the per-week applied set
+    (geo + must-haves) and the must-have subset, both used by the
+    species-list TXT writer. Three regimes:
 
     - GLOBAL or empty input -> callable always returns None, meaning
       "no filter; keep every row". The caller short-circuits the check.
@@ -220,7 +232,7 @@ def _build_allowed_lookup(
     """
     if ci.mode == FilterMode.LIST and ci.species_list_text:
         fixed = _parse_species_lines(ci.species_list_text)
-        return (lambda _p: fixed), None, None
+        return (lambda _p: fixed), None, None, {}, frozenset()
 
     if ci.mode == FilterMode.LOCATION and ci.location is not None:
         lat = ci.location.latitude
@@ -233,18 +245,66 @@ def _build_allowed_lookup(
         for f in wav_files:
             w = _week_from_path(f)
             weeks_present.add(w if w is not None else -1)
-        per_week: dict[int, frozenset[str]] = {}
-        for w in weeks_present:
-            base = region_species_scientific(lat, lon, w)
-            per_week[w] = (base | must_haves) if must_haves else base
+        per_week: dict[int, frozenset[str]] = {
+            w: region_species_scientific(lat, lon, w) | must_haves
+            for w in weeks_present
+        }
 
         def lookup(path: Path) -> frozenset[str] | None:
             w = _week_from_path(path)
             return per_week.get(w if w is not None else -1)
 
-        return lookup, lat, lon
+        return lookup, lat, lon, per_week, must_haves
 
-    return (lambda _p: None), None, None
+    return (lambda _p: None), None, None, {}, frozenset()
+
+
+def _write_species_list_files(
+    output_dir: Path,
+    campaign_name: str,
+    per_week_allowed: dict[int, frozenset[str]],
+    must_haves: frozenset[str],
+) -> Path | None:
+    """Write the per-week applied species list as plain text.
+
+    Each file contains the merged list (geo + must-haves) the runner
+    actually filtered against, with `  # must-have` appended to lines
+    whose species came from the user's must-have input. One file per
+    week when week_NN folders are present, or a single
+    <campaign>-species-list.txt when they are not; that single-file
+    path is returned for inclusion in CampaignRunResult.species_list_txt.
+    """
+    if not per_week_allowed:
+        return None
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    weeks = sorted(per_week_allowed)
+    if weeks == [-1]:
+        single_path = output_dir / f"{campaign_name}-species-list.txt"
+        single_path.write_text(_format_species_lines(per_week_allowed[-1], must_haves), encoding="utf-8")
+        return single_path
+
+    for w, species in per_week_allowed.items():
+        if w == -1:
+            (output_dir / f"{campaign_name}-species-list.txt").write_text(
+                _format_species_lines(species, must_haves), encoding="utf-8"
+            )
+        else:
+            (output_dir / f"{campaign_name}-species-list-week-{w:02d}.txt").write_text(
+                _format_species_lines(species, must_haves), encoding="utf-8"
+            )
+    return None
+
+
+def _format_species_lines(species: frozenset[str], must_haves: frozenset[str]) -> str:
+    """Format one species list with a `# must-have` marker for user-added entries."""
+    lines = []
+    for name in sorted(species):
+        if name in must_haves:
+            lines.append(f"{name}  # must-have")
+        else:
+            lines.append(name)
+    return "\n".join(lines) + "\n"
 
 
 def _build_progress_callback(
@@ -332,7 +392,14 @@ def _run_campaign(
     # LOCATION mode this triggers the geo model download / lookup once per
     # week present in the campaign, which we want paid during the
     # 'preparing' phase rather than mid-inference.
-    allowed_for, lat, lon = _build_allowed_lookup(ci, wav_files)
+    allowed_for, lat, lon, per_week_allowed, must_haves = _build_allowed_lookup(ci, wav_files)
+
+    # Write the applied per-week allow-list (geo + must-haves) alongside
+    # the detections so users can inspect exactly what the model was
+    # asked to consider.
+    species_list_txt = _write_species_list_files(
+        output_dir, campaign_name, per_week_allowed, must_haves
+    )
 
     run_context = {
         "Lat": lat if lat is not None else "",
@@ -379,7 +446,7 @@ def _run_campaign(
             campaign_name=campaign_name,
             output_dir=output_dir,
             detections_csv=detections_csv,
-            species_list_txt=None,
+            species_list_txt=species_list_txt,
             detection_count=0,
             wav_count=0,
             aru_count=0,
@@ -569,7 +636,7 @@ def _run_campaign(
         campaign_name=campaign_name,
         output_dir=output_dir,
         detections_csv=detections_csv,
-        species_list_txt=None,
+        species_list_txt=species_list_txt,
         detection_count=detection_count,
         wav_count=wav_count,
         aru_count=len(aru_set),

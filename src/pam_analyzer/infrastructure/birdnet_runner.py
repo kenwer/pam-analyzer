@@ -113,13 +113,17 @@ def _parse_species_lines(text: str) -> frozenset[str]:
 
     Accepts plain Latin names or 'Scientific_Common' entries copied from a
     BirdNET-style species list, matching what the old slist file parser
-    accepted.
+    accepted. Everything after a `#` on a line is treated as a comment and
+    discarded, so users can annotate their lists or paste back lines that
+    this runner emitted with `  # must-have` markers.
     """
-    return frozenset(
-        line.split("_", 1)[0].strip()
-        for line in text.splitlines()
-        if line.strip()
-    )
+    out: set[str] = set()
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        out.add(line.split("_", 1)[0].strip())
+    return frozenset(out)
 
 
 def _emit_progress(
@@ -175,13 +179,19 @@ class _RunGlobalProgress:
 
 def _build_allowed_lookup(
     ci: CampaignRunInput, wav_files: list[Path]
-) -> tuple[Callable[[Path], frozenset[str] | None], float | None, float | None, dict[int, frozenset[str]]]:
+) -> tuple[
+    Callable[[Path], frozenset[str] | None],
+    float | None,
+    float | None,
+    dict[int, frozenset[str]],
+    frozenset[str],
+]:
     """Per-file species-allow-list resolver and the (lat, lon) for the run.
 
-    The fourth tuple element is the per-week regional set (LOCATION mode
-    only, empty dict otherwise). The runner uses it to write the
-    <campaign>-species-list-week-NN.txt files the previous birdnet_analyzer
-    flow produced as a byproduct.
+    The fourth tuple element is the per-week applied set (geo + must-haves),
+    LOCATION mode only, empty dict otherwise. The fifth is the must-have
+    subset, used by the file writer to mark which lines were added by the
+    user vs derived from the geo model.
 
     Three regimes:
 
@@ -196,7 +206,7 @@ def _build_allowed_lookup(
     """
     if ci.mode == FilterMode.LIST and ci.species_list_text:
         fixed = _parse_species_lines(ci.species_list_text)
-        return (lambda _p: fixed), None, None, {}
+        return (lambda _p: fixed), None, None, {}, frozenset()
 
     if ci.mode == FilterMode.LOCATION and ci.location is not None:
         lat = ci.location.latitude
@@ -206,63 +216,69 @@ def _build_allowed_lookup(
         for f in wav_files:
             w = _week_from_path(f)
             weeks_present.add(w if w is not None else -1)
-        per_week_geo: dict[int, frozenset[str]] = {
-            w: region_species_scientific(lat, lon, w) for w in weeks_present
-        }
         per_week_allowed: dict[int, frozenset[str]] = {
-            w: (geo | must_haves) if must_haves else geo
-            for w, geo in per_week_geo.items()
+            w: region_species_scientific(lat, lon, w) | must_haves
+            for w in weeks_present
         }
 
         def lookup(path: Path) -> frozenset[str] | None:
             w = _week_from_path(path)
             return per_week_allowed.get(w if w is not None else -1)
 
-        return lookup, lat, lon, per_week_geo
+        return lookup, lat, lon, per_week_allowed, must_haves
 
-    return (lambda _p: None), None, None, {}
+    return (lambda _p: None), None, None, {}, frozenset()
 
 
 def _write_species_list_files(
     output_dir: Path,
     campaign_name: str,
-    per_week_geo: dict[int, frozenset[str]],
+    per_week_allowed: dict[int, frozenset[str]],
+    must_haves: frozenset[str],
 ) -> Path | None:
-    """Write the per-week geographic species list as plain text.
+    """Write the per-week applied species list as plain text.
 
-    Produces <campaign>-species-list[-week-NN].txt files matching the
-    naming the previous birdnet_analyzer-based runner wrote, so any
-    user-facing scripts that consume them keep working. When weeks are
-    present we write one file per week. When no week_NN segments exist
-    the per_week_geo dict has a single key (-1) and we write a single
-    <campaign>-species-list.txt; that path is returned for inclusion in
-    CampaignRunResult.species_list_txt.
+    Each file contains the merged list (geo + must-haves) the runner
+    actually filtered against, with `  # must-have` appended to lines
+    whose species came from the user's must-have input. One file per
+    week when week_NN folders are present, or a single
+    <campaign>-species-list.txt when they are not; that single-file
+    path is returned for inclusion in CampaignRunResult.species_list_txt.
     """
-    if not per_week_geo:
+    if not per_week_allowed:
         return None
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    single_path: Path | None = None
-    weeks = sorted(per_week_geo)
+    weeks = sorted(per_week_allowed)
     if weeks == [-1]:
         single_path = output_dir / f"{campaign_name}-species-list.txt"
-        single_path.write_text(
-            "\n".join(sorted(per_week_geo[-1])) + "\n", encoding="utf-8"
-        )
+        single_path.write_text(_format_species_lines(per_week_allowed[-1], must_haves), encoding="utf-8")
         return single_path
 
-    for w, species in per_week_geo.items():
+    for w, species in per_week_allowed.items():
         if w == -1:
             # Files without a week_NN segment in a campaign that does have
             # week folders are rare; fall back to a 'no-week' file so the
             # list is still preserved.
             (output_dir / f"{campaign_name}-species-list.txt").write_text(
-                "\n".join(sorted(species)) + "\n", encoding="utf-8"
+                _format_species_lines(species, must_haves), encoding="utf-8"
             )
         else:
             (output_dir / f"{campaign_name}-species-list-week-{w:02d}.txt").write_text(
-                "\n".join(sorted(species)) + "\n", encoding="utf-8"
+                _format_species_lines(species, must_haves), encoding="utf-8"
             )
+    return None
+
+
+def _format_species_lines(species: frozenset[str], must_haves: frozenset[str]) -> str:
+    """Format one species list with a `# must-have` marker for user-added entries."""
+    lines = []
+    for name in sorted(species):
+        if name in must_haves:
+            lines.append(f"{name}  # must-have")
+        else:
+            lines.append(name)
+    return "\n".join(lines) + "\n"
     return None
 
 
@@ -348,11 +364,16 @@ def _run_campaign(
     # Resolve the species filter before opening the inference session: in
     # LOCATION mode this pre-warms the geo model and computes per-week
     # whitelists, so any geo lookup cost is paid during 'preparing'.
-    allowed_for, lat, lon, per_week_geo = _build_allowed_lookup(ci, wav_files)
+    allowed_for, lat, lon, per_week_allowed, must_haves = _build_allowed_lookup(ci, wav_files)
 
-    # Preserve the species-list TXT side outputs the previous flow wrote.
-    # These are user-facing artifacts independent of the detections CSV.
-    species_list_txt = _write_species_list_files(output_dir, campaign_name, per_week_geo)
+    # Write the applied per-week allow-list (geo + must-haves) alongside
+    # the detections so the user can inspect exactly what the model was
+    # asked to consider. Must-have entries are tagged with a `# must-have`
+    # marker; the parser ignores comments so the file round-trips cleanly
+    # if anyone pastes lines back into a campaign's species_list.txt.
+    species_list_txt = _write_species_list_files(
+        output_dir, campaign_name, per_week_allowed, must_haves
+    )
 
     run_context = {
         "Lat": lat if lat is not None else "",
