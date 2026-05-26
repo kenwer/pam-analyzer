@@ -2,9 +2,9 @@ name: Build Distributable
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "master" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "master" ]
   workflow_dispatch:
     inputs:
       upload_release_assets:
@@ -79,17 +79,6 @@ jobs:
         with:
           path: dist/.birdnet-checkpoints
           key: birdnet-checkpoints-${{ hashFiles('uv.lock') }}
-
-      # pywebview on Linux uses GTK3 + WebKit2GTK, which have no pre-built wheels
-      # and require system libraries to be present at build time.
-      - name: Install GTK+ build dependencies (Linux only)
-        if: matrix.os_name == 'linux'
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y --no-install-recommends \
-            libgtk-3-dev libwebkit2gtk-4.1-dev \
-            libglib2.0-dev libpango1.0-dev libcairo2-dev \
-            gir1.2-webkit2-4.1
 
       - name: Build distributable
         run: uv run --script scripts/build.py
