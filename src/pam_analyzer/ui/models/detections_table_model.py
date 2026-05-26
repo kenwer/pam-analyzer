@@ -296,7 +296,12 @@ class DetectionsTableModel(QAbstractTableModel):
             return ""  # play column; delegate paints the icon
         d = self._all[self._visible[row]]
         value = self._columns[col].get(d)
-        return "" if value is None else value
+        if value is None:
+            return ""
+        # Use str() for floats so the table uses "." as decimal separator (matching the filter row's float() parser) instead of locale-dependent formatting
+        if isinstance(value, float):
+            return str(int(value)) if value == int(value) else str(value)
+        return value
 
     def flags(self, index: QModelIndex) -> Qt.ItemFlags:
         flags = super().flags(index)
