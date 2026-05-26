@@ -2,46 +2,24 @@
 
 The `# must-have` markers written by the runners need to survive being
 pasted back into an input species list, otherwise the documented round-
-trip would break silently. These tests are duplicated across runners
-because BirdNET and Perch deliberately keep their species-list helpers
-side by side (same logic, separate modules).
+trip would break silently.
 """
 
-from pam_analyzer.infrastructure.birdnet_runner import (
-    _format_species_lines as bn_format,
-)
-from pam_analyzer.infrastructure.birdnet_runner import (
-    _parse_species_lines as bn_parse,
-)
-from pam_analyzer.infrastructure.perch_runner import (
-    _format_species_lines as pc_format,
-)
-from pam_analyzer.infrastructure.perch_runner import (
-    _parse_species_lines as pc_parse,
+from pam_analyzer.infrastructure._analysis_helpers import (
+    _format_species_lines,
+    parse_species_lines,
 )
 
 
-def test_parse_strips_hash_comments_birdnet() -> None:
+def test_parse_strips_hash_comments() -> None:
     text = "Parus major  # must-have\nCorvus corone\n# whole-line comment\n"
-    assert bn_parse(text) == frozenset({"Parus major", "Corvus corone"})
+    assert parse_species_lines(text) == frozenset({"Parus major", "Corvus corone"})
 
 
-def test_parse_strips_hash_comments_perch() -> None:
-    text = "Parus major  # must-have\nCorvus corone\n# whole-line comment\n"
-    assert pc_parse(text) == frozenset({"Parus major", "Corvus corone"})
-
-
-def test_format_tags_must_haves_only_birdnet() -> None:
+def test_format_tags_must_haves_only() -> None:
     species = frozenset({"Parus major", "Corvus corone"})
     must_haves = frozenset({"Parus major"})
-    out = bn_format(species, must_haves)
-    assert out == "Corvus corone\nParus major  # must-have\n"
-
-
-def test_format_tags_must_haves_only_perch() -> None:
-    species = frozenset({"Parus major", "Corvus corone"})
-    must_haves = frozenset({"Parus major"})
-    out = pc_format(species, must_haves)
+    out = _format_species_lines(species, must_haves)
     assert out == "Corvus corone\nParus major  # must-have\n"
 
 
@@ -52,6 +30,5 @@ def test_format_then_parse_round_trips() -> None:
     campaign's species_list.txt without manual cleanup."""
     species = frozenset({"Parus major", "Corvus corone", "Erithacus rubecula"})
     must_haves = frozenset({"Parus major"})
-    formatted = bn_format(species, must_haves)
-    assert bn_parse(formatted) == species
-    assert pc_parse(formatted) == species
+    formatted = _format_species_lines(species, must_haves)
+    assert parse_species_lines(formatted) == species
