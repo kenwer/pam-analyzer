@@ -279,11 +279,39 @@ class DetectionTable(QWidget):
             if idx >= 0:
                 self._table.setItemDelegateForColumn(idx, delegate)
 
-    def setSortPriority(self, priority: list) -> None:  # noqa: N802, Qt-style camelCase
-        self._table.setSortPriority(priority)
+    def setSortPriority(  # noqa: N802 (Qt-style)
+        self, priority: list[tuple[str, Qt.SortOrder]]
+    ) -> None:
+        """Apply a sort priority by column name.
 
-    def sortPriority(self) -> list:  # noqa: N802, Qt-style camelCase
-        return self._table.sortPriority()
+        Names that don't exist in the current model are skipped, so a
+        restored sort survives a column being renamed or a Species_<locale>
+        extra that wasn't present in the previous data load.
+        """
+        if self._model is None:
+            return
+        idx_priority: list[tuple[int, Qt.SortOrder]] = []
+        for name, order in priority:
+            idx = self._model.index_of(name)
+            if idx >= 0:
+                idx_priority.append((idx, order))
+        self._table.setSortPriority(idx_priority)
+
+    def sortPriority(self) -> list[tuple[str, Qt.SortOrder]]:  # noqa: N802 (Qt-style)
+        """Return the current sort priority as (column_name, order) pairs.
+
+        Names survive set_detections inserting Species_<locale> extras
+        (which shift the column indices the inner table uses internally);
+        restoring via setSortPriority round-trips correctly.
+        """
+        if self._model is None:
+            return []
+        names = self._model.column_names(include_play=True)
+        out: list[tuple[str, Qt.SortOrder]] = []
+        for col, order in self._table.sortPriority():
+            if 0 <= col < len(names):
+                out.append((names[col], order))
+        return out
 
     def setAudioRoot(self, path: Path | None) -> None:  # noqa: N802, Qt-style camelCase
         self._audio_root = path

@@ -35,6 +35,17 @@ _ALL_CAMPAIGNS_DATA = "__all__"
 # into a single CSV write without making the user wait noticeably.
 _AUTOSAVE_DEBOUNCE_MS = 500
 
+# Default sort applied when there's no active user-chosen sort to restore
+# (fresh app start, or first campaign load). Groups rows by ARU/Species and
+# surfaces high-confidence hits first. Names are looked up against the
+# current model at apply time, so an entry referring to a column the model
+# doesn't expose is silently dropped.
+_DEFAULT_SORT_PRIORITY: list[tuple[str, Qt.SortOrder]] = [
+    ("ARU", Qt.AscendingOrder),
+    ("Species", Qt.AscendingOrder),
+    ("Confidence", Qt.DescendingOrder),
+]
+
 
 class ExaminePanel(QWidget):
     def __init__(
@@ -215,62 +226,19 @@ class ExaminePanel(QWidget):
     def _apply_filter(self) -> None:
         max_per = self.ui.max_per_spin.value()
         rows = filter_top_per_aru_species(self._raw_detections, max_per)
-        # Snapshot the user's current sort by column NAME before the model
-        # reset shifts indices, then re-resolve to current indices after.
-        # Falls back to Confidence desc when there's no active sort yet.
-        prior_names = self._sort_priority_by_name()
+        # Snapshot the current sort by column NAME so it survives the model
+        # reset shifting indices below. Falls back to the panel default when
+        # there's no active user sort yet.
+        prior = self.ui.detections_table.sortPriority() or _DEFAULT_SORT_PRIORITY
         self._model.set_detections(rows)
         # New columns from set_detections (Species_<locale> extras) default
         # to visible in Qt. Re-apply the persisted hidden set so anything
         # the user previously hid stays hidden even after the model rebuild.
         self.ui.detections_table.setHiddenColumnNames(self._settings.examine_hidden_columns)
-        self._restore_sort_priority(prior_names)
+        self.ui.detections_table.setSortPriority(prior)
         # Refresh the Corrected_Species combo choices from the loaded data.
         self.ui.detections_table.setSpeciesChoices(sorted({d.species for d in self._raw_detections if d.species}))
         self.ui.detections_table.fitColumnsToContents()
-
-    def _sort_priority_by_name(self) -> list[tuple[str, Qt.SortOrder]]:
-        """Translate the current (col_idx, order) sort into (name, order).
-
-        Column-index-based priorities go stale when set_detections inserts
-        Species_<locale> extras, so we round-trip through column names.
-        """
-        all_cols = self._model.column_names(include_play=True)
-        out: list[tuple[str, Qt.SortOrder]] = []
-        for col, order in self.ui.detections_table.sortPriority():
-            if 0 <= col < len(all_cols):
-                out.append((all_cols[col], order))
-        return out
-
-    def _restore_sort_priority(self, prior_names: list[tuple[str, Qt.SortOrder]]) -> None:
-        new_priority: list[tuple[int, Qt.SortOrder]] = []
-        for name, order in prior_names:
-            idx = self._model.index_of(name)
-            if idx >= 0:
-                new_priority.append((idx, order))
-        if not new_priority:
-            new_priority = self._default_sort_priority()
-        self.ui.detections_table.setSortPriority(new_priority)
-
-    def _default_sort_priority(self) -> list[tuple[int, Qt.SortOrder]]:
-        """Group rows by Campaign/ARU/Species, then surface high-confidence hits first.
-
-        Used when there's no user-chosen sort to restore (fresh app start or
-        first campaign load). Skips any column the current model layout
-        doesn't know about, so this stays robust if a column is renamed or
-        removed later.
-        """
-        defaults: list[tuple[str, Qt.SortOrder]] = [
-            ("ARU", Qt.AscendingOrder),
-            ("Species", Qt.AscendingOrder),
-            ("Confidence", Qt.DescendingOrder),
-        ]
-        priority: list[tuple[int, Qt.SortOrder]] = []
-        for name, order in defaults:
-            idx = self._model.index_of(name)
-            if idx >= 0:
-                priority.append((idx, order))
-        return priority
 
     def _on_detection_count_changed(self, shown: int) -> None:
         total = len(self._raw_detections)
