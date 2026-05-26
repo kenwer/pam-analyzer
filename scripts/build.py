@@ -156,7 +156,7 @@ def main() -> None:
 
     print('  Creating venv')
     DIST_DIR.mkdir(parents=True, exist_ok=True)
-    run(['uv', 'venv', '--python', '3.13', '--clear', VENV_DIR])
+    run(['uv', 'venv', '--python', '3.12', '--clear', VENV_DIR])
 
     print('  Installing dependencies')
     run(['uv', 'pip', 'install', '--quiet', ROOT_DIR, 'pyinstaller', '--python', python])
