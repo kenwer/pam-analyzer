@@ -1,23 +1,24 @@
-"""About dialog: app icon, version, author, link, short description.
+"""About dialog: app header plus Changelog and Acknowledgements tabs.
 
 Stateless wrapper applied to a plain QDialog (mirrors the detectorist pattern).
 """
 
 from importlib.metadata import PackageNotFoundError, version
 
-from PySide6.QtCore import QSize
+from PySide6.QtCore import QFile, QIODeviceBase, QSize
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QDialog, QWidget
 
-from .. import resources_rc  # noqa: F401  registers :/icons/* resources
+from .. import resources_rc  # noqa: F401  registers :/icons/* and :/docs/* resources
 from .ui_about_dialog import Ui_AboutDialog
 
-_DESCRIPTION_HTML = """
-<p>PAM Analyzer is a desktop tool for reviewing
-<b>BirdNET</b> detections from passive acoustic monitoring (PAM) field
-recordings. It supports importing audio from SD cards, running BirdNET
-analyses, and curating species detections per campaign.</p>
-<p>This is a clean Qt rewrite of the original NiceGUI-based app.</p>
+# Keep in sync with the "Acknowledgements" section of README.md.
+_ACKNOWLEDGEMENTS_MARKDOWN = """\
+The author would like to thank the following projects:
+
+- [BirdNET](https://github.com/birdnet-team/birdnet)
+- [Perch 2.0](https://arxiv.org/pdf/2508.04665)
+- [Qt](https://www.qt.io/) / [PySide6](https://doc.qt.io/qtforpython/)
 """
 
 
@@ -28,7 +29,9 @@ def show_about_dialog(parent: QWidget | None = None) -> None:
 
     ui.version_label.setText(f"Version: {_resolve_version()}")
     ui.icon_label.setPixmap(QIcon(":/icons/icon.svg").pixmap(QSize(128, 128)))
-    ui.description_text_browser.setHtml(_DESCRIPTION_HTML)
+
+    ui.changelog_text_browser.setMarkdown(_read_qresource(":/docs/CHANGELOG.md"))
+    ui.acknowledgements_text_browser.setMarkdown(_ACKNOWLEDGEMENTS_MARKDOWN)
 
     dialog.exec()
 
@@ -38,3 +41,15 @@ def _resolve_version() -> str:
         return version("pam-analyzer")
     except PackageNotFoundError:
         return "unknown"
+
+
+def _read_qresource(path: str) -> str:
+    # QTextBrowser.source only renders HTML, so we read the markdown text
+    # ourselves and hand it to setMarkdown(). Same trick detectorist uses.
+    qfile = QFile(path)
+    if not qfile.open(QIODeviceBase.OpenModeFlag.ReadOnly | QIODeviceBase.OpenModeFlag.Text):
+        return ""
+    try:
+        return bytes(qfile.readAll()).decode("utf-8")
+    finally:
+        qfile.close()
