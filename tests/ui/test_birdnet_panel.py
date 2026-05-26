@@ -33,6 +33,8 @@ def _isolated_qsettings(tmp_path, monkeypatch):
 
 
 class _FakeRunner:
+    model_key = "birdnet"
+
     def count_audio_files(self, _path: Path) -> int:
         return 0
 
@@ -187,6 +189,43 @@ def test_loads_previous_results_from_disk(qtbot, tmp_path: Path):
     assert state.last_analysis_result.from_disk is True
     assert "Loaded previous results" in panel.ui.summary_label.text()
     assert "3 detections" in panel.ui.summary_label.text()
+
+
+def test_panel_shows_perch_csv_when_model_switched(qtbot, tmp_path: Path):
+    """A project with both birdnet and perch CSVs should reveal the perch one
+    after the user switches the model combo to Perch v2."""
+    audio_root = tmp_path / "audio"
+    audio_root.mkdir()
+    proj = Project(path=tmp_path / "dual.pamproj", audio_recordings_path=audio_root)
+    TomlProjectRepository().save(proj)
+
+    campaign_dir = proj.output_base / "alpha"
+    campaign_dir.mkdir(parents=True)
+    bn = campaign_dir / "alpha-detections-birdnet.csv"
+    bn.write_text("Species,Confidence\nRobin,0.9\n", encoding="utf-8")
+    pc = campaign_dir / "alpha-detections-perch.csv"
+    pc.write_text("Species,Confidence\nCrow,0.7\nJay,0.6\n", encoding="utf-8")
+
+    state = AppState(TomlProjectRepository(), TomlCampaignRepository())
+    bn_runner = _FakeRunner()
+    perch_runner = _FakeRunner()
+    perch_runner.model_key = "perch"
+    panel = BirdNetPanel(
+        state,
+        {"BirdNET": bn_runner, "Perch v2": perch_runner},
+        TomlCampaignRepository(),
+    )
+    qtbot.addWidget(panel)
+    state.load_project(proj.path)
+
+    # Initially BirdNET is selected -> birdnet row only.
+    assert "1 detection" in panel.ui.summary_label.text()
+
+    perch_idx = panel.ui.model_combo.findData("Perch v2")
+    panel.ui.model_combo.setCurrentIndex(perch_idx)
+
+    # Now Perch is selected -> perch row (2 detections) is shown instead.
+    assert "2 detections" in panel.ui.summary_label.text()
 
 
 def test_project_switch_clears_stale_results(

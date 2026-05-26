@@ -19,6 +19,10 @@ def discover_analysis_result(output_base: Path) -> AnalysisRunResult | None:
     Returns None when no campaign detection CSV is found (a clean project, or
     one where analysis has never been run). A missing species-list file is
     not an error; it is recorded as None.
+
+    One CampaignRunResult is emitted per CSV so multiple model runs of the
+    same campaign coexist as sibling rows tagged with model_key. The panel
+    filters by the active model_key to show just the matching run.
     """
     if not output_base.exists():
         return None
@@ -27,10 +31,8 @@ def discover_analysis_result(output_base: Path) -> AnalysisRunResult | None:
     for sub in sorted(output_base.iterdir()):
         if not sub.is_dir():
             continue
-        csv_paths = paths.campaign_csvs(output_base, sub.name)
-        if not csv_paths:
-            continue
-        campaigns.append(_synthesize_campaign(output_base, sub.name, csv_paths))
+        for csv_path in paths.campaign_csvs(output_base, sub.name):
+            campaigns.append(_synthesize_campaign(output_base, sub.name, csv_path))
 
     if not campaigns:
         return None
@@ -39,28 +41,35 @@ def discover_analysis_result(output_base: Path) -> AnalysisRunResult | None:
 
 
 def _synthesize_campaign(
-    output_base: Path, campaign_name: str, csv_paths: list[Path]
+    output_base: Path, campaign_name: str, csv_path: Path
 ) -> CampaignRunResult:
-    """Build a CampaignRunResult that covers every model CSV in the campaign.
+    """Build a CampaignRunResult for one on-disk detection CSV.
 
-    detections_csv is a single Path field by contract, so we pick the most
-    recently modified one as the canonical "click to open" target; the
-    detection_count sums across every file so the results panel reflects
-    aggregated reality. csv_paths is the full list (legacy + per-model).
+    model_key is inferred from the filename suffix: <campaign>-detections-<key>.csv.
+    The legacy unsuffixed <campaign>-detections.csv predates per-model files
+    and is treated as a BirdNET artifact, since BirdNET was the only backend
+    when that layout shipped.
     """
     output_dir = output_base / campaign_name
-    primary = max(csv_paths, key=lambda p: p.stat().st_mtime)
-    total_rows = sum(_count_csv_rows(p) for p in csv_paths)
     return CampaignRunResult(
         campaign_name=campaign_name,
         output_dir=output_dir,
-        detections_csv=primary,
+        detections_csv=csv_path,
         species_list_txt=_optional(output_dir / f"{campaign_name}-species-list.txt"),
-        detection_count=total_rows,
+        detection_count=_count_csv_rows(csv_path),
         wav_count=0,
         aru_count=0,
         elapsed=0.0,
+        model_key=_model_key_from_filename(campaign_name, csv_path),
     )
+
+
+def _model_key_from_filename(campaign_name: str, csv_path: Path) -> str:
+    prefix = f"{campaign_name}-detections-"
+    stem = csv_path.stem
+    if stem.startswith(prefix):
+        return stem[len(prefix):]
+    return "birdnet"  # legacy <campaign>-detections.csv from the single-model era
 
 
 def _optional(path: Path) -> Path | None:

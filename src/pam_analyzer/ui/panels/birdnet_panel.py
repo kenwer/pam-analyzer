@@ -142,6 +142,7 @@ class BirdNetPanel(QWidget):
         self._rebuild_locales_menu()
         self._apply_model_capabilities()
         self._app_state.update_birdnet_settings(analysis_model=key)
+        self._on_last_result_changed(self._app_state.last_analysis_result)
 
     def _rebuild_locales_menu(self) -> None:
         """Tear down and recreate the locales popup after a model switch."""
@@ -422,15 +423,40 @@ class BirdNetPanel(QWidget):
         # A run currently in progress owns the status page; don't fight it.
         if self._state.running:
             return
-        if result is None:
+        filtered = self._filter_for_current_model(result)
+        if filtered is None:
             self._results_model.clear()
             self._results_model.setHorizontalHeaderLabels(["Name", "Files"])
             self.ui.summary_label.clear()
             self.ui.output_path_label.clear()
             self._set_status_page(_StatusPage.IDLE)
         else:
-            self._render_results(result)
+            self._render_results(filtered)
             self._set_status_page(_StatusPage.RESULTS)
+
+    def _filter_for_current_model(
+        self, result: AnalysisRunResult | None
+    ) -> AnalysisRunResult | None:
+        """Keep rows tagged with the active runner's model_key.
+
+        An empty model_key on a row matches any model. That covers two cases:
+        fresh AnalysisRunResults built in tests without binding to a runner,
+        and any future caller that hasn't been migrated. Discovery and the
+        production runners always set a concrete model_key.
+        """
+        if result is None:
+            return None
+        target = self._runner.model_key
+        matching = tuple(
+            c for c in result.campaigns if c.model_key in ("", target)
+        )
+        if not matching:
+            return None
+        return AnalysisRunResult(
+            campaigns=matching,
+            elapsed=result.elapsed,
+            from_disk=result.from_disk,
+        )
 
     def is_busy(self) -> bool:
         return self._state.running

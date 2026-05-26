@@ -92,6 +92,7 @@ class CampaignRunResult:
     aru_count: int
     elapsed: float
     warnings: tuple[str, ...] = ()
+    model_key: str = "" # empty means "unknown / matches any
 
 
 @dataclass(frozen=True, slots=True)

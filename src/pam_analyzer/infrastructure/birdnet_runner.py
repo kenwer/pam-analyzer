@@ -402,6 +402,7 @@ def _run_campaign(
             wav_count=0,
             aru_count=0,
             elapsed=time.monotonic() - t0,
+            model_key=BirdnetRunner.model_key,
         )
 
     _emit_progress(
@@ -577,6 +578,7 @@ def _run_campaign(
         wav_count=wav_count,
         aru_count=len(aru_set),
         elapsed=time.monotonic() - t0,
+        model_key=BirdnetRunner.model_key,
     )
 
 
