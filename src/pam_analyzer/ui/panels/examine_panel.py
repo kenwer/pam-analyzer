@@ -403,7 +403,7 @@ def _write_visible_csv(
 def _snippet_filename(d: Detection, start: float, end: float) -> str:
     """Build a descriptive .wav filename per detection.
 
-    Slimmer than the original AG Grid version: campaign / aru / scientific
+    Slimmer than the original AG Grid version: campaign / aru / species
     name / start / end / confidence is enough for human-readable export.
     """
     try:
@@ -413,7 +413,7 @@ def _snippet_filename(d: Detection, start: float, end: float) -> str:
     parts = [
         d.campaign or "unknown",
         d.aru or "unknown",
-        (d.scientific_name or d.species or "unknown").replace(" ", "_"),
+        (d.species or d.scientific_name or "unknown").replace(" ", "_"),
         stamp,
         f"{start:.1f}-{end:.1f}",
         f"conf{d.confidence:.4f}",
