@@ -44,16 +44,16 @@ jobs:
             os_name: windows
             arch: x86_64
             archive_ext: zip
-          - os: ubuntu-latest
-            name: Linux (x86_64)
-            os_name: linux
-            arch: x86_64
-            archive_ext: tar.gz
-          - os: ubuntu-24.04-arm
-            name: Linux (arm64)
-            os_name: linux
-            arch: arm64
-            archive_ext: tar.gz
+          #- os: ubuntu-latest
+          #  name: Linux (x86_64)
+          #  os_name: linux
+          #  arch: x86_64
+          #  archive_ext: tar.gz
+          #- os: ubuntu-24.04-arm
+          #  name: Linux (arm64)
+          #  os_name: linux
+          #  arch: arm64
+          #  archive_ext: tar.gz
 
     steps:
       - name: Checkout
