@@ -22,7 +22,7 @@ jobs:
     name: Build (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         include:
           - os: macos-latest
@@ -102,12 +102,12 @@ jobs:
           case "${{ matrix.os_name }}" in
             macos)
               mv pam-analyzer.app "${versioned}.app"
-              zip -r "$ARCHIVE_NAME" "${versioned}.app"
+              zip -r -9 "$ARCHIVE_NAME" "${versioned}.app"
               rm -rf "${versioned}.app"
               ;;
             windows)
               mv pam-analyzer.exe "${versioned}.exe"
-              7z a "$ARCHIVE_NAME" "${versioned}.exe"
+              7z a -mx=9 "$ARCHIVE_NAME" "${versioned}.exe"
               ;;
             linux)
               mv pam-analyzer "$versioned"
@@ -124,7 +124,8 @@ jobs:
 
       - name: Upload release asset
         if: github.event_name == 'release' || inputs.upload_release_assets != ''
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$VERSION" "dist/$ARCHIVE_NAME" --clobber
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.VERSION }}
+          files: dist/${{ env.ARCHIVE_NAME }}
+          fail_on_unmatched_files: true
