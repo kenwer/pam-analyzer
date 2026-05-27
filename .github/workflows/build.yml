@@ -31,9 +31,7 @@ jobs:
             arch: arm64
             archive_ext: zip
           # macOS Intel (x86_64) is disabled because TensorFlow dropped macOS x86_64
-          # wheels starting with 2.21.0, and birdnet-analyzer requires tensorflow>=2.20.
-          # Re-enable if TensorFlow resumes x86_64 macOS support or birdnet-analyzer
-          # drops the TensorFlow dependency.
+          # wheels starting with 2.21.0, and Perch 2.0 doesn't support Intel mac either
           # - os: macos-15-intel
           #   name: macOS (x86_64)
           #   os_name: macos
@@ -44,16 +42,16 @@ jobs:
             os_name: windows
             arch: x86_64
             archive_ext: zip
-          #- os: ubuntu-latest
-          #  name: Linux (x86_64)
-          #  os_name: linux
-          #  arch: x86_64
-          #  archive_ext: tar.gz
-          #- os: ubuntu-24.04-arm
-          #  name: Linux (arm64)
-          #  os_name: linux
-          #  arch: arm64
-          #  archive_ext: tar.gz
+          - os: ubuntu-latest
+            name: Linux (x86_64)
+            os_name: linux
+            arch: x86_64
+            archive_ext: tar.gz
+          - os: ubuntu-24.04-arm
+            name: Linux (arm64)
+            os_name: linux
+            arch: arm64
+            archive_ext: tar.gz
 
     steps:
       - name: Checkout
@@ -73,6 +71,13 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v8.0.0
+
+      - name: Install system dependencies
+        # On Linux Qt requires libEGL.so.1, libpulse.so.0, the X11, and gstreamer libs
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y libegl1 libpulse0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-util1 libxcb-render-util0 libxcb-image0 libxcb-shape0 libxcb-xkb1 libxcb-icccm4 libxcb-keysyms1 libtiff6 libminizip1t64 libgstreamer-plugins-base1.0-0 libgstreamer-plugins-good1.0-0 libgstreamer-plugins-bad1.0-0 libgstreamer-gl1.0-0 
 
       - name: Cache BirdNET models
         uses: actions/cache@v5
