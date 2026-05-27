@@ -74,11 +74,17 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v8.0.0
 
-      - name: Cache BirdNET checkpoints
+      - name: Cache BirdNET models
         uses: actions/cache@v5
         with:
-          path: dist/.birdnet-checkpoints
-          key: birdnet-checkpoints-${{ hashFiles('uv.lock') }}
+          path: dist/.birdnet-models
+          key: birdnet-models-${{ hashFiles('uv.lock') }}
+
+      - name: Run tests
+        env:
+          BIRDNET_APP_DATA: ${{ github.workspace }}/dist/.birdnet-models/birdnet-app-data
+          KAGGLEHUB_CACHE: ${{ github.workspace }}/dist/.birdnet-models/kagglehub
+        run: uv run poe test
 
       - name: Build distributable
         run: uv run --script scripts/build.py
