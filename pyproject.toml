@@ -7,6 +7,9 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "PySide6>=6.11.0",
     "birdnet>=0.2.16",
+    "tensorflow>=2.17.0; sys_platform != 'darwin' or platform_machine != 'x86_64'",   # Fix Perch v2 "unknown attribute code: 22" (StableHLO) bug on ARM64/Linux/Win
+    "tensorflow>=2.16.2; sys_platform == 'darwin' and platform_machine == 'x86_64'",  # Satisfy birdnet's <2.17 requirement on Intel Macs (Google dropped x86_64 support in 2.21+)
+    "kagglehub>=0.3.13,<0.4.0",                                                       # Pin to avoid broken kagglesdk dependency in kagglehub 0.4.0+ (ImportError)
     "platformdirs>=4.3.0",
     "psutil>=6.0.0",
     "guano>=1.0.16",
@@ -27,7 +30,6 @@ dev = [
     "ruff>=0.6",
     "poethepoet>=0.29",
     "py-spy>=0.3",
-    "kagglehub>=0.3.13,<0.4.0",
 ]
 
 [build-system]
@@ -68,13 +70,14 @@ run-app = "python -m pam_analyzer"
 run = { sequence = ["compile-ui", "compile-qrc", "run-app"], help = "Compile UI/resources, then run the app" }
 run-dbg = { cmd = "python -m pam_analyzer", env = {PAM_LOG_LEVEL = "DEBUG"}, help = "Run the app with DEBUG logging (skips UI recompile)" }
 profile = { cmd = "py-spy record -o spectrogram_profile.svg -- python -m pam_analyzer", help = "Record a py-spy flame graph; navigate the app then Ctrl+C to write spectrogram_profile.svg (Windows: run as Administrator)" }
-test = "pytest"
+test = { cmd = "pytest", help = "Run all tests, including slow ones" }
+test-fast = { cmd = "pytest -m 'not slow'", help = "Run only fast tests" }
 lint = "ruff check src tests"
 fmt = "ruff format src tests"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra -q -m 'not slow'"
+addopts = "-ra -q"
 qt_api = "pyside6"
 markers = [
     "slow: opt-in tests that load heavy ML models or download artifacts (run with: pytest -m slow)",
