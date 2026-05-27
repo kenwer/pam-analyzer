@@ -1,14 +1,14 @@
 [project]
 name = "pam-analyzer"
-version = "0.1.0"
-description = "Passive Acoustic Monitoring analyzer — review BirdNET detections from ARU field recordings."
+version = "0.0.1"
+description = "Automated bird species detection from acoustic recordings."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "PySide6>=6.11.0",
     "birdnet>=0.2.16",
     "tensorflow>=2.17.0; sys_platform != 'darwin' or platform_machine != 'x86_64'",   # Fix Perch v2 "unknown attribute code: 22" (StableHLO) bug on ARM64/Linux/Win
-    "tensorflow>=2.16.2; sys_platform == 'darwin' and platform_machine == 'x86_64'",  # Satisfy birdnet's <2.17 requirement on Intel Macs (Google dropped x86_64 support in 2.21+)
+    "tensorflow>=2.16.2; sys_platform == 'darwin' and platform_machine == 'x86_64'",  # Google dropped x86_64 support in 2.17
     "kagglehub>=0.3.13,<0.4.0",                                                       # Pin to avoid broken kagglesdk dependency in kagglehub 0.4.0+ (ImportError)
     "platformdirs>=4.3.0",
     "psutil>=6.0.0",
