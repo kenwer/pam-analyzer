@@ -3,31 +3,32 @@ Automated bird species detection from acoustic recordings.
 
 <!--TOC-->
 
-- [About](#about)
-- [Download](#download)
-- [Features](#features)
-- [Usage](#usage)
-- [Workflow](#workflow)
-  - [Project Settings](#project-settings)
-  - [Campaigns](#campaigns)
-  - [Run bird species detection using BirdNET-2.4 or Perch-2.0](#run-bird-species-detection-using-birdnet-24-or-perch-20)
-  - [Output files](#output-files)
-  - [Examine Detections](#examine-detections)
-- [Keyboard shortcuts](#keyboard-shortcuts)
-  - [Global](#global)
-  - [Examine panel: detection row selected](#examine-panel-detection-row-selected)
-- [Core Concepts](#core-concepts)
-  - [Project](#project)
-  - [Campaign](#campaign)
-  - [ARU (Autonomous Recording Unit)](#aru-autonomous-recording-unit)
-- [Models](#models)
-  - [BirdNET v2.4](#birdnet-v24)
-  - [Perch v2](#perch-v2)
-    - [Logit calibration](#logit-calibration)
-  - [Choosing a model](#choosing-a-model)
-- [Changelog](#changelog)
-- [Acknowledgements](#acknowledgements)
-- [License](#license)
+- [PAM Analyzer](#pam-analyzer)
+  - [About](#about)
+  - [Download](#download)
+  - [Features](#features)
+  - [Usage](#usage)
+  - [Workflow](#workflow)
+    - [Project Settings](#project-settings)
+    - [Campaigns](#campaigns)
+    - [Run bird species detection using BirdNET-2.4 or Perch-2.0](#run-bird-species-detection-using-birdnet-24-or-perch-20)
+    - [Output files](#output-files)
+    - [Examine Detections](#examine-detections)
+  - [Keyboard shortcuts](#keyboard-shortcuts)
+    - [Global](#global)
+    - [Examine panel: detection row selected](#examine-panel-detection-row-selected)
+  - [Core Concepts](#core-concepts)
+    - [Project](#project)
+    - [Campaign](#campaign)
+    - [ARU (Autonomous Recording Unit)](#aru-autonomous-recording-unit)
+  - [Models](#models)
+    - [BirdNET v2.4](#birdnet-v24)
+    - [Perch v2](#perch-v2)
+      - [Logit calibration](#logit-calibration)
+    - [Choosing a model](#choosing-a-model)
+  - [Changelog](#changelog)
+  - [Acknowledgements](#acknowledgements)
+  - [License](#license)
 
 <!--TOC-->
 
@@ -35,6 +36,7 @@ Automated bird species detection from acoustic recordings.
 ## About
 PAM Analyzer is a cross-platform desktop application designed to help researchers performing Passive Acoustic Monitoring (PAM). It provides a complete workflow for processing Autonomous Recording Unit (ARU) field recordings: from importing SD card contents and running automated species detection (using BirdNET v2.4 or Google Perch v2), to reviewing, annotating, and exporting detections. The application organizes data into a hierarchical structure of projects and campaigns, making it easy to manage large-scale monitoring studies.
 
+![Examine panel of the application interface](https://github.com/user-attachments/assets/613c7c67-abaf-4425-b2dc-15d194037eee)
 
 ## Download
 Pre-built binaries are available for the following platforms:
