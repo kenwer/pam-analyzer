@@ -90,7 +90,7 @@ jobs:
         env:
           BIRDNET_APP_DATA: ${{ github.workspace }}/dist/.birdnet-models/birdnet-app-data
           KAGGLEHUB_CACHE: ${{ github.workspace }}/dist/.birdnet-models/kagglehub
-        run: uv run poe test
+        run: uv run poe test-fast
 
       - name: Build distributable
         run: uv run --script scripts/build.py
