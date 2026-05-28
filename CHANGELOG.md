@@ -1,6 +1,6 @@
 # Changelog
 
-## unreleased
+## [0.1.1] - 2026-05-28
 ### Changed
 - Disable macOS release as its size exceeds the GitHub release limit.
 - [dev] Switch CI to run test-fast and omit the slow tests.
