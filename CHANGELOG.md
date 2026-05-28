@@ -1,5 +1,9 @@
 # Changelog
 
+## unreleased
+### Changed
+- Disable macOS release as its size exceeds the GitHub release limit.
+
 ## [0.1.0] - 2026-05-27
 ### Added
 - Initial release with MVP functionality.

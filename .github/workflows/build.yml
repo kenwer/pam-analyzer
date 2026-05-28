@@ -25,11 +25,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
-            name: macOS (arm64)
-            os_name: macos
-            arch: arm64
-            archive_ext: zip
+          # Disable macOS Apple Silicon (ARM) app bundle release as its size exceeds the GitHub release limit
+          # - os: macos-latest
+          #   name: macOS (arm64)
+          #   os_name: macos
+          #   arch: arm64
+          #   archive_ext: zip
           # macOS Intel (x86_64) is disabled because TensorFlow dropped macOS x86_64
           # wheels starting with 2.21.0, and Perch 2.0 doesn't support Intel mac either
           # - os: macos-15-intel
