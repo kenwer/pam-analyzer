@@ -1,6 +1,8 @@
 # Changelog
 
 ## [Unreleased]
+### Changed
+- [Dev] Release script also handles uv.lock.
 ### Fixed
 - Perch analysis no longer contacts Kaggle on each run: bundled builds resolve the model version from the bundled cache, so Perch runs fully offline and an upstream version bump can no longer trigger a re-download.
 

@@ -15,16 +15,19 @@ set -euo pipefail
 #   4. Increment the version number in pyproject.toml
 #      sed -i "s/version = \"...\"/version = \"...\"/"
 #
-#   5. Adjust CHANGELOG.md (replace "## unreleased" with the new version and date)
+#   5. Regenerate uv.lock so it records the new version
+#      uv lock
+#
+#   6. Adjust CHANGELOG.md (replace "## unreleased" with the new version and date)
 #      sed -i "s/## unreleased/## [X.Y.Z] - YYYY-MM-DD/"
 #
-#   6. Commit the changes with a message like "Bump version to 0.2.0"
-#      git add ... && git commit -m "Bump version to X.Y.Z"
+#   7. Commit the changes with a message like "Bump version to 0.2.0"
+#      git add pyproject.toml CHANGELOG.md uv.lock && git commit -m "Bump version to X.Y.Z"
 #
-#   7. Push to remote and wait for GitHub Actions to complete
+#   8. Push to remote and wait for GitHub Actions to complete
 #      git push
 #
-#   8. Tag the release and push the tag to trigger the release workflow
+#   9. Tag the release and push the tag to trigger the release workflow
 #      V="0.2.0"; git tag -a "v${V}" -m "Release version ${V}" && git push -u origin "v${V}"
 #
 # Usage:
@@ -42,6 +45,7 @@ NC='\033[0m' # No Color
 # File paths
 VERSION_FILE="pyproject.toml"
 CHANGELOG_FILE="CHANGELOG.md"
+LOCK_FILE="uv.lock"
 
 # Helper functions
 info() { echo -e "${BLUE}ℹ${NC} $1"; }
@@ -194,11 +198,12 @@ done
 
 echo ""
 info "Release plan:"
-echo -e "  4. Update version: ${CURRENT_VERSION} → ${GREEN}${NEW_VERSION}${NC} in ${VERSION_FILE}"
-echo -e "  5. Update CHANGELOG.md (unreleased → [${NEW_VERSION}] - $(date +%Y-%m-%d))"
-echo -e "  6. Commit: \"Bump version to ${NEW_VERSION}\""
-echo -e "  7. Push to remote and wait for CI"
-echo "  8. Tag: v${NEW_VERSION}"
+echo -e "  4. Update version: ${CURRENT_VERSION} -> ${GREEN}${NEW_VERSION}${NC} in ${VERSION_FILE}"
+echo -e "  5. Regenerate ${LOCK_FILE} (uv lock)"
+echo -e "  6. Update CHANGELOG.md (unreleased -> [${NEW_VERSION}] - $(date +%Y-%m-%d))"
+echo -e "  7. Commit: \"Bump version to ${NEW_VERSION}\""
+echo -e "  8. Push to remote and wait for CI"
+echo "  9. Tag: v${NEW_VERSION}"
 echo ""
 
 if ! confirm "Proceed with release?"; then
@@ -213,9 +218,19 @@ sed -i.bak "s/^version = \"${CURRENT_VERSION}\"/version = \"${NEW_VERSION}\"/" "
 rm -f "${VERSION_FILE}.bak"
 success "Version updated to ${NEW_VERSION}"
 
-# Step 5: Update CHANGELOG.md
+# Step 5: Regenerate uv.lock so it records the new project version. Without
+# this the lockfile drifts (pyproject says X.Y.Z, lock still says the old
+# version) and the next `uv run` rewrites uv.lock outside of a release commit.
 echo ""
-info "Step 5: Updating CHANGELOG.md..."
+info "Step 5: Regenerating ${LOCK_FILE}..."
+if ! uv lock; then
+    error "uv lock failed. Please resolve before releasing."
+fi
+success "${LOCK_FILE} updated"
+
+# Step 6: Update CHANGELOG.md
+echo ""
+info "Step 6: Updating CHANGELOG.md..."
 TODAY=$(date +%Y-%m-%d)
 sed -i.bak "s/## \[*[Uu]nreleased\]*/## [${NEW_VERSION}] - ${TODAY}/" "$CHANGELOG_FILE"
 rm -f "${CHANGELOG_FILE}.bak"
@@ -233,7 +248,7 @@ echo ""
 
 if ! confirm "Stage and commit these changes?"; then
     warn "Rolling back file changes..."
-    git checkout -- "$VERSION_FILE" "$CHANGELOG_FILE" 2>/dev/null || true
+    git checkout -- "$VERSION_FILE" "$CHANGELOG_FILE" "$LOCK_FILE" 2>/dev/null || true
     info "Changes rolled back."
     if ! confirm "Continue with remaining steps (push, tag) using existing commits?"; then
         info "Release cancelled."
@@ -241,10 +256,10 @@ if ! confirm "Stage and commit these changes?"; then
     fi
 fi
 
-# Step 6: Commit changes
+# Step 7: Commit changes
 echo ""
-info "Step 6: Staging and committing changes..."
-git add "$VERSION_FILE" "$CHANGELOG_FILE"
+info "Step 7: Staging and committing changes..."
+git add "$VERSION_FILE" "$CHANGELOG_FILE" "$LOCK_FILE"
 
 echo ""
 info "Staged files:"
@@ -255,7 +270,7 @@ echo ""
 
 if ! confirm "Create this commit?"; then
     warn "Unstaging changes..."
-    git reset HEAD -- "$VERSION_FILE" "$CHANGELOG_FILE"
+    git reset HEAD -- "$VERSION_FILE" "$CHANGELOG_FILE" "$LOCK_FILE"
     info "Commit cancelled. Files are still modified but not committed."
     if ! confirm "Continue with remaining steps (push, tag)?"; then
         info "Release cancelled."
@@ -266,11 +281,11 @@ fi
 git commit -m "Bump version to ${NEW_VERSION}"
 success "Changes committed"
 
-# Step 7: Push to remote
+# Step 8: Push to remote
 echo ""
 REMOTE_URL=$(git remote get-url origin)
 CURRENT_BRANCH=$(git branch --show-current)
-info "Step 7: Push to remote"
+info "Step 8: Push to remote"
 echo ""
 info "This will push:"
 echo "  • Branch: ${CURRENT_BRANCH}"
@@ -335,9 +350,9 @@ while true; do
     sleep 30
 done
 
-# Step 8: Create and push tag
+# Step 9: Create and push tag
 echo ""
-info "Step 8: Create and push tag"
+info "Step 9: Create and push tag"
 echo ""
 info "This will create:"
 echo "  • Tag: v${NEW_VERSION}"
