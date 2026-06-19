@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+### Fixed
+- Perch analysis no longer contacts Kaggle on each run: bundled builds resolve the model version from the bundled cache, so Perch runs fully offline and an upstream version bump can no longer trigger a re-download.
+
 ## [0.1.2] - 2026-06-19
 ### Changed
 - [Dev] Upgrade dependencies.
