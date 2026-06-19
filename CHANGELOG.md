@@ -1,5 +1,10 @@
 # Changelog
 
+## development
+### Fixed
+- Windows: model files are now bundled, so analysis runs offline instead of downloading the models on first run.
+- Windows: BirdNET and Perch analysis no longer crashes with "'NoneType' object has no attribute 'write'".
+
 ## [0.1.1] - 2026-05-28
 ### Changed
 - Disable macOS release as its size exceeds the GitHub release limit.

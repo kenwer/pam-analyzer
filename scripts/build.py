@@ -261,10 +261,14 @@ def main() -> None:
     # Bundle the model cache as a single tree at <bundle>/birdnet-models.
     # app/__main__.py reads sys._MEIPASS at startup and points
     # BIRDNET_APP_DATA / KAGGLEHUB_CACHE at the subdirs of that path.
-    cmd += ['--add-data', f'{MODEL_CACHE}:birdnet-models']
+    # PyInstaller splits --add-data on os.pathsep, which is ';' on Windows
+    # and ':' on POSIX. A hardcoded ':' is malformed on Windows (the source
+    # path also starts with a drive-letter colon), so the tree never lands
+    # in the bundle and the frozen app re-downloads every model at runtime.
+    cmd += ['--add-data', f'{MODEL_CACHE}{os.pathsep}birdnet-models']
     # Bundle extra data files (CHANGELOG, QML, etc.).
     for src, dest in DATA:
-        cmd += ['--add-data', f'{src}:{dest}']
+        cmd += ['--add-data', f'{src}{os.pathsep}{dest}']
     if is_mac:
         cmd += ['--windowed']  # creates .app bundle, no Terminal window
     else:
