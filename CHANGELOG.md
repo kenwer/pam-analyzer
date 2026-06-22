@@ -1,6 +1,11 @@
 # Changelog
 
 ## [Unreleased]
+### Added
+- Add support for FLAC audio:
+  - WAV recordings are transcoded to FLAC on import (lossless, 16-bit PCM) to save disk space.
+  - FLAC files already on the SD card are imported unchanged.
+  - Analysis, playback, spectrogram, and snippet export all work with FLAC.
 ### Changed
 - [Dev] Release script also handles uv.lock.
 ### Fixed
