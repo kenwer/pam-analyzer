@@ -12,11 +12,8 @@ would be lost on every transcoded recording.
 import logging
 import os
 import shutil
-import threading
 import time
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -36,16 +33,6 @@ from ..domain.audio_import import (
 )
 
 _log = logging.getLogger(__name__)
-
-# Serializes every libsndfile (soundfile) call. Imports run on a ThreadPoolExecutor
-# (see import_card), and concurrent FLAC encode/decode through libsndfile corrupts
-# the process heap on the Windows build of the library: the damage surfaces later as
-# an "access violation" in whatever thread next allocates, so the crash looks
-# unrelated to the import. libsndfile only guarantees thread-safety across
-# independent handles in theory; this build races through shared state in the FLAC
-# path. Holding one lock around all sf.* calls removes the race. The pool still
-# overlaps the byte-copy passthroughs (FLAC from card, CONFIG.TXT) with transcodes.
-_LIBSNDFILE_LOCK = threading.Lock()
 
 # Vorbis comment key under which the GUANO block is stored in a FLAC. The GUANO
 # spec only defines WAV ('guan' chunk) and Anabat containers, so this name is a
@@ -167,29 +154,25 @@ def transcode_to_flac(src: Path, dst: Path) -> int:
     source is not PCM_16, or VerifyError if the round-trip is not bit-exact;
     in both cases *dst* is left absent.
     """
-    # All libsndfile work for this file happens under one lock so no two import
-    # workers are inside the encoder/decoder at once (see _LIBSNDFILE_LOCK).
-    with _LIBSNDFILE_LOCK:
-        info = sf.info(src)
-        if info.subtype != "PCM_16":
-            raise NotLosslessError(info.subtype)
+    info = sf.info(src)
+    if info.subtype != "PCM_16":
+        raise NotLosslessError(info.subtype)
 
-        audio, _ = sf.read(src, dtype="int16")
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        tmp = dst.with_name(dst.name + ".part")
-        try:
-            sf.write(tmp, audio, info.samplerate, subtype="PCM_16", format="FLAC")
-            # libsndfile sniffs the format from the header on read, so the '.part'
-            # extension is fine and passing format= would be rejected for an
-            # existing file.
-            decoded, _ = sf.read(tmp, dtype="int16")
-            if not np.array_equal(decoded, audio):
-                raise VerifyError(f"FLAC verify mismatch for {dst.name}")
-            os.replace(tmp, dst)
-        finally:
-            # On success os.replace consumed tmp; on any failure discard the partial.
-            Path(tmp).unlink(missing_ok=True)
-    # mutagen, not libsndfile, so it stays outside the lock and runs concurrently.
+    audio, _ = sf.read(src, dtype="int16")
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dst.with_name(dst.name + ".part")
+    try:
+        sf.write(tmp, audio, info.samplerate, subtype="PCM_16", format="FLAC")
+        # libsndfile sniffs the format from the header on read, so the '.part'
+        # extension is fine and passing format= would be rejected for an
+        # existing file.
+        decoded, _ = sf.read(tmp, dtype="int16")
+        if not np.array_equal(decoded, audio):
+            raise VerifyError(f"FLAC verify mismatch for {dst.name}")
+        os.replace(tmp, dst)
+    finally:
+        # On success os.replace consumed tmp; on any failure discard the partial.
+        Path(tmp).unlink(missing_ok=True)
     _embed_guano(src, dst)
     return len(audio)
 
@@ -215,25 +198,10 @@ def _is_decodable(path: Path) -> bool:
     rather than trusted.
     """
     try:
-        with _LIBSNDFILE_LOCK:
-            sf.info(path)
+        sf.info(path)
     except Exception:
         return False
     return True
-
-
-@dataclass(frozen=True)
-class _FileOutcome:
-    """Result of processing one source file on a worker thread.
-
-    error is empty on success. size is the source byte count, reported to the
-    progress callback so the bar measures progress through the card (not the
-    smaller transcoded output).
-    """
-
-    src: Path
-    size: int
-    error: str
 
 
 class AudioImporter:
@@ -326,12 +294,8 @@ class AudioImporter:
     ) -> CardImportResult:
         """Transcode/copy files from card to dest_dir, honoring conflicts and week placement.
 
-        WAV is transcoded to FLAC on worker threads; the libsndfile encode
-        itself is serialized (see _LIBSNDFILE_LOCK), but the pool still overlaps
-        SD-card reads with the byte-copy passthroughs (FLAC from the card,
-        CONFIG.TXT). Skips are decided up front so workers only ever do real
-        work, and counters are aggregated on this thread as futures complete,
-        so no locking is needed for them.
+        WAV is transcoded to FLAC, FLAC and CONFIG.TXT are copied unchanged.
+        Files are processed one at a time. Skips are decided up front so the loop only ever does real work.
         """
         dest_dir.mkdir(parents=True, exist_ok=True)
         start = time.monotonic()
@@ -346,7 +310,6 @@ class AudioImporter:
         files_copied = 0
         bytes_copied = 0
         copied_sources: list[Path] = []
-        errors: list[str] = []
         error = ""
 
         def _emit() -> None:
@@ -362,30 +325,19 @@ class AudioImporter:
 
         _emit()  # reflect auto-skips immediately, before the slow work starts
 
-        if to_process:
-            max_workers = min(os.cpu_count() or 4, len(to_process))
-            with ThreadPoolExecutor(max_workers=max_workers) as ex:
-                futures = {ex.submit(self._process_one, src, dest_dir): src for src in to_process}
-                try:
-                    for fut in as_completed(futures):
-                        if is_cancelled():
-                            error = "Cancelled"
-                            for f in futures:
-                                f.cancel()
-                            break
-                        outcome = fut.result()
-                        if outcome.error:
-                            errors.append(outcome.error)
-                        else:
-                            files_copied += 1
-                            bytes_copied += outcome.size
-                            copied_sources.append(outcome.src)
-                        _emit()
-                except Exception as exc:  # noqa: BLE001
-                    error = str(exc)
-
-        if not error and errors:
-            error = errors[0]
+        for src in to_process:
+            if is_cancelled():
+                error = "Cancelled"
+                break
+            try:
+                self._import_one(src, dest_dir)
+            except Exception as exc:  # noqa: BLE001  one bad file must not strand the rest
+                error = error or f"{src.name}: {exc}"  # report the first failure, keep going
+            else:
+                files_copied += 1
+                bytes_copied += src.stat().st_size
+                copied_sources.append(src)
+            _emit()
 
         elapsed = time.monotonic() - start
 
@@ -409,38 +361,29 @@ class AudioImporter:
             dest_dir=dest_dir if (files_copied > 0 or files_skipped > 0) else None,
         )
 
-    def _process_one(self, src: Path, dest_dir: Path) -> _FileOutcome:
-        """Copy or transcode one source into dest_dir. Pure: touches no shared state.
+    def _import_one(self, src: Path, dest_dir: Path) -> None:
+        """Copy or transcode one source into dest_dir; raise on failure.
 
-        Runs on a worker thread. WAV becomes FLAC (or a byte-copy if it is not
-        16-bit PCM and so has no lossless FLAC form); FLAC from the card and
-        CONFIG.TXT are copied as-is. Any exception (including a failed FLAC
-        verify) is returned as an error rather than raised, so one bad file
-        does not abort the rest of the card.
+        WAV becomes FLAC (or a byte-copy if it is not 16-bit PCM and so has no
+        lossless FLAC form); FLAC from the card and CONFIG.TXT are copied as-is.
+        The caller catches per file, so a raised error fails only this file.
         """
+        if src.name.upper() == "CONFIG.TXT":
+            shutil.copy2(src, dest_dir / src.name)
+            return
+
         try:
-            size = src.stat().st_size
+            week = birdnet_week(extract_recording_time(src))
+        except Exception:  # undated or unreadable timestamp: park it in week 1
+            week = 1
+        week_dir = dest_dir / f"week_{week:02d}"
+        week_dir.mkdir(parents=True, exist_ok=True)
 
-            if src.name.upper() == "CONFIG.TXT":
-                shutil.copy2(src, dest_dir / src.name)
-                return _FileOutcome(src=src, size=size, error="")
-
+        if src.name.upper().endswith(".WAV"):
             try:
-                week = birdnet_week(extract_recording_time(src))
-            except Exception:
-                week = 1
-            week_dir = dest_dir / f"week_{week:02d}"
-            week_dir.mkdir(parents=True, exist_ok=True)
-
-            if src.name.upper().endswith(".WAV"):
-                try:
-                    transcode_to_flac(src, week_dir / _flac_target_name(src))
-                except NotLosslessError:
-                    # Not 16-bit PCM: keep the original rather than degrade it.
-                    shutil.copy2(src, week_dir / src.name)
-            else:
+                transcode_to_flac(src, week_dir / _flac_target_name(src))
+            except NotLosslessError:
+                # Not 16-bit PCM: keep the original rather than degrade it.
                 shutil.copy2(src, week_dir / src.name)
-
-            return _FileOutcome(src=src, size=size, error="")
-        except Exception as exc:  # noqa: BLE001
-            return _FileOutcome(src=src, size=0, error=f"{src.name}: {exc}")
+        else:
+            shutil.copy2(src, week_dir / src.name)

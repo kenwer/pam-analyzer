@@ -5,18 +5,8 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal, Slot
 
-from ..domain.audio_import import ConflictChoice, DetectedCard, ImportProgress
+from ..domain.audio_import import ConflictChoice, DetectedCard
 from ..infrastructure import AudioImporter, PsutilSdCardScanner
-
-
-class _SignalProgress:
-    """Forwards import_card progress callbacks to AudioImportWorker.progress signal."""
-
-    def __init__(self, worker: "AudioImportWorker") -> None:
-        self._worker = worker
-
-    def __call__(self, snap: ImportProgress) -> None:
-        self._worker.progress.emit(snap)
 
 
 class AudioImportWorker(QObject):
@@ -48,7 +38,6 @@ class AudioImportWorker(QObject):
 
     @Slot()
     def run(self) -> None:
-        prog = _SignalProgress(self)
         try:
             result = self._service.import_card(
                 card=self._card,
@@ -56,7 +45,7 @@ class AudioImportWorker(QObject):
                 dest_dir=self._dest_dir,
                 resolutions=self._resolutions,
                 identical=self._identical,
-                progress=prog,
+                progress=self.progress.emit,
                 is_cancelled=self._cancel_event.is_set,
                 clear_after=self._clear_after,
             )
