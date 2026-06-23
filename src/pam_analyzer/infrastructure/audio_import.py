@@ -12,6 +12,7 @@ would be lost on every transcoded recording.
 import logging
 import os
 import shutil
+import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -35,6 +36,16 @@ from ..domain.audio_import import (
 )
 
 _log = logging.getLogger(__name__)
+
+# Serializes every libsndfile (soundfile) call. Imports run on a ThreadPoolExecutor
+# (see import_card), and concurrent FLAC encode/decode through libsndfile corrupts
+# the process heap on the Windows build of the library: the damage surfaces later as
+# an "access violation" in whatever thread next allocates, so the crash looks
+# unrelated to the import. libsndfile only guarantees thread-safety across
+# independent handles in theory; this build races through shared state in the FLAC
+# path. Holding one lock around all sf.* calls removes the race. The pool still
+# overlaps the byte-copy passthroughs (FLAC from card, CONFIG.TXT) with transcodes.
+_LIBSNDFILE_LOCK = threading.Lock()
 
 # Vorbis comment key under which the GUANO block is stored in a FLAC. The GUANO
 # spec only defines WAV ('guan' chunk) and Anabat containers, so this name is a
@@ -156,25 +167,29 @@ def transcode_to_flac(src: Path, dst: Path) -> int:
     source is not PCM_16, or VerifyError if the round-trip is not bit-exact;
     in both cases *dst* is left absent.
     """
-    info = sf.info(src)
-    if info.subtype != "PCM_16":
-        raise NotLosslessError(info.subtype)
+    # All libsndfile work for this file happens under one lock so no two import
+    # workers are inside the encoder/decoder at once (see _LIBSNDFILE_LOCK).
+    with _LIBSNDFILE_LOCK:
+        info = sf.info(src)
+        if info.subtype != "PCM_16":
+            raise NotLosslessError(info.subtype)
 
-    audio, _ = sf.read(src, dtype="int16")
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    tmp = dst.with_name(dst.name + ".part")
-    try:
-        sf.write(tmp, audio, info.samplerate, subtype="PCM_16", format="FLAC")
-        # libsndfile sniffs the format from the header on read, so the '.part'
-        # extension is fine and passing format= would be rejected for an
-        # existing file.
-        decoded, _ = sf.read(tmp, dtype="int16")
-        if not np.array_equal(decoded, audio):
-            raise VerifyError(f"FLAC verify mismatch for {dst.name}")
-        os.replace(tmp, dst)
-    finally:
-        # On success os.replace consumed tmp; on any failure discard the partial.
-        Path(tmp).unlink(missing_ok=True)
+        audio, _ = sf.read(src, dtype="int16")
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dst.with_name(dst.name + ".part")
+        try:
+            sf.write(tmp, audio, info.samplerate, subtype="PCM_16", format="FLAC")
+            # libsndfile sniffs the format from the header on read, so the '.part'
+            # extension is fine and passing format= would be rejected for an
+            # existing file.
+            decoded, _ = sf.read(tmp, dtype="int16")
+            if not np.array_equal(decoded, audio):
+                raise VerifyError(f"FLAC verify mismatch for {dst.name}")
+            os.replace(tmp, dst)
+        finally:
+            # On success os.replace consumed tmp; on any failure discard the partial.
+            Path(tmp).unlink(missing_ok=True)
+    # mutagen, not libsndfile, so it stays outside the lock and runs concurrently.
     _embed_guano(src, dst)
     return len(audio)
 
@@ -200,7 +215,8 @@ def _is_decodable(path: Path) -> bool:
     rather than trusted.
     """
     try:
-        sf.info(path)
+        with _LIBSNDFILE_LOCK:
+            sf.info(path)
     except Exception:
         return False
     return True
@@ -310,11 +326,12 @@ class AudioImporter:
     ) -> CardImportResult:
         """Transcode/copy files from card to dest_dir, honoring conflicts and week placement.
 
-        WAV is transcoded to FLAC on worker threads (libsndfile releases the
-        GIL, so this scales across cores); FLAC and CONFIG.TXT are copied
-        unchanged. Skips are decided up front so workers only ever do real
+        WAV is transcoded to FLAC on worker threads; the libsndfile encode
+        itself is serialized (see _LIBSNDFILE_LOCK), but the pool still overlaps
+        SD-card reads with the byte-copy passthroughs (FLAC from the card,
+        CONFIG.TXT). Skips are decided up front so workers only ever do real
         work, and counters are aggregated on this thread as futures complete,
-        so no locking is needed.
+        so no locking is needed for them.
         """
         dest_dir.mkdir(parents=True, exist_ok=True)
         start = time.monotonic()
