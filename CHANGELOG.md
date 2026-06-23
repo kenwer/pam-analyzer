@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.2.0] - 2026-06-23
 ### Added
 - Add support for FLAC audio:
   - WAV recordings are transcoded to FLAC on import (lossless, 16-bit PCM) to save disk space.
