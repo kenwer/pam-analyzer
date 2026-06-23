@@ -2,8 +2,14 @@
 
 WAV recordings are transcoded to FLAC on import (lossless, 16-bit PCM) to save
 disk space; FLAC sources from the card and CONFIG.TXT are copied unchanged.
+
+GUANO metadata, which lives in a WAV 'guan' RIFF chunk, is carried across the
+transcode by re-embedding it in the FLAC as a 'GUANO' Vorbis comment
+(see _embed_guano). Without this the timestamp, location, and device fields
+would be lost on every transcoded recording.
 """
 
+import logging
 import os
 import shutil
 import time
@@ -16,6 +22,7 @@ from pathlib import Path
 import guano
 import numpy as np
 import soundfile as sf
+from mutagen.flac import FLAC
 
 from ..domain.audio_import import (
     CardImportResult,
@@ -27,23 +34,83 @@ from ..domain.audio_import import (
     birdnet_week,
 )
 
+_log = logging.getLogger(__name__)
+
+# Vorbis comment key under which the GUANO block is stored in a FLAC. The GUANO
+# spec only defines WAV ('guan' chunk) and Anabat containers, so this name is a
+# project convention; keeping it as the de-facto 'GUANO' key keeps the files
+# readable by other tools that adopt the same convention.
+#
+# The whole serialized block goes into this one comment rather than one comment
+# per GUANO field, because GUANO's text block is itself a canonical
+# serialization that the guano library round-trips losslessly. Transporting it
+# whole inherits that fidelity for free. Splitting it would mean re-deriving it
+# on top of Vorbis comments, whose model does not match GUANO: namespaced keys
+# carry '|' and spaces, field names are case-insensitive (GUANO keys are not),
+# and typed values (Timestamp, Length) would need byte-identical re-assembly. A
+# new vendor namespace or field then round-trips with no code change here.
+_GUANO_VORBIS_KEY = "GUANO"
+
+
+def read_guano(path: Path) -> guano.GuanoFile | None:
+    """Return parsed GUANO metadata from a WAV or FLAC file, or None if absent.
+
+    WAV keeps GUANO in a 'guan' RIFF chunk that the guano library reads
+    directly. FLAC has no such chunk, so this importer stores the block in a
+    'GUANO' Vorbis comment; for FLAC we read that comment and parse it back with
+    GuanoFile.from_string. Any read or parse failure is treated as 'no metadata'
+    so a malformed block never aborts an import.
+    """
+    try:
+        if path.suffix.lower() == ".flac":
+            values = FLAC(str(path)).get(_GUANO_VORBIS_KEY)
+            if not values:
+                return None
+            return guano.GuanoFile.from_string(values[0])
+        gf = guano.GuanoFile(str(path))
+        return gf if gf else None
+    except Exception:
+        return None
+
 
 def extract_recording_time(path: Path) -> datetime:
-    """Return a recording timestamp for a WAV file.
+    """Return a recording timestamp for a WAV or FLAC file.
 
     Priority: GUANO metadata, filename YYYYMMDD_HHMMSS, file mtime.
     """
-    try:
-        ts = guano.GuanoFile(str(path)).get("Timestamp")
+    gf = read_guano(path)
+    if gf is not None:
+        ts = gf.get("Timestamp")
         if ts is not None:
             return ts
-    except Exception:
-        pass
     try:
         return datetime.strptime(path.stem, "%Y%m%d_%H%M%S")
     except ValueError:
         pass
     return datetime.fromtimestamp(path.stat().st_mtime)
+
+
+def _embed_guano(src: Path, flac_path: Path) -> None:
+    """Best-effort copy of GUANO metadata from *src* into *flac_path*.
+
+    A no-op when the source carries no GUANO. The block is stored verbatim
+    (UTF-8 text) under the 'GUANO' Vorbis comment key so the transcode does not
+    discard the recording's timestamp, location, and device fields.
+
+    Runs after the FLAC is already in place, so a write failure (e.g. a transient
+    Windows file lock) is logged and swallowed rather than raised: the verified
+    audio is already saved, and failing here would report the import as an error
+    and keep the card. The warning keeps a systematic failure observable.
+    """
+    gf = read_guano(src)
+    if not gf:
+        return
+    try:
+        tags = FLAC(str(flac_path))
+        tags[_GUANO_VORBIS_KEY] = gf.to_string()
+        tags.save()
+    except Exception:
+        _log.warning("Could not embed GUANO metadata into %s", flac_path.name, exc_info=True)
 
 
 class NotLosslessError(Exception):
@@ -81,6 +148,10 @@ def transcode_to_flac(src: Path, dst: Path) -> int:
     name ends in '.part' (not '.flac') so a hard crash cannot leave a stray
     file that inventory discovery or analysis would mistake for a recording.
 
+    Any GUANO metadata on the source is re-embedded as a 'GUANO' Vorbis comment
+    after the verified FLAC is moved into place (best-effort: a metadata write
+    failure is logged, not raised, since the audio is already saved).
+
     Returns the number of frames written. Raises NotLosslessError if the
     source is not PCM_16, or VerifyError if the round-trip is not bit-exact;
     in both cases *dst* is left absent.
@@ -104,6 +175,7 @@ def transcode_to_flac(src: Path, dst: Path) -> int:
     finally:
         # On success os.replace consumed tmp; on any failure discard the partial.
         Path(tmp).unlink(missing_ok=True)
+    _embed_guano(src, dst)
     return len(audio)
 
 
@@ -160,7 +232,10 @@ class AudioImporter:
             for f in card_root.iterdir()
             if f.is_file() and ((n := f.name.upper()).endswith((".WAV", ".FLAC")) or n == "CONFIG.TXT")
         ]
-        return sorted(files)
+        # Sort by filename string, not by Path: Path comparison normcases the
+        # name, so bare sorted() is case-insensitive on Windows but case-
+        # sensitive on POSIX. An explicit key keeps the order OS-independent.
+        return sorted(files, key=lambda f: f.name)
 
     def detect_conflicts(self, files: list[Path], dest_dir: Path) -> ConflictReport:
         """Walk dest_dir once and classify each source as already-imported or a conflict.

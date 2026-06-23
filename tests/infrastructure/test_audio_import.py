@@ -1,15 +1,19 @@
 """Tests for infrastructure/audio_import.py transcoding helpers.
 
 Covers transcode_to_flac: lossless round-trip, the non-PCM_16 fallback signal,
-and that a failed verify leaves no output behind.
+that a failed verify leaves no output behind, and that GUANO metadata survives
+the WAV-to-FLAC transcode (re-embedded as a 'GUANO' Vorbis comment).
 """
 
 import shutil
+from datetime import datetime
 from pathlib import Path
 
+import guano
 import numpy as np
 import pytest
 import soundfile as sf
+from mutagen.flac import FLAC
 
 from pam_analyzer.domain.audio_import import ConflictChoice, DetectedCard
 from pam_analyzer.infrastructure import audio_import
@@ -18,6 +22,8 @@ from pam_analyzer.infrastructure.audio_import import (
     NotLosslessError,
     VerifyError,
     _flac_target_name,
+    extract_recording_time,
+    read_guano,
     transcode_to_flac,
 )
 
@@ -27,6 +33,19 @@ STAMP = "20260619_073000"  # parses to a recording time, so week bucketing works
 
 def _write_wav(path: Path, audio: np.ndarray, subtype: str = "PCM_16") -> None:
     sf.write(path, audio, SR, subtype=subtype)
+
+
+def _write_wav_with_guano(path: Path, audio: np.ndarray, **fields) -> None:
+    """Write a PCM_16 WAV at *path* carrying a GUANO 'guan' chunk.
+
+    fields are written into the GUANO block (e.g. Timestamp=..., Make=...).
+    """
+    _write_wav(path, audio)
+    gf = guano.GuanoFile(str(path))
+    gf["GUANO|Version"] = 1.0
+    for key, value in fields.items():
+        gf[key.replace("_", " ")] = value
+    gf.write(make_backup=False)
 
 
 def _pcm16(frames: int, channels: int = 1, seed: int = 0) -> np.ndarray:
@@ -104,6 +123,93 @@ def test_verify_failure_leaves_no_output(tmp_path: Path, monkeypatch):
 
     assert not dst.exists()
     assert not (tmp_path / "rec.flac.part").exists()
+
+
+# GUANO metadata preservation
+
+def test_transcode_preserves_guano_metadata(tmp_path: Path):
+    src = tmp_path / "rec.wav"
+    dst = tmp_path / "rec.flac"
+    ts = datetime(2026, 6, 19, 7, 30, 0)
+    _write_wav_with_guano(src, _pcm16(SR // 10), Timestamp=ts, Make="Wildlife Acoustics")
+
+    transcode_to_flac(src, dst)
+
+    gf = read_guano(dst)
+    assert gf is not None
+    assert gf.get("Timestamp") == ts
+    assert gf.get("Make") == "Wildlife Acoustics"
+    # Stored under the canonical 'GUANO' Vorbis comment key.
+    assert FLAC(str(dst)).get("GUANO") is not None
+
+
+def test_transcode_without_guano_adds_no_comment(tmp_path: Path):
+    src = tmp_path / "rec.wav"
+    dst = tmp_path / "rec.flac"
+    _write_wav(src, _pcm16(SR // 10))  # plain WAV, no 'guan' chunk
+
+    transcode_to_flac(src, dst)
+
+    assert read_guano(dst) is None
+    assert FLAC(str(dst)).get("GUANO") is None
+
+
+def test_read_guano_returns_none_for_plain_files(tmp_path: Path):
+    wav = tmp_path / "plain.wav"
+    flac = tmp_path / "plain.flac"
+    _write_wav(wav, _pcm16(SR // 10))
+    sf.write(flac, _pcm16(SR // 10), SR, subtype="PCM_16", format="FLAC")
+
+    assert read_guano(wav) is None
+    assert read_guano(flac) is None
+
+
+def test_extract_recording_time_reads_guano_from_flac(tmp_path: Path):
+    src = tmp_path / "rec.wav"
+    flac = tmp_path / "rec.flac"
+    ts = datetime(2026, 3, 1, 21, 5, 0)  # not derivable from this filename
+    _write_wav_with_guano(src, _pcm16(SR // 10), Timestamp=ts)
+    transcode_to_flac(src, flac)
+
+    assert extract_recording_time(flac) == ts
+
+
+def test_transcode_survives_guano_embed_failure(tmp_path: Path, monkeypatch):
+    src = tmp_path / "rec.wav"
+    dst = tmp_path / "rec.flac"
+    _write_wav_with_guano(src, _pcm16(SR // 10), Timestamp=datetime(2026, 6, 19, 7, 30, 0))
+
+    # Embedding runs after the verified FLAC is in place, so a metadata-write
+    # failure (e.g. the Windows file lock this guards against) is best-effort:
+    # the audio must survive and the transcode must still report success.
+    def boom(*_a, **_k):
+        raise OSError("file locked")
+
+    monkeypatch.setattr(audio_import, "FLAC", boom)
+
+    frames = transcode_to_flac(src, dst)
+
+    assert frames == SR // 10
+    assert dst.exists()
+    decoded, _ = sf.read(dst, dtype="int16")
+    assert len(decoded) == SR // 10
+
+
+def test_import_preserves_guano_through_transcode(tmp_path: Path):
+    card, dest = tmp_path / "card", tmp_path / "dest"
+    card.mkdir()
+    ts = datetime(2026, 6, 19, 7, 30, 0)
+    src = card / f"{STAMP}.WAV"
+    _write_wav_with_guano(src, _pcm16(SR // 5), Timestamp=ts, Make="AudioMoth")
+
+    result = _run(AudioImporter(), _card(card), [src], dest)
+
+    assert result.error == ""
+    [flac] = _flacs(dest)
+    gf = read_guano(flac)
+    assert gf is not None
+    assert gf.get("Timestamp") == ts
+    assert gf.get("Make") == "AudioMoth"
 
 
 # list_card_files

@@ -368,6 +368,15 @@ wheels = [
 ]
 
 [[package]]
+name = "mutagen"
+version = "1.48.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/eb/2e/3e1b17cc655e59faac1008cfdaae2e38f123b9b229f0d1695f9860500d4d/mutagen-1.48.0.tar.gz", hash = "sha256:4933d14b83a2add03c23e04a3c397ffbe44f130403f1256881ee228869aee3bb", size = 1276933, upload-time = "2026-06-22T14:03:17.455Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/39/1f/b62af7c661850ded4a550143e816613bd057b8c38fed534a6142735a77d0/mutagen-1.48.0-py3-none-any.whl", hash = "sha256:60a48d3e30173f728170fb0503f66b26026bf7629afb12546b18395c5cdf0bd6", size = 195754, upload-time = "2026-06-22T14:03:13.254Z" },
+]
+
+[[package]]
 name = "namex"
 version = "0.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -469,6 +478,7 @@ dependencies = [
     { name = "birdnet" },
     { name = "guano" },
     { name = "kagglehub" },
+    { name = "mutagen" },
     { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine == 'x86_64' and sys_platform == 'darwin'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine != 'x86_64' or sys_platform != 'darwin'" },
     { name = "platformdirs" },
@@ -496,6 +506,7 @@ requires-dist = [
     { name = "birdnet", specifier = ">=0.2.16" },
     { name = "guano", specifier = ">=1.0.16" },
     { name = "kagglehub", specifier = ">=0.3.13,<0.4.0" },
+    { name = "mutagen", specifier = ">=1.48" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "platformdirs", specifier = ">=4.3.0" },
     { name = "polars", specifier = ">=1.0" },
