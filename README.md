@@ -49,7 +49,7 @@ Note: On any supported OS you can also easily run PAM Analyzer from source using
 
 ## Features
 * **Project & campaign management**: Organizes monitoring deployments into projects (`.pamproj`) and campaigns, each supporting independent species filters (via geographic coordinates or custom species lists).
-* **SD card import**: Automatically detects ARU SD cards matching a configured volume name pattern and imports audio into a structured `campaign/ARU/week` directory layout.
+* **SD card import**: Automatically detects ARU SD cards matching a configured volume name pattern and imports audio into a structured `campaign/ARU/week` directory layout. WAV recordings are transcoded to FLAC (lossless, 16-bit PCM) on import to save disk space.
 * **Multi-model analysis**: Run BirdNET-2.4 or Google's Perch-2.0 from the same panel via a model selector. Both support per-campaign or batch-across-campaigns runs with a configurable confidence threshold and segment overlap. Each model writes its own CSV per campaign so multiple model runs can coexist (see [Output files](#output-files)).
 * **Detection review**: Provides a tabular interface for detections with multi-column sorting, filtering, inline annotation (verification status, species correction, comments), and integrated audio playback.
 * **Data export**: Supports exporting filtered detections to CSV format and extracting annotated audio snippets with metadata embedded in filenames.
@@ -82,7 +82,7 @@ Create and manage the campaigns that belong to this project. The panel shows all
   - **Species list mode**: provide a `.txt` species list file, which is copied into the campaign folder alongside the audio.
 - **Edit** species filter settings at any time.
 - **Delete** a campaign via the trash icon on its list card, with an inline confirmation step.
-- **Import audio** from SD cards directly within a campaign's detail view. Click the import button to start monitoring for SD card volumes matching the configured name pattern. When a matching card is inserted, files are copied into the `campaign/ARU/week` directory structure with deduplication and conflict resolution.
+- **Import audio** from SD cards directly within a campaign's detail view. Click the import button to start monitoring for SD card volumes matching the configured name pattern. When a matching card is inserted, files are imported into the `campaign/ARU/week` directory structure with deduplication and conflict resolution. WAV recordings are transcoded to FLAC (lossless, 16-bit PCM) to save disk space, and any GUANO metadata (timestamp, location, device) is carried across into the FLAC. The encode is verified against the source before a card is cleared, so a recording is never lost to a bad transcode; FLAC sources and `CONFIG.TXT` are copied through untouched.
 
 Campaigns are discovered automatically from the audio recordings root: any subdirectory containing a `campaign.toml` sidecar is treated as a campaign.
 
@@ -262,6 +262,7 @@ The author would like to thank the following projects:
 * [Polars](https://pola.rs)
 * [SciPy](https://scipy.org)
 * [GUANO](https://github.com/riggsd/guano-py)
+* [Mutagen](https://github.com/quodlibet/mutagen)
 * [NumPy](https://numpy.org)
 * [platformdirs](https://github.com/tox-dev/platformdirs)
 * [soundfile](https://github.com/bastibe/python-soundfile)
