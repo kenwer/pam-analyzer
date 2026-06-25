@@ -152,7 +152,7 @@
         <item>
          <widget class="QLineEdit" name="sdcard_pattern_edit">
           <property name="placeholderText">
-           <string>^MSD-</string>
+           <string>^(MSD-|2MM)</string>
           </property>
          </widget>
         </item>
@@ -174,7 +174,7 @@
       <item>
        <widget class="QLabel" name="sdcard_caption_label">
         <property name="text">
-         <string>Regex matched against SD card volume names, e.g. ^MSD-</string>
+         <string>Regex matched against SD card volume names. The default ^(MSD-|2MM) matches AudioMoth (MSD-) and Song Meter (2MM) cards.</string>
         </property>
         <property name="wordWrap">
          <bool>true</bool>

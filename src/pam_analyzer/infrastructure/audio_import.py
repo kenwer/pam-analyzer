@@ -14,6 +14,7 @@ import os
 import shutil
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -204,18 +205,67 @@ def _is_decodable(path: Path) -> bool:
     return True
 
 
+@dataclass(frozen=True)
+class DeviceProfile:
+    """Where an ARU family keeps its recordings on the SD card.
+
+    audio_subdir is the folder under the card root that holds recordings, or
+    None when they sit at the card root. Sidecar files (CONFIG.TXT,
+    *_Summary.txt) always live at the card root and are matched by _is_sidecar,
+    so only the audio location differs between families.
+    """
+
+    audio_subdir: str | None
+
+
+AUDIOMOTH_PROFILE = DeviceProfile(audio_subdir=None)
+SONGMETER_PROFILE = DeviceProfile(audio_subdir="Data")
+
+
+def detect_profile(card_root: Path) -> DeviceProfile:
+    """Infer the ARU family from the card layout.
+
+    A 'Data' subdirectory next to a '*_Summary.txt' marks a Song Meter card.
+    Anything else is treated as AudioMoth (audio plus CONFIG.TXT at the root).
+    The check is cheap: one is_dir() and one glob.
+    """
+    if (card_root / "Data").is_dir() and any(card_root.glob("*_Summary.txt")):
+        return SONGMETER_PROFILE
+    return AUDIOMOTH_PROFILE
+
+
+def _is_sidecar(name: str) -> bool:
+    """True for the per-device provenance file copied to the card-folder root.
+
+    AudioMoth writes CONFIG.TXT; Song Meter writes <serial>_Summary.txt. Both
+    are copied through unchanged and matched by name alone, so the per-file
+    routing in detect_conflicts and _import_one needs no device profile.
+    """
+    upper = name.upper()
+    return upper == "CONFIG.TXT" or upper.endswith("_SUMMARY.TXT")
+
+
 class AudioImporter:
     def list_card_files(self, card_root: Path) -> list[Path]:
-        """Return sorted top-level WAV/FLAC (case-insensitive) and CONFIG.TXT files.
+        """Return sorted WAV/FLAC recordings plus the device sidecar from a card.
+
+        The device profile decides where audio lives: AudioMoth keeps it at the
+        card root, Song Meter under 'Data/'. Listing is one level deep (no
+        recursion), matching the layouts both devices produce. Sidecars
+        (CONFIG.TXT, *_Summary.txt) always sit at the card root.
 
         WAV is transcoded to FLAC on import; FLAC already on the card is copied
         through unchanged.
         """
-        files = [
-            f
-            for f in card_root.iterdir()
-            if f.is_file() and ((n := f.name.upper()).endswith((".WAV", ".FLAC")) or n == "CONFIG.TXT")
-        ]
+        profile = detect_profile(card_root)
+        audio_root = card_root / profile.audio_subdir if profile.audio_subdir else card_root
+
+        files: list[Path] = []
+        if audio_root.is_dir():
+            files.extend(
+                f for f in audio_root.iterdir() if f.is_file() and f.name.upper().endswith((".WAV", ".FLAC"))
+            )
+        files.extend(f for f in card_root.iterdir() if f.is_file() and _is_sidecar(f.name))
         # Sort by filename string, not by Path: Path comparison normcases the
         # name, so bare sorted() is case-insensitive on Windows but case-
         # sensitive on POSIX. An explicit key keeps the order OS-independent.
@@ -232,9 +282,9 @@ class AudioImporter:
         WAV/FLAC duplicate. WAV sources never raise a user conflict because the
         import overwrites any stale target atomically.
 
-        Passthrough sources (FLAC from the card, CONFIG.TXT) keep their name
-        and use the byte-identical check: a match is auto-skipped, a mismatch
-        is a genuine conflict the user resolves.
+        Passthrough sources (FLAC from the card, the device sidecar) keep their
+        name and use the byte-identical check: a match is auto-skipped, a
+        mismatch is a genuine conflict the user resolves.
 
         identical entries are keyed by source filename, matching what
         import_card and the orchestrator expect.
@@ -259,7 +309,7 @@ class AudioImporter:
                 # a WAV source is never surfaced as a user-facing conflict.
                 continue
 
-            # Passthrough: FLAC from the card or CONFIG.TXT, copied under its name.
+            # Passthrough: FLAC from the card or the device sidecar, copied under its name.
             dst = dest_map.get(src.name)
             if dst is None:
                 continue
@@ -350,6 +400,15 @@ class AudioImporter:
                     src.unlink()
                 except Exception:
                     pass
+            # Song Meter keeps recordings under 'Data/'; drop the directory once
+            # emptied so a cleared card looks clean. rmdir only succeeds on an
+            # empty dir, so a leftover (a skipped or failed file) keeps it.
+            data_dir = card.mountpoint / "Data"
+            if data_dir.is_dir():
+                try:
+                    data_dir.rmdir()
+                except OSError:
+                    pass
 
         return CardImportResult(
             card=card,
@@ -365,10 +424,11 @@ class AudioImporter:
         """Copy or transcode one source into dest_dir; raise on failure.
 
         WAV becomes FLAC (or a byte-copy if it is not 16-bit PCM and so has no
-        lossless FLAC form); FLAC from the card and CONFIG.TXT are copied as-is.
-        The caller catches per file, so a raised error fails only this file.
+        lossless FLAC form); FLAC from the card and the device sidecar
+        (CONFIG.TXT or <serial>_Summary.txt) are copied as-is. The caller
+        catches per file, so a raised error fails only this file.
         """
-        if src.name.upper() == "CONFIG.TXT":
+        if _is_sidecar(src.name):
             shutil.copy2(src, dest_dir / src.name)
             return
 

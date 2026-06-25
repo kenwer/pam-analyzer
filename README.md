@@ -49,7 +49,7 @@ Note: On any supported OS you can also easily run PAM Analyzer from source using
 
 ## Features
 * **Project & campaign management**: Organizes monitoring deployments into projects (`.pamproj`) and campaigns, each supporting independent species filters (via geographic coordinates or custom species lists).
-* **SD card import**: Automatically detects ARU SD cards matching a configured volume name pattern and imports audio into a structured `campaign/ARU/week` directory layout. WAV recordings are transcoded to FLAC (lossless, 16-bit PCM) on import to save disk space.
+* **SD card import**: Automatically detects ARU SD cards matching a configured volume name pattern and imports audio into a structured `campaign/ARU/week` directory layout. Both AudioMoth and Wildlife Acoustics Song Meter Micro cards are supported, including Song Meter's `Data/` subfolder layout. WAV recordings are transcoded to FLAC (lossless, 16-bit PCM) on import to save disk space.
 * **Multi-model analysis**: Run BirdNET-2.4 or Google's Perch-2.0 from the same panel via a model selector. Both support per-campaign or batch-across-campaigns runs with a configurable confidence threshold and segment overlap. Each model writes its own CSV per campaign so multiple model runs can coexist (see [Output files](#output-files)).
 * **Detection review**: Provides a tabular interface for detections with multi-column sorting, filtering, inline annotation (verification status, species correction, comments), and integrated audio playback.
 * **Data export**: Supports exporting filtered detections to CSV format and extracting annotated audio snippets with metadata embedded in filenames.
@@ -69,7 +69,7 @@ Configure a study in the project settings:
 
 - Set the **audio recordings root directory**: this is where the audio data from the ARUs gets imported to.
 - the detections output path
-- If needed adjust the **SD card volume name pattern**: A regular expression to match SD card volume names for your ARUs.
+- If needed adjust the **SD card volume name pattern**: A regular expression to match SD card volume names for your ARUs. The default matches both AudioMoth (`MSD-`) and Song Meter (`2MM`) cards; widen or narrow it to suit your devices.
 - You can also set the **preferred species language** that is used when exporting audio snippets and for the species column in the examine data table.
 
 After making project config changes you may want to save your project using `File -> Save Project` (or `⌘S` / `Ctrl+S`) to save this configuration as a `.pamproj` file.
@@ -82,7 +82,7 @@ Create and manage the campaigns that belong to this project. The panel shows all
   - **Species list mode**: provide a `.txt` species list file, which is copied into the campaign folder alongside the audio.
 - **Edit** species filter settings at any time.
 - **Delete** a campaign via the trash icon on its list card, with an inline confirmation step.
-- **Import audio** from SD cards directly within a campaign's detail view. Click the import button to start monitoring for SD card volumes matching the configured name pattern. When a matching card is inserted, files are imported into the `campaign/ARU/week` directory structure with deduplication and conflict resolution. WAV recordings are transcoded to FLAC (lossless, 16-bit PCM) to save disk space, and any GUANO metadata (timestamp, location, device) is carried across into the FLAC. The encode is verified against the source before a card is cleared, so a recording is never lost to a bad transcode; FLAC sources and `CONFIG.TXT` are copied through untouched.
+- **Import audio** from SD cards directly within a campaign's detail view. Click the import button to start monitoring for SD card volumes matching the configured name pattern. When a matching card is inserted, files are imported into the `campaign/ARU/week` directory structure with deduplication and conflict resolution. WAV recordings are transcoded to FLAC (lossless, 16-bit PCM) to save disk space, and any GUANO metadata (timestamp, location, device) is carried across into the FLAC. The encode is verified against the source before a card is cleared, so a recording is never lost to a bad transcode; FLAC sources and the device's provenance file are copied through untouched. The device family is recognised from the card layout: AudioMoth keeps recordings and a `CONFIG.TXT` at the card root, while Song Meter keeps recordings under `Data/` and a `<serial>_Summary.txt` log at the root.
 
 Campaigns are discovered automatically from the audio recordings root: any subdirectory containing a `campaign.toml` sidecar is treated as a campaign.
 
@@ -172,7 +172,7 @@ species_list_path = ""  # relative path to .txt, empty when using location mode
 The combination of **campaign + ARU device ID** uniquely identifies a recording set within a project while the same physical ARU redeployed at a different time usually belongs to a different campaign.
 
 ### ARU (Autonomous Recording Unit)
-An individual recording device, identified by its SD card volume name (e.g. `MSD-109`). Within a campaign folder, each ARU gets its own subfolder. Recordings are further organised into weekly subfolders (`week_08`) derived from the file timestamps.
+An individual recording device, identified by its SD card volume name (e.g. `MSD-109` for AudioMoth, `2MM30692` for a Song Meter serial). Within a campaign folder, each ARU gets its own subfolder. Recordings are further organised into weekly subfolders (`week_08`) derived from the file timestamps.
 
 
 After setting up a project and importing ARU SD cards, the resulting directory structure looks like this:

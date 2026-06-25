@@ -15,7 +15,7 @@ import pytest
 import soundfile as sf
 from mutagen.flac import FLAC
 
-from pam_analyzer.domain.audio_import import ConflictChoice, DetectedCard
+from pam_analyzer.domain.audio_import import ConflictChoice, DetectedCard, birdnet_week
 from pam_analyzer.infrastructure import audio_import
 from pam_analyzer.infrastructure.audio_import import (
     AudioImporter,
@@ -481,3 +481,78 @@ def test_import_cancellation_reports_and_keeps_card(tmp_path: Path):
 
     assert result.error == "Cancelled"
     assert src.exists()             # never cleared on cancel
+
+
+# Song Meter support: audio under Data/, <serial>_Summary.txt sidecar
+
+
+def _songmeter_card(root: Path, serial: str = "2MM30692") -> Path:
+    """Create a Song Meter card layout: a Data/ folder and a Summary at the root."""
+    (root / "Data").mkdir(parents=True)
+    (root / f"{serial}_Summary.txt").write_text("DATE,TIME,LAT,NS,LON,EW,POWER(V),#FILES\n")
+    return root
+
+
+def test_detect_profile_identifies_songmeter(tmp_path: Path):
+    card = _songmeter_card(tmp_path / "2MM30692")
+    assert audio_import.detect_profile(card) is audio_import.SONGMETER_PROFILE
+
+
+def test_detect_profile_defaults_to_audiomoth(tmp_path: Path):
+    card = tmp_path / "MSD-1"
+    card.mkdir()
+    (card / "CONFIG.TXT").touch()
+    # A 'Data' dir alone is not enough without a *_Summary.txt next to it.
+    (card / "Data").mkdir()
+    assert audio_import.detect_profile(card) is audio_import.AUDIOMOTH_PROFILE
+
+
+def test_list_card_files_songmeter_reads_data_dir_and_summary(tmp_path: Path):
+    card = _songmeter_card(tmp_path / "2MM30692")
+    (card / "Data" / "2MM30692_20260625_104904.wav").touch()
+    (card / "Data" / "2MM30692_20260625_114902.wav").touch()
+    (card / "Data" / "notes.txt").touch()   # ignored: not audio
+    (card / "stray.wav").touch()            # ignored: audio not under Data/
+
+    names = [p.name for p in AudioImporter().list_card_files(card)]
+
+    assert names == [
+        "2MM30692_20260625_104904.wav",
+        "2MM30692_20260625_114902.wav",
+        "2MM30692_Summary.txt",
+    ]
+
+
+def test_import_songmeter_buckets_by_guano_and_copies_summary(tmp_path: Path):
+    card = _songmeter_card(tmp_path / "2MM30692")
+    dest = tmp_path / "dest"
+    ts = datetime(2026, 6, 25, 10, 49, 4)
+    wav = card / "Data" / "2MM30692_20260625_104904.wav"
+    _write_wav_with_guano(wav, _pcm16(SR // 5), Timestamp=ts, Make="Wildlife Acoustics")
+
+    files = AudioImporter().list_card_files(card)
+    result = _run(AudioImporter(), _card(card), files, dest)
+
+    assert result.error == ""
+    assert result.files_copied == 2                 # the WAV and the Summary
+    # Bucketed by the GUANO timestamp (not the mtime fallback, not week 1).
+    [flac] = _flacs(dest)
+    assert flac.parent.name == f"week_{birdnet_week(ts):02d}"
+    assert read_guano(flac).get("Timestamp") == ts  # metadata survived transcode
+    assert (dest / "2MM30692_Summary.txt").exists()  # sidecar at the card-folder root
+
+
+def test_import_songmeter_clear_after_removes_emptied_data_dir(tmp_path: Path):
+    card = _songmeter_card(tmp_path / "2MM30692")
+    dest = tmp_path / "dest"
+    wav = card / "Data" / "2MM30692_20260625_104904.wav"
+    _write_wav_with_guano(wav, _pcm16(SR // 10), Timestamp=datetime(2026, 6, 25, 10, 49, 4))
+    summary = card / "2MM30692_Summary.txt"
+
+    files = AudioImporter().list_card_files(card)
+    result = _run(AudioImporter(), _card(card), files, dest, clear_after=True)
+
+    assert result.error == ""
+    assert not wav.exists()              # audio cleared
+    assert not summary.exists()          # sidecar cleared
+    assert not (card / "Data").exists()  # emptied Data/ removed

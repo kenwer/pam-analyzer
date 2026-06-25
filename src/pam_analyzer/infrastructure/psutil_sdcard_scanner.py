@@ -11,7 +11,13 @@ from ..domain.audio_import import DetectedCard
 
 
 def _get_volume_name(partition) -> str | None:
-    """Return the volume label for a disk partition, or None if unavailable."""
+    """Return the volume label for a disk partition, or None if unavailable.
+
+    The label is stripped of surrounding whitespace: Song Meter cards pad the
+    FAT label to a fixed width ('2MM30692   '), and that label flows into a
+    destination folder name, queue dedup key, and the UI. Trailing spaces in a
+    directory name are rejected on Windows, so they are removed at the source.
+    """
     if sys.platform == "win32":
         import ctypes
 
@@ -26,8 +32,10 @@ def _get_volume_name(partition) -> str | None:
             None,
             0,
         )
-        return buf.value or None if ok else None
-    name = Path(partition.mountpoint).name
+        if not ok:
+            return None
+        return buf.value.strip() or None
+    name = Path(partition.mountpoint).name.strip()
     return name or None
 
 

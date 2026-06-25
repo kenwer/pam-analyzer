@@ -14,7 +14,7 @@ class _ProjectToml:
     """Mirrors the original ProjectSettings TOML schema exactly."""
 
     audio_recordings_path: str = ""
-    sdcard_name_pattern: str = "^MSD-"
+    sdcard_name_pattern: str = "^(MSD-|2MM)"
     detections_output_path: str = ""
     analysis_model: str = "BirdNET-2.4"
     birdnet_min_conf: float = 0.25
