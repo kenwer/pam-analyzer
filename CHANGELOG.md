@@ -6,6 +6,8 @@
   - Song Meter cards are detected alongside AudioMoth cards: recordings live under `Data/` and the card carries a `<serial>_Summary.txt` deployment log at its root.
   - The default SD card volume name pattern now matches both AudioMoth (`MSD-`) and Song Meter (`2MM`) cards.
   - The `<serial>_Summary.txt` log is copied through untouched, the same way AudioMoth's `CONFIG.TXT` is.
+### Fixed
+- Editing the SD card name regex in project settings no longer loses keyboard focus after each character, so it can be typed in one go.
 
 ## [0.2.0] - 2026-06-23
 ### Added

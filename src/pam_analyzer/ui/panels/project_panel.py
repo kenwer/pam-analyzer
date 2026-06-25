@@ -53,7 +53,14 @@ class ProjectPanel(QWidget):
 
         self.ui.audio_path_edit.editingFinished.connect(self._on_audio_changed)
         self.ui.output_path_edit.editingFinished.connect(self._on_output_changed)
-        self.ui.sdcard_pattern_edit.textChanged.connect(self._on_sdcard_pattern_changed)
+        # Validate live so the indicator reacts as the user types, but only
+        # commit the pattern when editing finishes. Committing on every
+        # keystroke would broadcast projectChanged (and the analysis/import/
+        # inventory signals) to every other panel, whose mid-keystroke
+        # re-render steals focus from this field. The sibling path edits commit
+        # on editingFinished for the same reason.
+        self.ui.sdcard_pattern_edit.textChanged.connect(self._refresh_regex_indicator)
+        self.ui.sdcard_pattern_edit.editingFinished.connect(self._on_sdcard_pattern_changed)
         self.ui.species_lang_combo.editTextChanged.connect(self._on_species_lang_changed)
 
     def _populate_locale_combo(self) -> None:
@@ -124,11 +131,10 @@ class ProjectPanel(QWidget):
         text = self.ui.output_path_edit.text().strip()
         self._apply(detections_output_path=(Path(text).expanduser() if text else None))
 
-    def _on_sdcard_pattern_changed(self, value: str) -> None:
-        self._refresh_regex_indicator(value)
+    def _on_sdcard_pattern_changed(self) -> None:
         if self._loading:
             return
-        self._apply(sdcard_name_pattern=value)
+        self._apply(sdcard_name_pattern=self.ui.sdcard_pattern_edit.text())
 
     def _on_species_lang_changed(self, value: str) -> None:
         if self._loading:
