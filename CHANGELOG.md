@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.3.0] - 2026-06-25
 ### Added
 - Add support for importing audio from Wildlife Acoustics Song Meter Micro devices:
   - Song Meter cards are detected alongside AudioMoth cards: recordings live under `Data/` and the card carries a `<serial>_Summary.txt` deployment log at its root.
