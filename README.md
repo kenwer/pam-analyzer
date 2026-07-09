@@ -25,6 +25,7 @@ Automated bird species detection from acoustic recordings.
   - [Perch v2](#perch-v2)
     - [Logit calibration](#logit-calibration)
   - [Choosing a model](#choosing-a-model)
+- [Troubleshooting](#troubleshooting)
 - [Changelog](#changelog)
 - [Acknowledgements](#acknowledgements)
 - [License](#license)
@@ -246,6 +247,14 @@ The offset was tuned (empirically) by cross-comparison against BirdNET (also not
 - Run **BirdNET** as the default first pass over every campaign. It is fast and has a low false-positive rate.
 - Add **Perch v2** when you suspect BirdNET is missing quiet or distant calls (e.g. for corvids and other low-pitched or sparse vocalizers), or when you want a second opinion on borderline detections. Perch's added detections live mostly in the 0.25 to 0.5 calibrated-confidence range, exactly where manual review is most useful.
 - Run **both** on the same campaign when you have the time budget. The Examine panel concatenates per-model CSVs and exposes the `Model` column for sorting and filtering, so each detection is traceable to its source.
+
+
+## Troubleshooting
+The application writes a rotating debug log (`pam-analyzer.log`, capped at 1 MB with one backup) to the platform's standard log directory:
+
+- **Windows**: `%LOCALAPPDATA%\PAM Analyzer\Logs\pam-analyzer.log`
+- **macOS**: `~/Library/Logs/PAM Analyzer/pam-analyzer.log`
+- **Linux**: `~/.local/state/PAM Analyzer/log/pam-analyzer.log`
 
 
 ## Changelog
