@@ -1,6 +1,6 @@
 [project]
 name = "pam-analyzer"
-version = "0.3.0"
+version = "0.3.1"
 description = "Automated bird species detection from acoustic recordings."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
