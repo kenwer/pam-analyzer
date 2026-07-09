@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+### Changed
+- [Dev] Upgrade dependencies.
+
 ## [0.3.0] - 2026-06-25
 ### Added
 - Add support for importing audio from Wildlife Acoustics Song Meter Micro devices:
