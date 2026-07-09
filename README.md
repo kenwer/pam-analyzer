@@ -256,6 +256,10 @@ The application writes a rotating debug log (`pam-analyzer.log`, capped at 1 MB 
 - **macOS**: `~/Library/Logs/PAM Analyzer/pam-analyzer.log`
 - **Linux**: `~/.local/state/PAM Analyzer/log/pam-analyzer.log`
 
+The easiest way to find it is **Help > Open Log Folder** in the app, which opens the folder directly in your file browser.
+
+On Windows, `%LOCALAPPDATA%` lives under a hidden `AppData` folder that File Explorer doesn't show by default, so browsing there manually is not straightforward. If you don't have access to the app's menu, paste the path above into File Explorer's address bar (not the search box) and press Enter; Explorer will expand `%LOCALAPPDATA%` and navigate straight there.
+
 
 ## Changelog
 The changelog can be found at the [CHANGELOG page](CHANGELOG.md).

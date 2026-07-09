@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import csv
 import logging
+import shutil
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
@@ -115,7 +116,9 @@ class BaseAnalysisRunner(ABC):
         # / 'de'. Normalise so a stale 'en' degrades to 'en_us' silently.
         preferred_lang = normalize_lang_code(preferred_lang)
 
+        logging.info("%s: loading model...", self.log_prefix)
         model = self._load_model()
+        logging.info("%s: model loaded.", self.log_prefix)
 
         per_campaign_totals = [count_audio_files(ci.folder) for ci in campaigns]
         run_total = sum(per_campaign_totals)
@@ -283,6 +286,12 @@ class BaseAnalysisRunner(ABC):
             session_ref=session_ref,
         )
 
+        logging.info(
+            "%s: opening predict session for campaign %s (%d files)...",
+            self.log_prefix,
+            campaign_name,
+            wav_count,
+        )
         with self._open_predict_session(
             model,
             settings=settings,
@@ -290,12 +299,44 @@ class BaseAnalysisRunner(ABC):
             on_stats=on_stats,
         ) as session:
             session_ref[0] = session
+            birdnet_log = self._birdnet_session_log_path(session)
+            if birdnet_log is not None:
+                logging.info(
+                    "%s: birdnet internal session log: %s", self.log_prefix, birdnet_log
+                )
+            logging.info(
+                "%s: session.run() starting for campaign %s...",
+                self.log_prefix,
+                campaign_name,
+            )
             try:
                 result = session.run(wav_files)
-            except RuntimeError as exc:
-                if progress.is_cancelled():
+            except Exception as exc:
+                logging.info(
+                    "%s: session.run() raised for campaign %s: %s",
+                    self.log_prefix,
+                    campaign_name,
+                    exc,
+                )
+                # Copy birdnet's internal log now: the library only copies it
+                # into place on a clean session exit (session.__exit__ ->
+                # ProcessManager.join()), and that join can itself hang if a
+                # worker/producer process never exits, so this may be the
+                # only copy that ever lands.
+                self._save_birdnet_session_log(birdnet_log, campaign_name)
+                if isinstance(exc, RuntimeError) and progress.is_cancelled():
                     raise CancelledError() from exc
                 raise
+            logging.info(
+                "%s: session.run() finished for campaign %s.",
+                self.log_prefix,
+                campaign_name,
+            )
+        logging.info(
+            "%s: predict session closed for campaign %s.",
+            self.log_prefix,
+            campaign_name,
+        )
 
         if progress.is_cancelled():
             raise CancelledError()
@@ -419,6 +460,35 @@ class BaseAnalysisRunner(ABC):
             elapsed=time.monotonic() - t0,
             model_key=self.model_key,
         )
+
+    def _birdnet_session_log_path(self, session: Any) -> Path | None:
+        """Look up birdnet's own per-session log file, if the lib exposes one.
+
+        Reaches into the lib's private `_resources` attribute since this path
+        isn't part of its public API; any failure here is swallowed so a lib
+        internals change can't break an analysis run.
+        """
+        try:
+            return session._resources.logging_resources.session_log_file
+        except AttributeError:
+            return None
+
+    def _save_birdnet_session_log(self, birdnet_log: Path | None, campaign_name: str) -> None:
+        """Copy birdnet's session log next to ours as soon as an error surfaces.
+
+        birdnet only copies this file into place on a clean session exit
+        (session.__exit__ -> ProcessManager.join()); if a worker/producer
+        process never exits, that join can hang too, so this may be the only
+        copy that ever lands.
+        """
+        if birdnet_log is None or not birdnet_log.exists():
+            return
+        dest = paths.log_dir() / f"birdnet-session-{self.log_prefix}-{campaign_name}-crash.log"
+        try:
+            shutil.copyfile(birdnet_log, dest)
+            logging.info("%s: copied birdnet session log to %s", self.log_prefix, dest)
+        except Exception as exc:  # noqa: BLE001  best-effort: never shadow the real error
+            logging.warning("%s: failed to copy birdnet session log: %s", self.log_prefix, exc)
 
     # ---- Subclass hooks ----------------------------------------------------
 

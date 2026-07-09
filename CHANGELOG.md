@@ -3,6 +3,8 @@
 ## [Unreleased]
 ### Changed
 - [Dev] Upgrade dependencies.
+### Added
+- Add more logging and a "Help > Open Log Folder" menu action that opens the app's log directory directly in the file browser, so Windows users no longer need to navigate to the hidden `%LOCALAPPDATA%` folder manually.
 
 ## [0.3.0] - 2026-06-25
 ### Added

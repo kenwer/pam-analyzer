@@ -88,7 +88,6 @@ def _pin_kagglehub_to_bundled_version() -> None:
 _configure_frozen_model_paths()
 
 
-from platformdirs import user_log_dir  # noqa: E402
 from PySide6.QtGui import QIcon  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
@@ -101,6 +100,7 @@ from ..infrastructure import (  # noqa: E402
     SoundfileAudioExtractor,
     TomlCampaignRepository,
     TomlProjectRepository,
+    paths,
 )
 from ..ui import resources_rc  # noqa: F401, E402  registers :/icons/* resources
 from ..ui.app_state import AppState  # noqa: E402
@@ -135,7 +135,7 @@ def build_main_window() -> MainWindow:
 
 
 def _setup_logging(level: int) -> None:
-    log_dir = Path(user_log_dir("PAM Analyzer", appauthor=False))
+    log_dir = paths.log_dir()
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / "pam-analyzer.log"
 

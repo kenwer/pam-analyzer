@@ -2,9 +2,15 @@
 
 from pathlib import Path
 
+from platformdirs import user_log_dir
+
 AUDIO_EXTENSIONS: frozenset[str] = frozenset({
     ".wav", ".flac", ".mp3", ".ogg", ".m4a", ".wma", ".aiff", ".aif"
 })
+
+
+def log_dir() -> Path:
+    return Path(user_log_dir("PAM Analyzer", appauthor=False))
 
 
 def campaign_toml(campaign_folder: Path) -> Path:

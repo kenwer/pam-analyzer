@@ -1,8 +1,8 @@
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, Qt
-from PySide6.QtGui import QAction, QCloseEvent, QColor
+from PySide6.QtCore import QEvent, Qt, QUrl
+from PySide6.QtGui import QAction, QCloseEvent, QColor, QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -18,6 +18,7 @@ from ..infrastructure import (
     CsvDetectionRepository,
     SoundfileAudioExtractor,
     TomlCampaignRepository,
+    paths,
 )
 from ..workers import ImportOrchestrator
 from .app_state import AppState
@@ -111,6 +112,7 @@ class MainWindow(QMainWindow):
         self.ui.action_close.triggered.connect(self._on_close_project)
         self.ui.action_clear_recent.triggered.connect(self._on_clear_recent)
         self.ui.action_quit.triggered.connect(self.close)
+        self.ui.action_open_log_folder.triggered.connect(self._on_open_log_folder)
         self.ui.action_about.triggered.connect(self._on_about)
 
     def _wire_state(self) -> None:
@@ -225,6 +227,11 @@ class MainWindow(QMainWindow):
     def _on_clear_recent(self) -> None:
         self._settings.clear_recent_projects()
         self._rebuild_recent_menu()
+
+    def _on_open_log_folder(self) -> None:
+        log_dir = paths.log_dir()
+        log_dir.mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(log_dir)))
 
     def _on_about(self) -> None:
         show_about_dialog(self)
