@@ -1,9 +1,12 @@
 """pytest-qt smoke tests for the Campaigns panel."""
 
+import os
+import time
 from pathlib import Path
 
 import pytest
 
+from pam_analyzer.app.settings import AppSettings
 from pam_analyzer.domain import Campaign, FilterMode, LatLon, Project
 from pam_analyzer.domain.audio_import import DetectedCard, ImportSource
 from pam_analyzer.infrastructure import (
@@ -12,7 +15,11 @@ from pam_analyzer.infrastructure import (
     TomlProjectRepository,
 )
 from pam_analyzer.ui.app_state import AppState
-from pam_analyzer.ui.panels.campaigns_panel import CampaignsPanel
+from pam_analyzer.ui.panels.campaigns_panel import (
+    SORT_ORDER_LABELS,
+    CampaignSortOrder,
+    CampaignsPanel,
+)
 from pam_analyzer.workers import ImportOrchestrator
 
 
@@ -34,15 +41,31 @@ class _FakeScanner:
 
 @pytest.fixture(autouse=True)
 def _isolated_qsettings(tmp_path, monkeypatch):
+    """Route QSettings to a per-test scratch directory so AppSettings reads
+    don't leak between tests or pollute the developer's real config."""
     from PySide6.QtCore import QCoreApplication, QSettings
+
+    from pam_analyzer.app.settings import AppSettings
 
     QCoreApplication.setOrganizationName("PAMAnalyzerTest")
     QCoreApplication.setApplicationName(f"PAMAnalyzerTest-{tmp_path.name}")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "qsettings"))
+    QSettings.setDefaultFormat(QSettings.Format.IniFormat)
     QSettings.setPath(
         QSettings.Format.IniFormat,
         QSettings.Scope.UserScope,
         str(tmp_path / "qsettings"),
+    )
+    # AppSettings uses the QSettings(organization, application) constructor,
+    # which Qt hardcodes to NativeFormat (the real CFPreferences store on
+    # macOS) regardless of setDefaultFormat()/setPath() above. Redirect it
+    # separately via an explicit file-backed QSettings so tests can never
+    # write to the developer's actual application preferences.
+    ini_path = tmp_path / "qsettings" / "app_settings.ini"
+    monkeypatch.setattr(
+        AppSettings,
+        "__init__",
+        lambda self: setattr(self, "_settings", QSettings(str(ini_path), QSettings.Format.IniFormat)),
     )
     yield
 
@@ -79,7 +102,7 @@ def panel(
 ) -> CampaignsPanel:
     proj, _ = project_with_campaign
     orchestrator = ImportOrchestrator(AudioImporter(), scanner)
-    p = CampaignsPanel(state, TomlCampaignRepository(), orchestrator)
+    p = CampaignsPanel(state, TomlCampaignRepository(), orchestrator, AppSettings())
     qtbot.addWidget(p)
     state.load_project(proj.path)
     return p
@@ -88,7 +111,7 @@ def panel(
 def test_panel_shows_empty_on_no_project(qtbot):
     state = AppState(TomlProjectRepository(), TomlCampaignRepository())
     orchestrator = ImportOrchestrator(AudioImporter(), _FakeScanner())
-    p = CampaignsPanel(state, TomlCampaignRepository(), orchestrator)
+    p = CampaignsPanel(state, TomlCampaignRepository(), orchestrator, AppSettings())
     qtbot.addWidget(p)
     assert p._detail.ui.stack.currentWidget() is p._detail.ui.empty_page
 
@@ -290,6 +313,99 @@ def test_campaign_switch_while_watching_prompts(
     current_name = panel._model.itemFromIndex(panel.ui.campaign_list.currentIndex()).text()
     assert current_name == "beta"
     assert not panel.is_busy()
+
+
+def _add_campaign(proj: Project, name: str) -> Campaign:
+    campaign = Campaign(
+        name=name,
+        folder=proj.audio_recordings_path / name,
+        species_filter_mode=FilterMode.LOCATION,
+        location=LatLon(50.0, 8.0),
+    )
+    TomlCampaignRepository().create(campaign)
+    return campaign
+
+
+def test_default_sort_order_is_name_ascending(panel: CampaignsPanel, project_with_campaign):
+    """A fresh AppSettings store (no persisted choice) should default to A-Z, not mtime."""
+    proj, _ = project_with_campaign
+    _add_campaign(proj, "zulu")
+    panel._app_state.refresh_campaigns()
+    names = [panel._model.item(r).text() for r in range(panel._model.rowCount())]
+    assert names == ["alpha", "zulu"]
+
+
+def test_sort_by_name_descending(panel: CampaignsPanel, project_with_campaign):
+    proj, _ = project_with_campaign
+    _add_campaign(proj, "zulu")
+    panel._app_state.refresh_campaigns()
+
+    panel._set_sort_order(CampaignSortOrder.NAME_DESC)
+    names = [panel._model.item(r).text() for r in range(panel._model.rowCount())]
+    assert names == ["zulu", "alpha"]
+
+
+def test_sort_by_date_modified(panel: CampaignsPanel, project_with_campaign):
+    """Date-modified order reflects folder mtime, independent of the name sort."""
+    proj, alpha = project_with_campaign
+    zulu = _add_campaign(proj, "zulu")
+
+    # Give 'zulu' an older mtime than 'alpha' so it sorts last despite its name.
+    now = time.time()
+    os.utime(alpha.folder, (now, now))
+    os.utime(zulu.folder, (now - 100, now - 100))
+    panel._app_state.refresh_campaigns()
+
+    panel._set_sort_order(CampaignSortOrder.DATE_MODIFIED_DESC)
+    names = [panel._model.item(r).text() for r in range(panel._model.rowCount())]
+    assert names == ["alpha", "zulu"]
+
+    panel._set_sort_order(CampaignSortOrder.DATE_MODIFIED_ASC)
+    names = [panel._model.item(r).text() for r in range(panel._model.rowCount())]
+    assert names == ["zulu", "alpha"]
+
+
+def test_sort_order_persists_via_settings(panel: CampaignsPanel):
+    panel._set_sort_order(CampaignSortOrder.NAME_DESC)
+    # A fresh AppSettings instance reads the same on-disk QSettings store, so
+    # the choice should survive a restart without needing a live panel.
+    assert AppSettings().campaign_sort_order == CampaignSortOrder.NAME_DESC.value
+
+
+def test_sort_order_preserves_selection(panel: CampaignsPanel, project_with_campaign):
+    proj, _ = project_with_campaign
+    _add_campaign(proj, "zulu")
+    panel._app_state.refresh_campaigns()
+    panel._select_by_name("zulu")
+
+    panel._set_sort_order(CampaignSortOrder.NAME_DESC)
+
+    current = panel._model.itemFromIndex(panel.ui.campaign_list.currentIndex())
+    assert current is not None
+    assert current.text() == "zulu"
+
+
+def test_sort_menu_marks_current_order_checked(panel: CampaignsPanel):
+    from PySide6.QtWidgets import QMenu
+
+    parent_menu = QMenu()
+    submenu = panel._build_sort_menu(parent_menu)
+    checked = [a.text() for a in submenu.actions() if a.isChecked()]
+    assert checked == [SORT_ORDER_LABELS[CampaignSortOrder.NAME_ASC]]
+
+
+def test_open_campaign_folder_uses_desktop_services(
+    panel: CampaignsPanel, project_with_campaign, monkeypatch
+):
+    _, campaign = project_with_campaign
+    opened = []
+    monkeypatch.setattr(
+        "pam_analyzer.ui.panels.campaigns_panel.QDesktopServices.openUrl",
+        lambda url: opened.append(url),
+    )
+    panel._open_campaign_folder(campaign)
+    assert len(opened) == 1
+    assert opened[0].toLocalFile() == str(campaign.folder)
 
 
 def test_inventory_clears_when_project_switches(

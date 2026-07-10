@@ -1,9 +1,17 @@
 """Campaigns panel: master/detail list for creating and editing campaigns."""
 
 import dataclasses
+from enum import Enum
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QKeySequence, QShortcut, QStandardItem, QStandardItemModel
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import (
+    QActionGroup,
+    QDesktopServices,
+    QKeySequence,
+    QShortcut,
+    QStandardItem,
+    QStandardItemModel,
+)
 from PySide6.QtWidgets import (
     QInputDialog,
     QMenu,
@@ -11,6 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ...app.settings import AppSettings
 from ...domain import Campaign, FilterMode, LatLon
 from ...infrastructure import TomlCampaignRepository
 from ...workers import ImportOrchestrator
@@ -19,12 +28,28 @@ from .campaign_detail_widget import CampaignDetailWidget
 from .ui_campaigns_panel import Ui_CampaignsPanel
 
 
+class CampaignSortOrder(Enum):
+    DATE_MODIFIED_DESC = "date_modified_desc"
+    DATE_MODIFIED_ASC = "date_modified_asc"
+    NAME_ASC = "name_asc"
+    NAME_DESC = "name_desc"
+
+
+SORT_ORDER_LABELS = {
+    CampaignSortOrder.DATE_MODIFIED_DESC: "Date Modified (Newest First)",
+    CampaignSortOrder.DATE_MODIFIED_ASC: "Date Modified (Oldest First)",
+    CampaignSortOrder.NAME_ASC: "Name (A to Z)",
+    CampaignSortOrder.NAME_DESC: "Name (Z to A)",
+}
+
+
 class CampaignsPanel(QWidget):
     def __init__(
         self,
         app_state: AppState,
         campaign_repo: TomlCampaignRepository,
         orchestrator: ImportOrchestrator,
+        settings: AppSettings,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -34,7 +59,16 @@ class CampaignsPanel(QWidget):
 
         self._app_state = app_state
         self._service = campaign_repo
+        self._settings = settings
         self._model = QStandardItemModel(self)
+        # Raw campaign list as last received from AppState, in repository
+        # order (mtime descending). Re-sorted into the model on demand so
+        # switching sort order doesn't require a fresh discover() call.
+        self._campaigns: list[Campaign] = []
+        try:
+            self._sort_order = CampaignSortOrder(settings.campaign_sort_order)
+        except ValueError:
+            self._sort_order = CampaignSortOrder.NAME_ASC
         # Set true while we revert a selection programmatically so the
         # selectionChanged handler ignores the synthetic event.
         self._reverting_selection = False
@@ -84,10 +118,14 @@ class CampaignsPanel(QWidget):
             self._detail.show_empty()
 
     def _rebuild_list(self, campaigns: list[Campaign]) -> None:
+        self._campaigns = campaigns
+        self._populate_model()
+
+    def _populate_model(self) -> None:
         sel = self.ui.campaign_list.selectionModel()
         sel.blockSignals(True)
         self._model.removeRows(0, self._model.rowCount())
-        for c in campaigns:
+        for c in self._sorted_campaigns():
             item = QStandardItem(c.name)
             item.setData(c, Qt.ItemDataRole.UserRole)
             if c.location:
@@ -97,6 +135,17 @@ class CampaignsPanel(QWidget):
             item.setData(tip, Qt.ItemDataRole.ToolTipRole)
             self._model.appendRow(item)
         sel.blockSignals(False)
+
+    def _sorted_campaigns(self) -> list[Campaign]:
+        if self._sort_order == CampaignSortOrder.NAME_ASC:
+            return sorted(self._campaigns, key=lambda c: c.name.lower())
+        if self._sort_order == CampaignSortOrder.NAME_DESC:
+            return sorted(self._campaigns, key=lambda c: c.name.lower(), reverse=True)
+        if self._sort_order == CampaignSortOrder.DATE_MODIFIED_ASC:
+            # AppState.campaigns is already mtime-descending, so ascending is
+            # just the reverse, no extra filesystem stat() calls needed.
+            return list(reversed(self._campaigns))
+        return list(self._campaigns)
 
     # new / selection
 
@@ -236,13 +285,42 @@ class CampaignsPanel(QWidget):
     def _on_context_menu(self, pos) -> None:
         index = self.ui.campaign_list.indexAt(pos)
         campaign = self._campaign_at(index)
-        if campaign is None:
-            return
         menu = QMenu(self)
-        menu.addAction("Edit").triggered.connect(lambda: self._open_edit(campaign))
-        menu.addAction("Rename…").triggered.connect(lambda: self._rename_campaign(campaign))
-        menu.addAction("Delete…").triggered.connect(lambda: self._show_delete_confirm(campaign))
+        if campaign is not None:
+            menu.addAction("Edit").triggered.connect(lambda: self._open_edit(campaign))
+            menu.addAction("Rename…").triggered.connect(lambda: self._rename_campaign(campaign))
+            menu.addAction("Open Campaign Folder").triggered.connect(
+                lambda: self._open_campaign_folder(campaign)
+            )
+            menu.addAction("Delete…").triggered.connect(lambda: self._show_delete_confirm(campaign))
+            menu.addSeparator()
+        menu.addMenu(self._build_sort_menu(menu))
         menu.exec(self.ui.campaign_list.viewport().mapToGlobal(pos))
+
+    def _build_sort_menu(self, parent: QMenu) -> QMenu:
+        submenu = QMenu("Sort Campaign List By", parent)
+        group = QActionGroup(submenu)
+        group.setExclusive(True)
+        for order, label in SORT_ORDER_LABELS.items():
+            action = submenu.addAction(label)
+            action.setCheckable(True)
+            action.setChecked(order == self._sort_order)
+            action.triggered.connect(lambda _checked=False, o=order: self._set_sort_order(o))
+            group.addAction(action)
+        return submenu
+
+    def _set_sort_order(self, order: CampaignSortOrder) -> None:
+        if order == self._sort_order:
+            return
+        self._sort_order = order
+        self._settings.campaign_sort_order = order.value
+        selected = self._selected_campaign()
+        self._populate_model()
+        if selected is not None:
+            self._select_by_name(selected.name)
+
+    def _open_campaign_folder(self, campaign: Campaign) -> None:
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(campaign.folder)))
 
     def _on_delete_shortcut(self) -> None:
         if self._list_locked:

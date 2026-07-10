@@ -20,11 +20,14 @@ class AppSettings:
     GROUP_UI = "ui"
     GROUP_RECENT = "recent"
     GROUP_EXAMINE = "examine"
+    GROUP_CAMPAIGNS = "campaigns"
 
     KEY_WINDOW_GEOMETRY = "geometry"
     KEY_RECENT_PROJECTS = "projects"
     KEY_HIDDEN_COLUMNS = "hidden_columns"
+    KEY_CAMPAIGN_SORT_ORDER = "sort_order"
     MAX_RECENT_PROJECTS = 8
+    DEFAULT_CAMPAIGN_SORT_ORDER = "name_asc"
 
     def __init__(self) -> None:
         self._settings = QSettings(self.ORGANIZATION, self.APPLICATION)
@@ -91,4 +94,22 @@ class AppSettings:
     def examine_hidden_columns(self, value: list[str]) -> None:
         self._settings.beginGroup(self.GROUP_EXAMINE)
         self._settings.setValue(self.KEY_HIDDEN_COLUMNS, list(value))
+        self._settings.endGroup()
+
+    # campaigns panel state
+
+    @property
+    def campaign_sort_order(self) -> str:
+        """Value of the CampaignSortOrder the user last picked from the list's context menu."""
+        self._settings.beginGroup(self.GROUP_CAMPAIGNS)
+        value = self._settings.value(
+            self.KEY_CAMPAIGN_SORT_ORDER, self.DEFAULT_CAMPAIGN_SORT_ORDER, type=str
+        )
+        self._settings.endGroup()
+        return cast(str, value)
+
+    @campaign_sort_order.setter
+    def campaign_sort_order(self, value: str) -> None:
+        self._settings.beginGroup(self.GROUP_CAMPAIGNS)
+        self._settings.setValue(self.KEY_CAMPAIGN_SORT_ORDER, value)
         self._settings.endGroup()

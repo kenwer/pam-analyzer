@@ -3,6 +3,7 @@
 ## [Unreleased]
 ### Added
 - Add support importing audio from folders via drag&drop at the campaign's detail panel.
+- Add context menu entries to sort the campaign list, and to open campaign folders in the file manage.
 
 ## [0.3.1] - 2026-07-09
 ### Changed

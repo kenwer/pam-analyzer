@@ -20,6 +20,7 @@ from PySide6.QtCore import QMimeData, QPointF, Qt, QUrl
 from PySide6.QtGui import QDropEvent
 from PySide6.QtWidgets import QDialog
 
+from pam_analyzer.app.settings import AppSettings
 from pam_analyzer.domain import Campaign, FilterMode, LatLon, Project
 from pam_analyzer.domain.audio_import import DetectedCard
 from pam_analyzer.infrastructure import (
@@ -82,11 +83,25 @@ def _drop_event(paths: list[Path]) -> QDropEvent:
 def _isolated_qsettings(tmp_path, monkeypatch):
     from PySide6.QtCore import QCoreApplication, QSettings
 
+    from pam_analyzer.app.settings import AppSettings
+
     QCoreApplication.setOrganizationName("PAMAnalyzerTest")
     QCoreApplication.setApplicationName(f"PAMAnalyzerTest-{tmp_path.name}")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "qsettings"))
+    QSettings.setDefaultFormat(QSettings.Format.IniFormat)
     QSettings.setPath(
         QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(tmp_path / "qsettings")
+    )
+    # AppSettings uses the QSettings(organization, application) constructor,
+    # which Qt hardcodes to NativeFormat (the real CFPreferences store on
+    # macOS) regardless of setDefaultFormat()/setPath() above. Redirect it
+    # separately via an explicit file-backed QSettings so tests can never
+    # write to the developer's actual application preferences.
+    ini_path = tmp_path / "qsettings" / "app_settings.ini"
+    monkeypatch.setattr(
+        AppSettings,
+        "__init__",
+        lambda self: setattr(self, "_settings", QSettings(str(ini_path), QSettings.Format.IniFormat)),
     )
     yield
 
@@ -117,7 +132,7 @@ def panel(qtbot, project_with_campaign, scanner: _FakeScanner) -> CampaignsPanel
     proj, _ = project_with_campaign
     state = AppState(TomlProjectRepository(), TomlCampaignRepository())
     orchestrator = ImportOrchestrator(AudioImporter(), scanner)
-    p = CampaignsPanel(state, TomlCampaignRepository(), orchestrator)
+    p = CampaignsPanel(state, TomlCampaignRepository(), orchestrator, AppSettings())
     qtbot.addWidget(p)
     state.load_project(proj.path)
     return p

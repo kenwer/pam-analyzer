@@ -63,6 +63,7 @@ class MainWindow(QMainWindow):
             app_state,
             campaign_repo,
             import_orchestrator,
+            settings,
             self.ui.campaigns_tab,
         )
         self._mount_tab(self.ui.campaigns_tab, self._campaigns_panel, "Campaigns")
