@@ -15,7 +15,13 @@ import pytest
 import soundfile as sf
 from mutagen.flac import FLAC
 
-from pam_analyzer.domain.audio_import import ConflictChoice, DetectedCard, birdnet_week
+from pam_analyzer.domain.audio_import import (
+    ConflictChoice,
+    DetectedCard,
+    ImportSource,
+    birdnet_week,
+    discover_folder_cards,
+)
 from pam_analyzer.infrastructure import audio_import
 from pam_analyzer.infrastructure.audio_import import (
     AudioImporter,
@@ -228,6 +234,106 @@ def test_list_card_files_includes_wav_flac_and_config(tmp_path: Path):
     names = [p.name for p in AudioImporter().list_card_files(card)]
 
     assert names == ["CONFIG.TXT", "a.WAV", "b.wav", "c.flac", "d.FLAC"]
+
+
+def test_list_card_files_finds_audio_one_level_of_date_subfolders_deep(tmp_path: Path):
+    """Some deployments group recordings into per-day folders under the device
+    root (card_root/20260501/*.WAV) instead of at the root itself, e.g.:
+    ID 125/CONFIG.TXT, ID 125/20260501/<device>_20260501_160000.WAV."""
+    card = tmp_path / "ID 125"
+    card.mkdir()
+    (card / "CONFIG.TXT").touch()
+    day = card / "20260501"
+    day.mkdir()
+    (day / "248D9B016487DF3C_20260501_160000.WAV").touch()
+    (day / "248D9B016487DF3C_20260501_160400.WAV").touch()
+
+    names = [p.name for p in AudioImporter().list_card_files(card)]
+
+    assert names == [
+        "248D9B016487DF3C_20260501_160000.WAV",
+        "248D9B016487DF3C_20260501_160400.WAV",
+        "CONFIG.TXT",
+    ]
+
+
+def test_list_card_files_does_not_recurse_past_one_level(tmp_path: Path):
+    """A folder of several per-device cards (each with its own date subfolders)
+    must not itself look like a single card -- otherwise discover_folder_cards'
+    single-vs-batch check would flatten every device into one card."""
+    site = tmp_path / "Bibersee"
+    site.mkdir()
+    device = site / "ID 125"
+    device.mkdir()
+    day = device / "20260501"
+    day.mkdir()
+    (day / "rec.WAV").touch()
+
+    assert AudioImporter().list_card_files(site) == []
+    assert [p.name for p in AudioImporter().list_card_files(device)] == ["rec.WAV"]
+
+
+def test_discover_folder_cards_handles_device_with_date_subfolders(tmp_path: Path):
+    """End-to-end regression for the site/device-id/date/*.WAV layout: the
+    device-id folder holds only CONFIG.TXT directly, with recordings one level
+    further down in a date-named subfolder."""
+    site = tmp_path / "Bibersee"
+    site.mkdir()
+    device = site / "ID 125"
+    device.mkdir()
+    (device / "CONFIG.TXT").touch()
+    day = device / "20260501"
+    day.mkdir()
+    (day / "248D9B016487DF3C_20260501_160000.WAV").touch()
+
+    cards = discover_folder_cards(site, AudioImporter().has_direct_audio)
+
+    assert [c.name for c in cards] == ["ID 125"]
+    assert cards[0].source is ImportSource.FOLDER
+
+
+def test_discover_folder_cards_distinguishes_batch_from_date_subfolders(tmp_path: Path):
+    """A folder whose immediate children hold audio directly (no sidecar, no
+    further nesting) is a batch of separate cards, not one card with date
+    subfolders, even though 'root/child/*.WAV' is structurally identical to
+    'device/date/*.WAV' by depth alone. has_direct_audio (not list_card_files,
+    which would recurse into both children and merge them) is what tells them
+    apart."""
+    root = tmp_path / "OffloadedCards"
+    root.mkdir()
+    card_a = root / "CardA"
+    card_a.mkdir()
+    (card_a / "a.WAV").touch()
+    card_b = root / "CardB"
+    card_b.mkdir()
+    (card_b / "b.WAV").touch()
+
+    cards = discover_folder_cards(root, AudioImporter().has_direct_audio)
+
+    assert {c.name for c in cards} == {"CardA", "CardB"}
+
+
+def test_has_direct_audio_true_for_audio_at_root(tmp_path: Path):
+    card = tmp_path / "card"
+    card.mkdir()
+    (card / "a.WAV").touch()
+    assert AudioImporter().has_direct_audio(card)
+
+
+def test_has_direct_audio_true_for_sidecar_only(tmp_path: Path):
+    card = tmp_path / "card"
+    card.mkdir()
+    (card / "CONFIG.TXT").touch()
+    assert AudioImporter().has_direct_audio(card)
+
+
+def test_has_direct_audio_false_when_audio_only_in_subfolder(tmp_path: Path):
+    card = tmp_path / "card"
+    card.mkdir()
+    day = card / "20260501"
+    day.mkdir()
+    (day / "a.WAV").touch()
+    assert not AudioImporter().has_direct_audio(card)
 
 
 # detect_conflicts

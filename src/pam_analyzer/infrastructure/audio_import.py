@@ -245,14 +245,42 @@ def _is_sidecar(name: str) -> bool:
     return upper == "CONFIG.TXT" or upper.endswith("_SUMMARY.TXT")
 
 
+def _audio_files_in(folder: Path) -> list[Path]:
+    return [f for f in folder.iterdir() if f.is_file() and f.name.upper().endswith((".WAV", ".FLAC"))]
+
+
 class AudioImporter:
+    def has_direct_audio(self, card_root: Path) -> bool:
+        """True if card_root holds audio or a device sidecar at its own root.
+
+        Deliberately not recursive, unlike list_card_files: this is the
+        classifier discover_folder_cards uses to tell "this is one card" apart
+        from "this holds several other card folders", and list_card_files'
+        extra level of date-subfolder search cannot make that distinction on
+        its own, since a sibling card folder and a date subfolder both sit one
+        level down and hold audio directly.
+        """
+        profile = detect_profile(card_root)
+        audio_root = card_root / profile.audio_subdir if profile.audio_subdir else card_root
+        if audio_root.is_dir() and _audio_files_in(audio_root):
+            return True
+        return any(_is_sidecar(f.name) for f in card_root.iterdir() if f.is_file())
+
     def list_card_files(self, card_root: Path) -> list[Path]:
         """Return sorted WAV/FLAC recordings plus the device sidecar from a card.
 
         The device profile decides where audio lives: AudioMoth keeps it at the
-        card root, Song Meter under 'Data/'. Listing is one level deep (no
-        recursion), matching the layouts both devices produce. Sidecars
+        card root, Song Meter under 'Data/'. Audio is searched at that location
+        and, additionally, one level of subdirectories below it, to support
+        devices/configurations that group recordings into per-day folders (e.g.
+        card_root/20260501/*.WAV) as well as the flat layout. Sidecars
         (CONFIG.TXT, *_Summary.txt) always sit at the card root.
+
+        The search is bounded to one extra level (not full recursion) so that
+        discover_folder_cards' single-vs-batch check stays meaningful: a folder
+        of several per-device card folders (each with its own date subfolders)
+        must not itself look like a single card just because audio exists
+        somewhere underneath it.
 
         WAV is transcoded to FLAC on import; FLAC already on the card is copied
         through unchanged.
@@ -262,9 +290,10 @@ class AudioImporter:
 
         files: list[Path] = []
         if audio_root.is_dir():
-            files.extend(
-                f for f in audio_root.iterdir() if f.is_file() and f.name.upper().endswith((".WAV", ".FLAC"))
-            )
+            files.extend(_audio_files_in(audio_root))
+            for entry in audio_root.iterdir():
+                if entry.is_dir():
+                    files.extend(_audio_files_in(entry))
         files.extend(f for f in card_root.iterdir() if f.is_file() and _is_sidecar(f.name))
         # Sort by filename string, not by Path: Path comparison normcases the
         # name, so bare sorted() is case-insensitive on Windows but case-

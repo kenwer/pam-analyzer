@@ -8,7 +8,9 @@ import pytest
 from pam_analyzer.domain.audio_import import (
     CardQueue,
     DetectedCard,
+    ImportSource,
     birdnet_week,
+    discover_folder_cards,
 )
 
 # birdnet_week
@@ -88,3 +90,58 @@ def test_card_queue_pending_does_not_mutate():
     snapshot = q.pending
     snapshot.clear()
     assert len(q.pending) == 1
+
+
+# discover_folder_cards
+
+def test_discover_folder_cards_single_card(tmp_path):
+    root = tmp_path / "MSD-12345"
+    root.mkdir()
+
+    cards = discover_folder_cards(root, lambda folder: folder == root)
+    assert len(cards) == 1
+    assert cards[0].name == "MSD-12345"
+    assert cards[0].mountpoint == root
+    assert cards[0].source is ImportSource.FOLDER
+
+
+def test_discover_folder_cards_batch_subfolders(tmp_path):
+    root = tmp_path / "OldRecordings"
+    root.mkdir()
+    card_a = root / "CardA"
+    card_a.mkdir()
+    card_b = root / "CardB"
+    card_b.mkdir()
+
+    cards = discover_folder_cards(root, lambda folder: folder in (card_a, card_b))
+    assert {c.name for c in cards} == {"CardA", "CardB"}
+    assert all(c.source is ImportSource.FOLDER for c in cards)
+
+
+def test_discover_folder_cards_skips_empty_subfolders(tmp_path):
+    root = tmp_path / "Mixed"
+    root.mkdir()
+    has_audio = root / "HasAudio"
+    has_audio.mkdir()
+    (root / "Empty").mkdir()
+
+    cards = discover_folder_cards(root, lambda folder: folder == has_audio)
+    assert [c.name for c in cards] == ["HasAudio"]
+
+
+def test_discover_folder_cards_none_found(tmp_path):
+    root = tmp_path / "Empty"
+    root.mkdir()
+    (root / "Sub").mkdir()
+
+    cards = discover_folder_cards(root, lambda _folder: False)
+    assert cards == []
+
+
+def test_discover_folder_cards_skips_stray_files(tmp_path):
+    root = tmp_path / "WithStrayFile"
+    root.mkdir()
+    (root / "notes.txt").write_text("hello")
+
+    cards = discover_folder_cards(root, lambda _folder: False)
+    assert cards == []

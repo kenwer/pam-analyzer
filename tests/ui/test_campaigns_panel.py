@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from pam_analyzer.domain import Campaign, FilterMode, LatLon, Project
-from pam_analyzer.domain.audio_import import DetectedCard
+from pam_analyzer.domain.audio_import import DetectedCard, ImportSource
 from pam_analyzer.infrastructure import (
     AudioImporter,
     TomlCampaignRepository,
@@ -196,7 +196,7 @@ def test_starting_watch_emits_importStarted(qtbot, panel: CampaignsPanel, state:
     )
     with qtbot.waitSignal(state.importStarted, timeout=1000) as blocker:
         panel._detail.ui.watch_button.click()
-    assert blocker.args == ["alpha"]
+    assert blocker.args == ["alpha", ImportSource.SD_CARD]
     assert panel.is_busy() is True
     assert panel.busy_label() == "SD-card watcher"
 

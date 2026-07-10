@@ -39,7 +39,7 @@ class AppState(QObject):
     analysisProgress = Signal(object)  # AnalysisProgressSnapshot
     analysisFinished = Signal(object)  # AnalysisRunResult | None
     lastAnalysisResultChanged = Signal(object)  # AnalysisRunResult | None
-    importStarted = Signal(str)  # campaign name being watched
+    importStarted = Signal(str, object)  # campaign name, ImportSource (which flavor of import)
     importFinished = Signal()
     importResultsChanged = Signal(list)  # list[CardImportResult]
     audioInventoryChanged = Signal(object)  # AudioInventory

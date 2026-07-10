@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+### Added
+- Add support importing audio from folders via drag&drop at the campaign's detail panel.
+
 ## [0.3.1] - 2026-07-09
 ### Changed
 - [Dev] Upgrade dependencies.

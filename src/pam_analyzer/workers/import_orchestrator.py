@@ -1,14 +1,22 @@
-"""Orchestrates SD card audio import: card detection, queue processing, conflict
-negotiation, and copy worker lifecycle.
+"""Orchestrates SD card and manual-folder audio import: card detection, queue
+processing, conflict negotiation, and copy worker lifecycle.
 
 State machine:
-    IDLE -> WATCHING: start_watching() called
+    IDLE -> WATCHING: start_watching() or start_folder_import() called
     WATCHING -> COPYING: card ready, no conflicts (or overwrite enabled)
     WATCHING -> AWAITING_CONFLICT: card ready, conflicts present and overwrite disabled
     AWAITING_CONFLICT -> COPYING: resolve_conflict() called
     AWAITING_CONFLICT -> WATCHING: skip_card() called
     COPYING -> WATCHING: worker finished or failed
+    WATCHING -> IDLE: queue drains after a start_folder_import() batch
     any busy state -> IDLE: stop_watching() or request_shutdown()
+
+start_watching() arms the SD poll timer; start_folder_import() shares the same
+queue-draining machinery but never starts the timer, so a folder batch cannot
+be re-offered cards by the SD scanner. self._batch_source tracks which entry
+point started the current run so the queue-drained tail (_on_worker_finished /
+_on_worker_failed) knows whether to keep watching for a card (SD) or drop back
+to IDLE (folder, a one-shot batch), and so busy_label() reports correctly.
 """
 
 from __future__ import annotations
@@ -24,6 +32,7 @@ from ..domain.audio_import import (
     CardQueue,
     ConflictChoice,
     DetectedCard,
+    ImportSource,
 )
 from ..infrastructure import AudioImporter, PsutilSdCardScanner
 from .audio_import_worker import AudioImportWorker
@@ -39,6 +48,8 @@ class _State(Enum):
 class ImportOrchestrator(QObject):
     watching_started = Signal(str)          # campaign name
     watching_stopped = Signal()
+    folder_import_started = Signal(str)     # campaign name
+    folder_import_stopped = Signal()
     card_started = Signal(object, int)      # DetectedCard, file_count
     progress = Signal(object)               # ImportProgress
     result_ready = Signal(object)           # CardImportResult
@@ -59,6 +70,7 @@ class ImportOrchestrator(QObject):
         self._overwrite: bool = False
         self._clear_after: bool = False
         self._state = _State.IDLE
+        self._batch_source = ImportSource.SD_CARD
         self._queue = CardQueue()
         self._current_card: DetectedCard | None = None
         # Stored while AWAITING_CONFLICT, cleared on resolve or skip.
@@ -74,17 +86,46 @@ class ImportOrchestrator(QObject):
     def start_watching(self, campaign: Campaign, pattern: str) -> None:
         self._campaign = campaign
         self._pattern = pattern
+        self._batch_source = ImportSource.SD_CARD
         self._queue.reset()
         self._state = _State.WATCHING
         self._poll_timer.start()
         self.watching_started.emit(campaign.name)
 
+    def start_folder_import(self, campaign: Campaign, cards: list[DetectedCard]) -> None:
+        """Import a pre-confirmed batch of folder-sourced cards.
+
+        Reuses the same queue/conflict/worker pipeline as SD watching, but
+        never starts the poll timer, so the SD scanner cannot add cards to
+        this batch. The queue drains once and the state returns to IDLE
+        (see _on_worker_finished/_on_worker_failed), unlike SD watching,
+        which stays armed for the next card indefinitely.
+        """
+        self._campaign = campaign
+        self._batch_source = ImportSource.FOLDER
+        self._queue.reset()
+        self._queue.offer(cards)
+        self._state = _State.WATCHING
+        self.folder_import_started.emit(campaign.name)
+        self.queue_changed.emit(list(self._queue.pending))
+        self._start_next()
+
+    def list_card_files(self, folder: Path) -> list[Path]:
+        return self._importer.list_card_files(folder)
+
+    def has_direct_audio(self, folder: Path) -> bool:
+        return self._importer.has_direct_audio(folder)
+
     def stop_watching(self) -> None:
+        """Cancel the current import session, SD-watching or folder batch alike."""
         self._poll_timer.stop()
         if self._worker is not None:
             self._worker.request_cancel()
         self._state = _State.IDLE
-        self.watching_stopped.emit()
+        if self._batch_source is ImportSource.FOLDER:
+            self.folder_import_stopped.emit()
+        else:
+            self.watching_stopped.emit()
 
     def set_options(self, overwrite: bool, clear_after: bool) -> None:
         self._overwrite = overwrite
@@ -113,6 +154,10 @@ class ImportOrchestrator(QObject):
         self._state = _State.WATCHING
         if self._queue.pending:
             self._start_next()
+        elif self._batch_source is ImportSource.FOLDER:
+            self._state = _State.IDLE
+            self.queue_changed.emit([])
+            self.folder_import_stopped.emit()
         else:
             self.queue_changed.emit([])
 
@@ -129,7 +174,10 @@ class ImportOrchestrator(QObject):
             QCoreApplication.processEvents()
         self._state = _State.IDLE
         if was_busy:
-            self.watching_stopped.emit()
+            if self._batch_source is ImportSource.FOLDER:
+                self.folder_import_stopped.emit()
+            else:
+                self.watching_stopped.emit()
 
     def is_busy(self) -> bool:
         return self._state in (_State.WATCHING, _State.AWAITING_CONFLICT, _State.COPYING)
@@ -138,7 +186,7 @@ class ImportOrchestrator(QObject):
         if self._state == _State.COPYING:
             return "audio import"
         if self._state in (_State.WATCHING, _State.AWAITING_CONFLICT):
-            return "SD-card watcher"
+            return "folder import" if self._batch_source is ImportSource.FOLDER else "SD-card watcher"
         return None
 
     def _on_poll(self) -> None:
@@ -231,6 +279,9 @@ class ImportOrchestrator(QObject):
             self._state = _State.WATCHING
         if self._state == _State.WATCHING and self._queue.pending:
             self._start_next()
+        elif self._state == _State.WATCHING and self._batch_source is ImportSource.FOLDER:
+            self._state = _State.IDLE
+            self.folder_import_stopped.emit()
 
     def _on_worker_failed(self, message: str) -> None:
         current_card = self._current_card
@@ -251,6 +302,9 @@ class ImportOrchestrator(QObject):
             self._state = _State.WATCHING
         if self._state == _State.WATCHING and self._queue.pending:
             self._start_next()
+        elif self._state == _State.WATCHING and self._batch_source is ImportSource.FOLDER:
+            self._state = _State.IDLE
+            self.folder_import_stopped.emit()
 
     def _teardown_worker(self) -> None:
         if self._thread is not None:

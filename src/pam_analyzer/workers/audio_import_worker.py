@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal, Slot
 
-from ..domain.audio_import import ConflictChoice, DetectedCard
+from ..domain.audio_import import ConflictChoice, DetectedCard, ImportSource
 from ..infrastructure import AudioImporter, PsutilSdCardScanner
 
 
@@ -53,7 +53,7 @@ class AudioImportWorker(QObject):
             self.failed.emit(str(exc))
             return
 
-        if not result.error:
+        if not result.error and self._card.source is ImportSource.SD_CARD:
             try:
                 self._scanner.eject(self._card)
             except Exception:  # noqa: BLE001

@@ -18,11 +18,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-from PySide6.QtCore import QSignalBlocker, QTimer, Signal
+from PySide6.QtCore import QMimeData, QSignalBlocker, QTimer, Signal
+from PySide6.QtGui import QDragEnterEvent, QDropEvent
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
     QHeaderView,
+    QMessageBox,
     QPlainTextEdit,
     QVBoxLayout,
     QWidget,
@@ -33,10 +35,13 @@ from ...domain.audio_import import (
     ConflictReport,
     DetectedCard,
     ImportProgress,
+    ImportSource,
+    discover_folder_cards,
 )
 from ...widgets import MapPickerWidget
 from ...workers import ImportOrchestrator
 from ..app_state import AppState
+from ..dialogs.folder_import_dialog import FolderImportDialog
 from ..dialogs.import_conflict_dialog import ImportConflictDialog
 from ..models.audio_inventory_tree_model import AudioInventoryTreeModel, format_bytes
 from .ui_campaign_detail_widget import Ui_CampaignDetailWidget
@@ -81,12 +86,17 @@ class CampaignDetailWidget(QWidget):
 
         # Local booleans inferred from the orchestrator signal stream.
         self._is_watching = False
+        self._is_folder_importing = False
         self._is_copying = False
 
         self._map = MapPickerWidget()
         map_layout = QVBoxLayout(self.ui.map_container)
         map_layout.setContentsMargins(0, 0, 0, 0)
         map_layout.addWidget(self._map)
+
+        # Folder import has no dedicated button; dropping folders anywhere on
+        # this widget while viewing a campaign is the only entry point.
+        self.setAcceptDrops(True)
 
         self._setup_spinboxes()
         self._configure_view_page()
@@ -147,15 +157,26 @@ class CampaignDetailWidget(QWidget):
         # Orchestrator events -> local UI state
         self._orchestrator.watching_started.connect(self._on_watching_started)
         self._orchestrator.watching_stopped.connect(self._on_watching_stopped)
+        self._orchestrator.folder_import_started.connect(self._on_folder_import_started)
+        self._orchestrator.folder_import_stopped.connect(self._on_folder_import_stopped)
         self._orchestrator.card_started.connect(self._on_card_started)
         self._orchestrator.progress.connect(self._on_progress)
         self._orchestrator.result_ready.connect(self._on_result_ready)
         self._orchestrator.conflict_detected.connect(self._on_conflict_detected)
         self._orchestrator.queue_changed.connect(self._on_queue_changed)
 
-        # Orchestrator events -> AppState relay
-        self._orchestrator.watching_started.connect(self._app_state.importStarted)
+        # Orchestrator events -> AppState relay. importStarted carries a
+        # ImportSource so MainWindow can pick the right status text; watching_started
+        # and folder_import_started otherwise only differ in campaign name, so a
+        # closure fills in the flavor to keep a single AppState import signal.
+        self._orchestrator.watching_started.connect(
+            lambda name: self._app_state.importStarted.emit(name, ImportSource.SD_CARD)
+        )
+        self._orchestrator.folder_import_started.connect(
+            lambda name: self._app_state.importStarted.emit(name, ImportSource.FOLDER)
+        )
         self._orchestrator.watching_stopped.connect(self._app_state.importFinished)
+        self._orchestrator.folder_import_stopped.connect(self._app_state.importFinished)
         self._orchestrator.result_ready.connect(self._app_state.append_import_result)
 
         _attach_text_drop_handler(self.ui.species_text, self._on_text_dropped)
@@ -452,18 +473,63 @@ class CampaignDetailWidget(QWidget):
     # import lifecycle
 
     def _on_watch_clicked(self) -> None:
+        # A folder import in progress has no button of its own, so this
+        # button doubles as its cancel control (see _apply_import_state).
+        if self._is_folder_importing:
+            self._orchestrator.stop_watching()
+            return
         if self._is_watching:
             self._orchestrator.stop_watching()
+            return
+        if self._campaign is None or self._app_state.project is None:
+            return
+        self._orchestrator.set_options(
+            self.ui.overwrite_check.isChecked(),
+            self.ui.clear_check.isChecked(),
+        )
+        self._orchestrator.start_watching(
+            self._campaign, self._app_state.project.sdcard_name_pattern
+        )
+
+    def _can_accept_folder_drop(self) -> bool:
+        return (
+            self._mode == "view"
+            and self._campaign is not None
+            and not self._is_watching
+            and not self._is_folder_importing
+        )
+
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
+        if self._can_accept_folder_drop() and _dropped_folder_paths(event.mimeData()):
+            event.acceptProposedAction()
         else:
-            if self._campaign is None or self._app_state.project is None:
-                return
-            self._orchestrator.set_options(
-                self.ui.overwrite_check.isChecked(),
-                self.ui.clear_check.isChecked(),
+            event.ignore()
+
+    def dropEvent(self, event: QDropEvent) -> None:
+        paths = _dropped_folder_paths(event.mimeData())
+        if not self._can_accept_folder_drop() or not paths:
+            event.ignore()
+            return
+        event.acceptProposedAction()
+        self._start_folder_import(paths)
+
+    def _start_folder_import(self, roots: list[Path]) -> None:
+        if self._campaign is None:
+            return
+        cards = [
+            c for root in roots for c in discover_folder_cards(root, self._orchestrator.has_direct_audio)
+        ]
+        if not cards:
+            QMessageBox.information(
+                self, "Import from folder", "No importable audio files were found in that folder."
             )
-            self._orchestrator.start_watching(
-                self._campaign, self._app_state.project.sdcard_name_pattern
-            )
+            return
+        file_counts = [len(self._orchestrator.list_card_files(c.mountpoint)) for c in cards]
+        dialog = FolderImportDialog(cards, file_counts, self)
+        if dialog.exec() == QDialog.DialogCode.Rejected:
+            return
+        self._orchestrator.set_options(self.ui.overwrite_check.isChecked(), dialog.clear_after())
+        self._orchestrator.start_folder_import(self._campaign, dialog.result_cards())
 
     def _on_options_changed(self) -> None:
         self._orchestrator.set_options(
@@ -478,6 +544,16 @@ class CampaignDetailWidget(QWidget):
 
     def _on_watching_stopped(self) -> None:
         self._is_watching = False
+        self._is_copying = False
+        self._apply_import_state()
+
+    def _on_folder_import_started(self, _campaign_name: str) -> None:
+        self._is_folder_importing = True
+        self._is_copying = False
+        self._apply_import_state()
+
+    def _on_folder_import_stopped(self) -> None:
+        self._is_folder_importing = False
         self._is_copying = False
         self._apply_import_state()
 
@@ -530,22 +606,38 @@ class CampaignDetailWidget(QWidget):
     def _apply_import_state(self) -> None:
         has_campaign = self._campaign is not None
 
-        self.ui.watch_button.setEnabled(has_campaign or self._is_watching)
-        self.ui.watch_button.setText("Stop SD import" if self._is_watching else "Start SD import")
-        # The .ui's :checked stylesheet swaps to red while watching; we keep
-        # the button's checked state in sync with the import state machine so
-        # programmatic stops (e.g. request_shutdown) flip the visual too.
-        if self.ui.watch_button.isChecked() != self._is_watching:
-            self.ui.watch_button.setChecked(self._is_watching)
+        # watch_button doubles as the folder import's cancel control (there is
+        # no dedicated button for that), so it must stay enabled while a
+        # folder import is running rather than being disabled by it.
+        self.ui.watch_button.setEnabled(has_campaign or self._is_watching or self._is_folder_importing)
+        if self._is_folder_importing:
+            self.ui.watch_button.setText("Cancel Folder Import")
+        elif self._is_watching:
+            self.ui.watch_button.setText("Stop SD import")
+        else:
+            self.ui.watch_button.setText("Start SD import")
+        # The .ui's :checked stylesheet swaps to red while an import runs; we
+        # keep the button's checked state in sync with the import state
+        # machine so programmatic stops (e.g. request_shutdown) flip the
+        # visual too.
+        desired_checked = self._is_watching or self._is_folder_importing
+        if self.ui.watch_button.isChecked() != desired_checked:
+            self.ui.watch_button.setChecked(desired_checked)
+
         self.ui.overwrite_check.setEnabled(not self._is_copying)
         self.ui.clear_check.setEnabled(not self._is_copying)
         for w in (self.ui.card_name_label, self.ui.progress_bar, self.ui.files_label, self.ui.eta_label):
             w.setVisible(self._is_copying)
-        self.ui.import_hint_label.setText(
-            "Once all imports are finished, stop the SD import to prevent unintended copies."
-            if self._is_watching
-            else "Start the SD import to copy audio files when a card is inserted."
-        )
+        if self._is_folder_importing:
+            hint = "Importing ARU data from folder:"
+        elif self._is_watching:
+            hint = "Once all imports are finished, stop the SD import to prevent unintended copies."
+        else:
+            hint = (
+                "Start the SD import to copy audio files when a card is inserted, "
+                "or drag a folder onto this panel to import from your hard drive."
+            )
+        self.ui.import_hint_label.setText(hint)
 
     def is_busy(self) -> bool:
         return self._orchestrator.is_busy()
@@ -573,6 +665,14 @@ class CampaignDetailWidget(QWidget):
         if self.ui.mode_location_radio.isChecked():
             return self._location_set
         return bool(self.ui.species_text.toPlainText().strip())
+
+
+def _dropped_folder_paths(mime_data: QMimeData) -> list[Path]:
+    """Local directory paths among the dropped URLs; files and remote URLs are ignored."""
+    if not mime_data.hasUrls():
+        return []
+    paths = (Path(url.toLocalFile()) for url in mime_data.urls() if url.isLocalFile())
+    return [p for p in paths if p.is_dir()]
 
 
 def _attach_text_drop_handler(edit: QPlainTextEdit, on_drop) -> None:

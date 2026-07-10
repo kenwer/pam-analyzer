@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 
 from ..app.settings import AppSettings
 from ..domain import AnalysisRunner
+from ..domain.audio_import import ImportSource
 from ..infrastructure import (
     CsvDetectionRepository,
     SoundfileAudioExtractor,
@@ -135,10 +136,15 @@ class MainWindow(QMainWindow):
         self._update_tab_lock()
         self.ui.status_bar.clearMessage()
 
-    def _on_import_started(self, campaign_name: str) -> None:
+    def _on_import_started(self, campaign_name: str, source: ImportSource) -> None:
         self._import_running = True
         self._update_tab_lock()
-        self.ui.status_bar.showMessage(f"Watching for SD cards (campaign: {campaign_name})…", 0)
+        message = (
+            f"Importing audio from folder (campaign: {campaign_name})…"
+            if source is ImportSource.FOLDER
+            else f"Watching for SD cards (campaign: {campaign_name})…"
+        )
+        self.ui.status_bar.showMessage(message, 0)
 
     def _on_import_finished(self) -> None:
         self._import_running = False
