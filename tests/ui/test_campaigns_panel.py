@@ -405,7 +405,7 @@ def test_open_campaign_folder_uses_desktop_services(
     )
     panel._open_campaign_folder(campaign)
     assert len(opened) == 1
-    assert opened[0].toLocalFile() == str(campaign.folder)
+    assert Path(opened[0].toLocalFile()) == campaign.folder
 
 
 def test_inventory_clears_when_project_switches(

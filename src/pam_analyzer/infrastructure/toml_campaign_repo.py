@@ -1,7 +1,9 @@
 """Reads/writes campaign.toml files and discovers campaigns under an audio root."""
 
 import dataclasses
+import logging
 import shutil
+import time
 import tomllib
 from pathlib import Path
 
@@ -10,18 +12,34 @@ import tomli_w
 from ..domain import Campaign, FilterMode, LatLon
 from . import paths
 
+_log = logging.getLogger(__name__)
+
 
 class TomlCampaignRepository:
     def discover(self, audio_root: Path) -> list[Campaign]:
         if not audio_root.exists():
             return []
+        dbg = _log.isEnabledFor(logging.DEBUG)
+
+        t0 = time.perf_counter() if dbg else 0.0
         candidates = [
             d
             for d in audio_root.iterdir()
             if d.is_dir() and paths.campaign_toml(d).exists()
         ]
+        if dbg:
+            _log.debug("TomlCampaignRepository.discover: %d candidates, scan %.2fs", len(candidates), time.perf_counter() - t0)
+
+        t1 = time.perf_counter() if dbg else 0.0
         candidates.sort(key=lambda d: d.stat().st_mtime, reverse=True)
-        return [self.load(d.name, d) for d in candidates]
+        if dbg:
+            _log.debug("TomlCampaignRepository.discover: sort (stat x%d) %.2fs", len(candidates), time.perf_counter() - t1)
+
+        t2 = time.perf_counter() if dbg else 0.0
+        result = [self.load(d.name, d) for d in candidates]
+        if dbg:
+            _log.debug("TomlCampaignRepository.discover: load %d campaigns %.2fs", len(result), time.perf_counter() - t2)
+        return result
 
     def load(self, name: str, folder: Path) -> Campaign:
         with open(paths.campaign_toml(folder), "rb") as f:

@@ -4,6 +4,8 @@
 ### Added
 - Add support importing audio from folders via drag&drop at the campaign's detail panel.
 - Add context menu entries to sort the campaign list, and to open campaign folders in the file manage.
+### Changed
+- File listing and size checks now run in parallel instead of one at a time. This mainly helps on network shares (e.g. SMB), where each check is a network round trip. Goal is to speed up scanning the audio folder when opening a project and after ARU data imports. 
 
 ## [0.3.1] - 2026-07-09
 ### Changed
