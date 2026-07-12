@@ -90,16 +90,26 @@ jobs:
         # cache never triggers a bare, un-retried download from inside pytest.
         run: uv run --script scripts/build.py --prewarm-only
 
-      - name: Run tests
-        # The suite normally finishes in about a minute per platform. A hung
-        # test should fail the job quickly instead of occupying a runner for
-        # the 6 hour default limit (seen with birdnet session teardown,
-        # https://github.com/birdnet-team/birdnet/issues/51).
+      # Fast and slow tests run as separate pytest processes so the Qt/UI
+      # tests never share an address space with leftover state from the model
+      # tests (the birdnet session can leak worker processes and feeder
+      # threads, https://github.com/birdnet-team/birdnet/issues/51).
+      # Each step normally finishes in about a minute per platform; the
+      # timeout makes a hung test fail the job quickly instead of occupying
+      # a runner for the 6 hour default limit.
+      - name: Run fast tests
         timeout-minutes: 15
         env:
           BIRDNET_APP_DATA: ${{ github.workspace }}/dist/.birdnet-models/birdnet-app-data
           KAGGLEHUB_CACHE: ${{ github.workspace }}/dist/.birdnet-models/kagglehub
-        run: uv run poe test
+        run: uv run poe test-fast
+
+      - name: Run slow tests
+        timeout-minutes: 15
+        env:
+          BIRDNET_APP_DATA: ${{ github.workspace }}/dist/.birdnet-models/birdnet-app-data
+          KAGGLEHUB_CACHE: ${{ github.workspace }}/dist/.birdnet-models/kagglehub
+        run: uv run poe test-slow
 
       - name: Build distributable
         run: uv run --script scripts/build.py
