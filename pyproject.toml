@@ -3,12 +3,11 @@ name = "pam-analyzer"
 version = "0.3.1"
 description = "Automated bird species detection from acoustic recordings."
 readme = "README.md"
-requires-python = ">=3.12,<3.13"  # 3.13 blocked by Intel Mac support: TF 2.16.2 is Google's last x86_64 macOS release and ships cp312 wheels only
+requires-python = ">=3.13,<3.14"  # 3.14 blocked by tensorflow (no cp314 wheels yet) and birdnet (requires-python <3.14)
 dependencies = [
     "PySide6>=6.11.0",
     "birdnet>=0.2.16",
-    "tensorflow>=2.17.0; sys_platform != 'darwin' or platform_machine != 'x86_64'",   # Fix Perch v2 "unknown attribute code: 22" (StableHLO) bug on ARM64/Linux/Win
-    "tensorflow>=2.16.2; sys_platform == 'darwin' and platform_machine == 'x86_64'",  # Google dropped x86_64 support in 2.17
+    "tensorflow>=2.17.0",                                                             # Fix Perch v2 "unknown attribute code: 22" (StableHLO) bug
     "kagglehub>=1.0.2",
     "platformdirs>=4.3.0",
     "psutil>=6.0.0",
@@ -31,6 +30,24 @@ dev = [
     "ruff>=0.6",
     "poethepoet>=0.29",
     "py-spy>=0.3",
+]
+
+[tool.uv]
+# Intel Mac (darwin/x86_64) is not supported: Google stopped shipping macOS
+# x86_64 TensorFlow wheels after 2.16 and Perch v2 needs 2.17+. Excluding the
+# platform here keeps the universal lock solvable (birdnet pins TF <2.17 on
+# Intel Mac, which conflicts with our floor).
+environments = [
+    "sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "sys_platform == 'linux'",
+    "sys_platform == 'win32'",
+]
+# Fail uv lock if any of these lacks installable wheels, instead of failing
+# at install time on that machine.
+required-environments = [
+    "sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "sys_platform == 'win32' and platform_machine == 'AMD64'",
 ]
 
 [build-system]

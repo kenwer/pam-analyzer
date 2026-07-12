@@ -12,6 +12,8 @@
 - [Dev] Move `AppSettings` from `app/` to `ui/` and enforce the ARCHITECTURE.md layer import rules with a new test case.
 - [Dev] Let CI run the full test suite, including the slow Perch tests.
 - [Dev] Upgrade dependencies.
+- Drop Intel Mac (macOS x86_64) support. Google stopped shipping macOS x86_64 TensorFlow wheels after 2.16, and Perch v2 requires 2.17+.
+- [Dev] Upgrade Python from 3.12 to 3.13 (the latest that are supported by birdnet and TensorFlow).
 ### Fixed
 - Detections CSV discovery no longer misbehaves for campaign names containing glob characters such as `[`, `]`, `*`, or `?`.
 - Saving detection edits (Verified, Corrected Species, Comment) now writes the CSV atomically via a temp file. A crash or power loss during save can no longer truncate the file and lose annotations.
