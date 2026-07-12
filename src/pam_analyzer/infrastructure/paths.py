@@ -4,6 +4,8 @@ from pathlib import Path
 
 from platformdirs import user_log_dir
 
+from ..domain import detection_schema
+
 AUDIO_EXTENSIONS: frozenset[str] = frozenset({
     ".wav", ".flac", ".mp3", ".ogg", ".m4a", ".wma", ".aiff", ".aif"
 })
@@ -32,7 +34,7 @@ def campaign_csv_for_model(output_base: Path, campaign_name: str, model_key: str
     campaign directory under different filenames so the panel can load
     them all and aggregate via the Model column.
     """
-    return output_base / campaign_name / f"{campaign_name}-detections-{model_key}.csv"
+    return output_base / campaign_name / detection_schema.detections_csv_name(campaign_name, model_key)
 
 
 def campaign_csvs(output_base: Path, campaign_name: str) -> list[Path]:
@@ -40,5 +42,8 @@ def campaign_csvs(output_base: Path, campaign_name: str) -> list[Path]:
     camp_dir = output_base / campaign_name
     if not camp_dir.is_dir():
         return []
-    prefix = f"{campaign_name}-detections-"
-    return sorted(p for p in camp_dir.glob(f"{prefix}*.csv") if p.is_file())
+    return sorted(
+        p
+        for p in camp_dir.iterdir()
+        if p.is_file() and detection_schema.model_key_from_csv_name(campaign_name, p.name) is not None
+    )

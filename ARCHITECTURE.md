@@ -91,6 +91,17 @@ When a conflict is found, the orchestrator moves to AWAITING_CONFLICT and emits
 knowledge of `AppState`; the panel relays relevant signals (`watching_started`,
 `watching_stopped`, `result_ready`) to it.
 
+### Detection schema
+`domain/detection_schema.py` is the single definition of the Detection record's
+shape: column names and canonical order, per-column access (`ColumnSpec`), CSV row
+serialization, and the `{campaign}-detections-{model_key}.csv` filename pattern.
+`CsvDetectionRepository`, `BaseAnalysisRunner`, `paths`, `analysis_discovery`, and
+`DetectionsTableModel` all derive from it, so a schema change (new column, renamed
+column, filename convention) lands in one file. The Examine panel's compound table
+widget lives in `ui/detection_table.py`: it is Detection-specific, so it belongs in
+`ui/`, while the generic pieces it composes (`MultiColumnSortTable`,
+`HeaderFilterRow`, `AudioPlayerPanel`) stay in `widgets/`.
+
 ### Protocol-based seams
 `domain/analysis.py` defines `AnalysisRunner` and `AnalysisProgress` as structural
 protocols. `BirdnetRunner` and `PerchRunner` both satisfy `AnalysisRunner` and are

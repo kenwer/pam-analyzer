@@ -3,7 +3,7 @@
 Implements ``sort_by_priority(priority)`` so the MultiColumnSortTable's
 fast-path bypasses the Qt proxy comparator on large datasets, plus
 ``set_column_filter`` so the
-:class:`pam_analyzer.widgets.detection_table.DetectionTable` can drive its
+:class:`pam_analyzer.ui.detection_table.DetectionTable` can drive its
 filter row, play-button delegate, and audio player.
 
 Column 0 is a virtual play-button column (no payload, never sortable).
@@ -11,83 +11,38 @@ The real detection fields start at column 1.
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any
 
 import polars as pl
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 
-from ...domain import Detection, VerifiedState
+from ...domain import Detection
+from ...domain.detection_schema import COLUMNS as _SCHEMA_COLUMNS
+from ...domain.detection_schema import ColumnSpec, is_locale_column
 from ...widgets.filter_ops import FilterOp, default_op, to_polars_expr
-
-
-@dataclass(frozen=True)
-class _Column:
-    header: str
-    get: Callable[[Detection], Any]
-    set: Callable[[Detection, str], None] | None = None  # None ⇒ read-only
-    numeric: bool = False
-
-    @property
-    def editable(self) -> bool:
-        return self.set is not None
-
-
-def _set_verified(d: Detection, value: str) -> None:
-    d.verified = VerifiedState(value or "")
-
-
-def _set_corrected_species(d: Detection, value: str) -> None:
-    d.corrected_species = value
-
-
-def _set_comment(d: Detection, value: str) -> None:
-    d.comment = value
-
 
 PLAY_COLUMN_INDEX = 0
 """The model column index reserved for the virtual play-button column."""
 
-_PLAY_COLUMN = _Column("_play", lambda _d: "")  # type: ignore[reportUnusedVariable]
+_PLAY_COLUMN = ColumnSpec("_play", lambda _d: "")
 
-# Static columns whose presence is independent of the loaded CSV. Order
+# The play column plus the schema's canonical column list. The schema order
 # matches the column order both BirdnetRunner and PerchRunner emit when
 # writing their per-model CSV, so the on-screen table is a direct
 # visual analog of the file on disk. The model may extend this list at
 # runtime with extras discovered in Detection.extra (e.g. Species_de /
 # Species_fr from a multi-locale Perch run); those land right after the
 # Species column, which is also where the runners place them in the CSV.
-_STATIC_COLUMNS: tuple[_Column, ...] = (
-    _PLAY_COLUMN,
-    _Column("Campaign", lambda d: d.campaign),
-    _Column("ARU", lambda d: d.aru),
-    _Column("Start_Time", lambda d: d.start_time, numeric=True),
-    _Column("End_Time", lambda d: d.end_time, numeric=True),
-    _Column("Scientific_Name", lambda d: d.scientific_name),
-    _Column("Species", lambda d: d.species),
-    _Column("Confidence", lambda d: d.confidence, numeric=True),
-    _Column("Rank", lambda d: d.rank, numeric=True),
-    _Column("File", lambda d: d.file),
-    _Column("Recording_Time", lambda d: d.recording_time),
-    _Column("Week", lambda d: d.week, numeric=True),
-    _Column("Lat", lambda d: d.lat, numeric=True),
-    _Column("Lon", lambda d: d.lon, numeric=True),
-    _Column("Species_List", lambda d: d.species_list),
-    _Column("Min_Conf", lambda d: d.min_conf, numeric=True),
-    _Column("Model", lambda d: d.model),
-    _Column("Verified", lambda d: d.verified.value, _set_verified),
-    _Column("Corrected_Species", lambda d: d.corrected_species, _set_corrected_species),
-    _Column("Comment", lambda d: d.comment, _set_comment),
-)
+_STATIC_COLUMNS: tuple[ColumnSpec, ...] = (_PLAY_COLUMN, *_SCHEMA_COLUMNS)
 
 # Header to index for the static set. Panels use this to wire delegates and
 # default sort priority to known columns; dynamic extras get looked up via
 # DetectionsTableModel.index_of_column instead.
-COLUMNS_BY_NAME = {c.header: i for i, c in enumerate(_STATIC_COLUMNS)}
+COLUMNS_BY_NAME = {c.name: i for i, c in enumerate(_STATIC_COLUMNS)}
 
 # Static-column getters. Extras are read via DetectionsTableModel.column_getter,
 # which falls back to a closure over Detection.extra.
-COLUMN_GETTERS: dict[str, Callable[[Detection], Any]] = {c.header: c.get for c in _STATIC_COLUMNS}
+COLUMN_GETTERS: dict[str, Callable[[Detection], Any]] = {c.name: c.get for c in _STATIC_COLUMNS}
 
 NUMERIC_COLUMNS: frozenset[int] = frozenset(i for i, c in enumerate(_STATIC_COLUMNS) if c.numeric)
 """Indices of numeric columns. Consumed by the header filter row to pick the
@@ -127,7 +82,7 @@ class DetectionsTableModel(QAbstractTableModel):
         # extend it with one column per Species_<locale> key discovered in
         # Detection.extra so users can show/hide localized names in the
         # examine panel without touching the source CSV.
-        self._columns: list[_Column] = list(_STATIC_COLUMNS)
+        self._columns: list[ColumnSpec] = list(_STATIC_COLUMNS)
         self._all: list[Detection] = []
         # Indices into _all in display order (post-filter, post-sort).
         self._visible: list[int] = []
@@ -153,14 +108,14 @@ class DetectionsTableModel(QAbstractTableModel):
         # row, because users group them mentally with the base species name.
         # The shift makes COLUMNS_BY_NAME stale for any static column past
         # Species, so production callers must use index_of() instead.
-        extras = sorted({k for d in rows for k in d.extra if k.startswith("Species_")})
+        extras = sorted({k for d in rows for k in d.extra if is_locale_column(k)})
         species_pos = next(
-            (i for i, c in enumerate(_STATIC_COLUMNS) if c.header == "Species"),
+            (i for i, c in enumerate(_STATIC_COLUMNS) if c.name == "Species"),
             len(_STATIC_COLUMNS),
         )
         self._columns = [
             *_STATIC_COLUMNS[: species_pos + 1],
-            *(_Column(h, _extra_column_getter(h)) for h in extras),
+            *(ColumnSpec(h, _extra_column_getter(h)) for h in extras),
             *_STATIC_COLUMNS[species_pos + 1 :],
         ]
         self._sort_df = self._build_sort_df(self._all)
@@ -186,7 +141,7 @@ class DetectionsTableModel(QAbstractTableModel):
         static column after that.
         """
         for i, c in enumerate(self._columns):
-            if c.header == name:
+            if c.name == name:
                 return i
         return -1
 
@@ -198,8 +153,8 @@ class DetectionsTableModel(QAbstractTableModel):
         CSV export and the default-hidden-extras heuristic.
         """
         if include_play:
-            return [c.header for c in self._columns]
-        return [c.header for c in self._columns if c.header != "_play"]
+            return [c.name for c in self._columns]
+        return [c.name for c in self._columns if c.name != "_play"]
 
     def column_getter(self, name: str) -> Callable[[Detection], Any] | None:
         """Resolve a column header to its getter, including dynamic extras.
@@ -209,7 +164,7 @@ class DetectionsTableModel(QAbstractTableModel):
         function objects.
         """
         for c in self._columns:
-            if c.header == name:
+            if c.name == name:
                 return c.get
         return COLUMN_GETTERS.get(name)
 
@@ -277,7 +232,7 @@ class DetectionsTableModel(QAbstractTableModel):
         if role != Qt.DisplayRole:
             return None
         if orientation == Qt.Horizontal and 0 <= section < len(self._columns):
-            header = self._columns[section].header
+            header = self._columns[section].name
             # The play column is rendered by a delegate; show no header text.
             return "" if header == "_play" else header
         if orientation == Qt.Vertical:
@@ -323,7 +278,7 @@ class DetectionsTableModel(QAbstractTableModel):
         self._dirty_ids.add(id(d))
 
         # Keep _sort_df in sync so future filter/sort on editable columns is correct.
-        col_name = col.header
+        col_name = col.name
         if not self._sort_df.is_empty() and col_name in self._sort_df.columns:
             actual_idx = self._visible[row]
             new_val = col.get(d)  # use getter so VerifiedState becomes .value str
@@ -349,27 +304,11 @@ class DetectionsTableModel(QAbstractTableModel):
     def _build_sort_df(self, detections: list[Detection]) -> pl.DataFrame:
         if not detections:
             return pl.DataFrame()
+        # One column per schema column, via the schema getters (so e.g.
+        # Verified lands as its .value string). Editable columns are
+        # included so filter/sort work on them too.
         data: dict[str, list] = {
-            "Campaign":         [d.campaign for d in detections],
-            "ARU":              [d.aru for d in detections],
-            "Week":             [d.week for d in detections],
-            "Species":          [d.species for d in detections],
-            "Scientific_Name":  [d.scientific_name for d in detections],
-            "Confidence":       [d.confidence for d in detections],
-            "Start_Time":       [d.start_time for d in detections],
-            "End_Time":         [d.end_time for d in detections],
-            "Rank":             [d.rank for d in detections],
-            "File":             [d.file for d in detections],
-            "Recording_Time":   [d.recording_time for d in detections],
-            "Lat":              [d.lat for d in detections],
-            "Lon":              [d.lon for d in detections],
-            "Species_List":     [d.species_list for d in detections],
-            "Min_Conf":         [d.min_conf for d in detections],
-            "Model":            [d.model for d in detections],
-            # Editable columns, included so filter/sort work on them too
-            "Verified":         [d.verified.value for d in detections],
-            "Corrected_Species":[d.corrected_species for d in detections],
-            "Comment":          [d.comment for d in detections],
+            c.name: [c.get(d) for d in detections] for c in _SCHEMA_COLUMNS
         }
         # Dynamic extra columns (all str, may be absent per row so None)
         extra_keys: set[str] = set()
@@ -389,7 +328,7 @@ class DetectionsTableModel(QAbstractTableModel):
         for col_idx, (text, op) in self._col_filters.items():
             if col_idx == PLAY_COLUMN_INDEX or col_idx >= len(self._columns):
                 continue
-            col_name = self._columns[col_idx].header
+            col_name = self._columns[col_idx].name
             if col_name not in self._sort_df.columns:
                 continue
             mask = mask & to_polars_expr(col_name, text, op, self._columns[col_idx].numeric)
@@ -406,7 +345,7 @@ class DetectionsTableModel(QAbstractTableModel):
         for c, order in self._sort_priority:
             if c == PLAY_COLUMN_INDEX or c >= len(self._columns):
                 continue
-            col_names.append(self._columns[c].header)
+            col_names.append(self._columns[c].name)
             descending.append(order == Qt.SortOrder.DescendingOrder)
 
         if not col_names:

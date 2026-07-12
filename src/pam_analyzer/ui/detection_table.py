@@ -23,20 +23,21 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..ui.models.detections_table_model import PLAY_COLUMN_INDEX
-from .audio_player import AudioPlayerPanel
-from .combo_delegate import ComboDelegate, fixed
-from .filter_ops import FilterOp
-from .header_filter_row import HeaderFilterRow
-from .multi_column_sort_table import MultiColumnSortTable
-from .no_hover_style import disable_item_hover
+from ..domain import VerifiedState
+from ..widgets.audio_player import AudioPlayerPanel
+from ..widgets.combo_delegate import ComboDelegate, fixed
+from ..widgets.filter_ops import FilterOp
+from ..widgets.header_filter_row import HeaderFilterRow
+from ..widgets.multi_column_sort_table import MultiColumnSortTable
+from ..widgets.no_hover_style import disable_item_hover
+from .models.detections_table_model import PLAY_COLUMN_INDEX
 
-# Verified column accepts the same fixed set the original AG Grid did.
-_VERIFIED_CHOICES = ("", "true", "false", "uncertain")
+# The Verified combo offers exactly the domain's verification states.
+_VERIFIED_CHOICES = tuple(state.value for state in VerifiedState)
 
 if TYPE_CHECKING:
     from ..domain import Detection
-    from ..ui.models.detections_table_model import DetectionsTableModel
+    from .models.detections_table_model import DetectionsTableModel
 
 
 def _label_for(d: Detection) -> str:

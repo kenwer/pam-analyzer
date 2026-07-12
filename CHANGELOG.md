@@ -6,6 +6,9 @@
 - Add context menu entries to sort the campaign list, and to open campaign folders in the file manage.
 ### Changed
 - File listing and size checks now run in parallel instead of one at a time. This mainly helps on network shares (e.g. SMB), where each check is a network round trip. Goal is to speed up scanning the audio folder when opening a project and after ARU data imports. 
+- [Dev] Consolidate the detection schema (columns, CSV serialization, filename pattern) into `domain/detection_schema.py`. All readers and writers derive from it.
+### Fixed
+- Detections CSV discovery no longer misbehaves for campaign names containing glob characters such as `[`, `]`, `*`, or `?`.
 
 ## [0.3.1] - 2026-07-09
 ### Changed

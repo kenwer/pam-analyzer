@@ -1,106 +1,16 @@
-"""Reads/writes detections CSVs. Drop-in compatible with the original column set."""
+"""Reads/writes detections CSVs. Drop-in compatible with the original column set.
+
+Column names, row serialization, and the filename pattern all come from
+domain.detection_schema; this module owns only the file I/O and the
+routing of edits back to their source files.
+"""
 
 import csv
 from pathlib import Path
 
-from ..domain import Detection, VerifiedState
+from ..domain import Detection
+from ..domain import detection_schema as schema
 from . import paths
-
-# Columns explicitly modeled on Detection. Anything else falls into Detection.extra.
-_CORE_FIELDS = {
-    "Campaign",
-    "ARU",
-    "Week",
-    "Species",
-    "Scientific_Name",
-    "Confidence",
-    "Start_Time",
-    "End_Time",
-    "Rank",
-    "File",
-    "Recording_Time",
-    "Lat",
-    "Lon",
-    "Species_List",
-    "Min_Conf",
-    "Model",
-    "Verified",
-    "Corrected_Species",
-    "Comment",
-}
-
-# Annotation columns added even if not present in the source CSV.
-ANNOTATION_FIELDS = ("Verified", "Corrected_Species", "Comment")
-
-
-def _to_float(value: str) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return 0.0
-
-
-def _to_optional_float(value: str) -> float | None:
-    try:
-        return float(value) if value not in ("", None) else None
-    except (TypeError, ValueError):
-        return None
-
-
-def _row_to_detection(row: dict[str, str]) -> Detection:
-    return Detection(
-        campaign=row.get("Campaign", ""),
-        aru=row.get("ARU", ""),
-        week=_to_optional_float(row.get("Week", "")),
-        species=row.get("Species", ""),
-        scientific_name=row.get("Scientific_Name", ""),
-        confidence=_to_float(row.get("Confidence", "")),
-        start_time=_to_float(row.get("Start_Time", "")),
-        end_time=_to_float(row.get("End_Time", "")),
-        rank=_to_optional_float(row.get("Rank", "")),
-        file=row.get("File", ""),
-        recording_time=row.get("Recording_Time", ""),
-        lat=_to_optional_float(row.get("Lat", "")),
-        lon=_to_optional_float(row.get("Lon", "")),
-        species_list=row.get("Species_List", ""),
-        min_conf=_to_optional_float(row.get("Min_Conf", "")),
-        model=row.get("Model", ""),
-        verified=VerifiedState(row.get("Verified", "") or ""),
-        corrected_species=row.get("Corrected_Species", ""),
-        comment=row.get("Comment", ""),
-        extra={k: v for k, v in row.items() if k not in _CORE_FIELDS},
-    )
-
-
-def _detection_to_row(d: Detection) -> dict[str, str]:
-    row: dict[str, str] = dict(d.extra)
-    row["Campaign"] = d.campaign
-    row["ARU"] = d.aru
-    row["Week"] = "" if d.week is None else _format_number(d.week)
-    row["Species"] = d.species
-    row["Scientific_Name"] = d.scientific_name
-    row["Confidence"] = _format_number(d.confidence)
-    row["Start_Time"] = _format_number(d.start_time)
-    row["End_Time"] = _format_number(d.end_time)
-    row["Rank"] = "" if d.rank is None else _format_number(d.rank)
-    row["File"] = d.file
-    row["Recording_Time"] = d.recording_time
-    row["Lat"] = "" if d.lat is None else _format_number(d.lat)
-    row["Lon"] = "" if d.lon is None else _format_number(d.lon)
-    row["Species_List"] = d.species_list
-    row["Min_Conf"] = "" if d.min_conf is None else _format_number(d.min_conf)
-    row["Model"] = d.model
-    row["Verified"] = d.verified.value
-    row["Corrected_Species"] = d.corrected_species
-    row["Comment"] = d.comment
-    return row
-
-
-def _format_number(value: float) -> str:
-    """Render integers without a trailing .0; floats stay as float reprs."""
-    if value == int(value):
-        return str(int(value))
-    return repr(value)
 
 
 def _read_csv(path: Path) -> tuple[list[Detection], list[str]]:
@@ -109,7 +19,7 @@ def _read_csv(path: Path) -> tuple[list[Detection], list[str]]:
         fieldnames = list(reader.fieldnames or [])
         detections = []
         for row in reader:
-            d = _row_to_detection(row)
+            d = schema.detection_from_row(row)
             d.source_path = path
             detections.append(d)
     return detections, fieldnames
@@ -117,14 +27,14 @@ def _read_csv(path: Path) -> tuple[list[Detection], list[str]]:
 
 def _write_csv(path: Path, detections: list[Detection], fieldnames: list[str]) -> None:
     full_fields = list(fieldnames)
-    for f in ANNOTATION_FIELDS:
+    for f in schema.ANNOTATION_COLUMNS:
         if f not in full_fields:
             full_fields.append(f)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=full_fields, extrasaction="ignore")
         writer.writeheader()
-        writer.writerows(_detection_to_row(d) for d in detections)
+        writer.writerows(schema.detection_to_row(d) for d in detections)
 
 
 class CsvDetectionRepository:
@@ -176,5 +86,5 @@ class CsvDetectionRepository:
             assert d.source_path is not None, "Detection must carry source_path when saved"
             groups.setdefault(d.source_path, []).append(d)
         for path, rows in groups.items():
-            fieldnames = self._fieldnames_by_path.get(path) or list(_CORE_FIELDS)
+            fieldnames = self._fieldnames_by_path.get(path) or list(schema.COLUMN_NAMES)
             _write_csv(path, rows, fieldnames)

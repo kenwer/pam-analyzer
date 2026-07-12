@@ -8,6 +8,7 @@ output_base/<campaign>/<campaign>-detections-<model>.csv shows up.
 from pathlib import Path
 
 from ..domain import AnalysisRunResult, CampaignRunResult
+from ..domain import detection_schema as schema
 from . import paths
 
 
@@ -46,7 +47,6 @@ def _synthesize_campaign(
     model_key is inferred from the filename suffix: <campaign>-detections-<key>.csv.
     """
     output_dir = output_base / campaign_name
-    prefix = f"{campaign_name}-detections-"
     return CampaignRunResult(
         campaign_name=campaign_name,
         output_dir=output_dir,
@@ -56,7 +56,7 @@ def _synthesize_campaign(
         wav_count=0,
         aru_count=0,
         elapsed=0.0,
-        model_key=csv_path.stem.removeprefix(prefix),
+        model_key=schema.model_key_from_csv_name(campaign_name, csv_path.name) or "",
     )
 
 

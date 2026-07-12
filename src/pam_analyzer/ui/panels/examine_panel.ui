@@ -170,7 +170,7 @@
   <customwidget>
    <class>DetectionTable</class>
    <extends>QWidget</extends>
-   <header>pam_analyzer.widgets.detection_table</header>
+   <header>pam_analyzer.ui.detection_table</header>
    <container>1</container>
   </customwidget>
  </customwidgets>

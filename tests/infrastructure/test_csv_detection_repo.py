@@ -128,7 +128,7 @@ def test_lat_lon_round_trip(tmp_path: Path) -> None:
 
 
 def test_truly_unknown_columns_go_to_extra(tmp_path: Path) -> None:
-    """Columns not in _CORE_FIELDS still land in Detection.extra."""
+    """Columns outside detection_schema.CORE_FIELDS still land in Detection.extra."""
     headers = _HEADERS + ["CustomTag"]
     path = campaign_csv_for_model(tmp_path, "east", "BirdNET-2.4")
     path.parent.mkdir(parents=True, exist_ok=True)

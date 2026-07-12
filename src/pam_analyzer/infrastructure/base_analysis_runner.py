@@ -44,6 +44,7 @@ from ..domain import (
     CampaignRunInput,
     CancelledError,
 )
+from ..domain import detection_schema as schema
 from ..domain.entities import CampaignRunResult
 from . import paths
 from ._analysis_helpers import (
@@ -219,25 +220,7 @@ class BaseAnalysisRunner(ABC):
             "Min_Conf": settings.min_conf,
             "Model": self.model_key,
         }
-        locale_cols = [f"Species_{loc}" for loc in settings.locales]
-        fieldnames = [
-            "Campaign",
-            "ARU",
-            "Start_Time",
-            "End_Time",
-            "Scientific_Name",
-            "Species",
-            *locale_cols,
-            "Confidence",
-            "Rank",
-            "File",
-            "Recording_Time",
-            "Week",
-            *run_context.keys(),
-            "Verified",
-            "Corrected_Species",
-            "Comment",
-        ]
+        fieldnames = schema.write_fieldnames(settings.locales)
 
         if wav_count == 0:
             with open(detections_csv, "w", newline="", encoding="utf-8") as outfile:
@@ -407,7 +390,7 @@ class BaseAnalysisRunner(ABC):
                     rank += 1
 
                 locale_names = {
-                    f"Species_{loc}": parsed.locale_commons.get(loc, "")
+                    schema.locale_column(loc): parsed.locale_commons.get(loc, "")
                     for loc in settings.locales
                 }
 

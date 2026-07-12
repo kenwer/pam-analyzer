@@ -105,7 +105,7 @@ Analysis results are written to the **detections output path** set in Project Se
         └── *.BirdNET.results.csv              # BirdNET's own raw output, one file per recording
 ```
 
-- **`{campaign}-detections-{model_key}.csv`** is the file you work with. The `{model_key}` suffix is the runner's identifier (`BirdNET-2.4` or `Perch-2.0`), so multiple model runs coexist for the same campaign. Every row carries a `Model` column identifying its source, plus the annotation columns (`Verified`, `Corrected_Species`, `Comment`). The Examine panel loads every model file it finds for the campaign and concatenates them; annotations are written back to the file the row came from. Legacy unsuffixed `{campaign}-detections.csv` files from earlier app versions are still loaded as a fallback.
+- **`{campaign}-detections-{model_key}.csv`** is the file you work with. The `{model_key}` suffix is the runner's identifier (`BirdNET-2.4` or `Perch-2.0`), so multiple model runs coexist for the same campaign. Every row carries a `Model` column identifying its source, plus the annotation columns (`Verified`, `Corrected_Species`, `Comment`). The Examine panel loads every model file it finds for the campaign and concatenates them; annotations are written back to the file the row came from.
 - **`*.BirdNET.results.csv`** are BirdNET-Analyzer's raw per-recording outputs. The app parses them to build the BirdNET detections CSV and then leaves them on disk, so a re-run can reuse them. (Perch v2 doesn't produce intermediate per-recording files.)
 
 Alongside the CSVs the app saves the species lists involved in the run as plain `.txt` files:
