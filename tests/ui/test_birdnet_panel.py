@@ -21,7 +21,7 @@ from pam_analyzer.ui.panels.birdnet_panel import BirdNetPanel
 def _isolated_qsettings(tmp_path, monkeypatch):
     from PySide6.QtCore import QCoreApplication, QSettings
 
-    from pam_analyzer.app.settings import AppSettings
+    from pam_analyzer.ui.settings import AppSettings
 
     QCoreApplication.setOrganizationName("PAMAnalyzerTest")
     QCoreApplication.setApplicationName(f"PAMAnalyzerTest-{tmp_path.name}")

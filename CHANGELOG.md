@@ -7,8 +7,12 @@
 ### Changed
 - File listing and size checks now run in parallel instead of one at a time. This mainly helps on network shares (e.g. SMB), where each check is a network round trip. Goal is to speed up scanning the audio folder when opening a project and after ARU data imports. 
 - [Dev] Consolidate the detection schema (columns, CSV serialization, filename pattern) into `domain/detection_schema.py`. All readers and writers derive from it.
+- [Dev] Analysis runners now build domain `Detection` objects and serialize them through the detection schema, removing the last hand-built CSV row writer. Freshly written CSVs use the same number formatting as annotation saves (e.g. `0.85` instead of `0.8500`).
+- [Dev] Name the week `-1` sentinel `WEEK_YEAR_ROUND` in the domain and use it everywhere it appears (geo filter, CSV Week column, audio inventory). It mirrors the birdnet geo API, where week -1 requests the year-round species list.
+- [Dev] Move `AppSettings` from `app/` to `ui/` and enforce the ARCHITECTURE.md layer import rules with a new test case.
 ### Fixed
 - Detections CSV discovery no longer misbehaves for campaign names containing glob characters such as `[`, `]`, `*`, or `?`.
+- Saving detection edits (Verified, Corrected Species, Comment) now writes the CSV atomically via a temp file. A crash or power loss during save can no longer truncate the file and lose annotations.
 
 ## [0.3.1] - 2026-07-09
 ### Changed

@@ -27,7 +27,8 @@ src/pam_analyzer/
 ├── ui/              # App-specific panels, dialogs, Qt models, generated .ui wrappers.
 │   ├── panels/      # Top-level tab panels (CampaignsPanel, BirdNetPanel, ExaminePanel, ...).
 │   ├── dialogs/     # Modal dialogs (ImportConflictDialog, AboutDialog).
-│   └── models/      # QAbstractItemModel subclasses backing tree and table views.
+│   ├── models/      # QAbstractItemModel subclasses backing tree and table views.
+│   └── settings.py  # AppSettings: persistent UI/host state (QSettings wrapper).
 ├── app/             # Composition root and application entry point.
 └── __main__.py      # Thin entry shim; delegates to app/__main__.py.
 ```
@@ -46,6 +47,9 @@ src/pam_analyzer/
 The `widgets/` layer is for generic, reusable Qt components that carry no domain
 knowledge. App-specific components that know about `Campaign`, `Detection`, etc.
 belong in `ui/`.
+
+This table is enforced by `tests/test_architecture.py`, which walks every
+module's imports. Change the table and the test's rule map together.
 
 
 ## Key patterns

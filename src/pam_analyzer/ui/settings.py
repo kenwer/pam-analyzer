@@ -8,7 +8,7 @@ from typing import TypeVar, cast
 
 from PySide6.QtCore import QByteArray, QDir, QSettings
 
-from ..ui.models.detections_table_model import DEFAULT_HIDDEN_COLUMNS
+from .models.detections_table_model import DEFAULT_HIDDEN_COLUMNS
 
 T = TypeVar("T")
 

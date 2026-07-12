@@ -43,8 +43,10 @@ from ..domain import (
     AnalysisSettings,
     CampaignRunInput,
     CancelledError,
+    Detection,
 )
 from ..domain import detection_schema as schema
+from ..domain.audio_import import WEEK_YEAR_ROUND
 from ..domain.entities import CampaignRunResult
 from . import paths
 from ._analysis_helpers import (
@@ -213,13 +215,6 @@ class BaseAnalysisRunner(ABC):
             output_dir, campaign_name, per_week_allowed, must_haves
         )
 
-        run_context = {
-            "Lat": lat if lat is not None else "",
-            "Lon": lon if lon is not None else "",
-            "Species_List": "",
-            "Min_Conf": settings.min_conf,
-            "Model": self.model_key,
-        }
         fieldnames = schema.write_fieldnames(settings.locales)
 
         if wav_count == 0:
@@ -389,29 +384,33 @@ class BaseAnalysisRunner(ABC):
                 else:
                     rank += 1
 
-                locale_names = {
-                    schema.locale_column(loc): parsed.locale_commons.get(loc, "")
-                    for loc in settings.locales
-                }
-
-                writer.writerow({
-                    "Campaign": campaign_name,
-                    "ARU": aru,
-                    "Start_Time": f"{parsed.start_time:.1f}",
-                    "End_Time": f"{parsed.end_time:.1f}",
-                    "Scientific_Name": parsed.scientific_name,
-                    "Species": parsed.preferred_common,
-                    **locale_names,
-                    "Confidence": f"{parsed.confidence:.4f}",
-                    "Rank": rank,
-                    "File": file_rel,
-                    "Recording_Time": str(recording_time) if recording_time else "",
-                    "Week": file_week if file_week is not None else -1,
-                    **run_context,
-                    "Verified": "",
-                    "Corrected_Species": "",
-                    "Comment": "",
-                })
+                # Serialize through the schema's Detection path so this
+                # writer cannot drift from what the repo and table read.
+                # Rounding mirrors the precision of the old formatting
+                # (%.1f times, %.4f confidence) and coerces numpy scalars
+                # from the lib into plain floats.
+                detection = Detection(
+                    campaign=campaign_name,
+                    aru=aru,
+                    week=file_week if file_week is not None else WEEK_YEAR_ROUND,
+                    species=parsed.preferred_common,
+                    scientific_name=parsed.scientific_name,
+                    confidence=round(float(parsed.confidence), 4),
+                    start_time=round(float(parsed.start_time), 1),
+                    end_time=round(float(parsed.end_time), 1),
+                    rank=rank,
+                    file=file_rel,
+                    recording_time=str(recording_time) if recording_time else "",
+                    lat=lat,
+                    lon=lon,
+                    min_conf=settings.min_conf,
+                    model=self.model_key,
+                    extra={
+                        schema.locale_column(loc): parsed.locale_commons.get(loc, "")
+                        for loc in settings.locales
+                    },
+                )
+                writer.writerow(schema.detection_to_row(detection))
                 detection_count += 1
 
         if filtered_count:

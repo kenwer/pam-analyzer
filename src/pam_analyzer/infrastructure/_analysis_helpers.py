@@ -26,6 +26,7 @@ from ..domain import (
     CampaignRunInput,
     FilterMode,
 )
+from ..domain.audio_import import WEEK_YEAR_ROUND
 from . import paths
 from .birdnet_lib import region_species_scientific
 
@@ -174,7 +175,9 @@ def build_allowed_lookup(
         weeks_present: set[int] = set()
         for f in wav_files:
             w = week_from_path(f)
-            weeks_present.add(w if w is not None else -1)
+            weeks_present.add(w if w is not None else WEEK_YEAR_ROUND)
+        # WEEK_YEAR_ROUND is passed straight to the geo model, whose API
+        # defines -1 as "predict the year-round species list".
         per_week: dict[int, frozenset[str]] = {
             w: region_species_scientific(lat, lon, w) | must_haves
             for w in weeks_present
@@ -182,7 +185,7 @@ def build_allowed_lookup(
 
         def lookup(path: Path) -> frozenset[str] | None:
             w = week_from_path(path)
-            return per_week.get(w if w is not None else -1)
+            return per_week.get(w if w is not None else WEEK_YEAR_ROUND)
 
         return lookup, lat, lon, per_week, must_haves
 
@@ -209,15 +212,16 @@ def write_species_list_files(
 
     output_dir.mkdir(parents=True, exist_ok=True)
     weeks = sorted(per_week_allowed)
-    if weeks == [-1]:
+    if weeks == [WEEK_YEAR_ROUND]:
         single_path = output_dir / f"{campaign_name}-species-list.txt"
         single_path.write_text(
-            _format_species_lines(per_week_allowed[-1], must_haves), encoding="utf-8"
+            _format_species_lines(per_week_allowed[WEEK_YEAR_ROUND], must_haves),
+            encoding="utf-8",
         )
         return single_path
 
     for w, species in per_week_allowed.items():
-        if w == -1:
+        if w == WEEK_YEAR_ROUND:
             # Files without a week_NN segment in a campaign that does have
             # week folders are rare; fall back to a 'no-week' file so the
             # list is still preserved.

@@ -105,8 +105,8 @@ from ..infrastructure import (  # noqa: E402
 from ..ui import resources_rc  # noqa: F401, E402  registers :/icons/* resources
 from ..ui.app_state import AppState  # noqa: E402
 from ..ui.main_window import MainWindow  # noqa: E402
+from ..ui.settings import AppSettings  # noqa: E402
 from ..workers import ImportOrchestrator  # noqa: E402
-from .settings import AppSettings  # noqa: E402
 
 
 def build_main_window() -> MainWindow:

@@ -6,6 +6,7 @@ routing of edits back to their source files.
 """
 
 import csv
+import os
 from pathlib import Path
 
 from ..domain import Detection
@@ -31,10 +32,19 @@ def _write_csv(path: Path, detections: list[Detection], fieldnames: list[str]) -
         if f not in full_fields:
             full_fields.append(f)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=full_fields, extrasaction="ignore")
-        writer.writeheader()
-        writer.writerows(schema.detection_to_row(d) for d in detections)
+    # Write to a sibling temp file and swap it in atomically: this CSV holds
+    # the user's annotations, so a crash mid-write must not truncate the only
+    # copy. The '.part' suffix keeps discovery globs from matching the temp.
+    tmp = path.with_name(path.name + ".part")
+    try:
+        with open(tmp, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=full_fields, extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(schema.detection_to_row(d) for d in detections)
+        os.replace(tmp, path)
+    finally:
+        # On success os.replace consumed tmp; on any failure discard the partial.
+        tmp.unlink(missing_ok=True)
 
 
 class CsvDetectionRepository:

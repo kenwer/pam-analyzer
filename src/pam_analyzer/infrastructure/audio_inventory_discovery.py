@@ -8,8 +8,9 @@ The disk layout we discover is what AudioImporter writes:
           *.WAV
         CONFIG.TXT                # at card root, ignored here
 
-Files outside any week_NN folder (e.g. drag-and-dropped manually) land in a
-synthetic week=-1 bucket. The tree model renders that as 'Unsorted'.
+Files outside any week_NN folder (e.g. drag-and-dropped manually) land in the
+WEEK_YEAR_ROUND (-1) bucket, the same sentinel the analysis pipeline uses for
+undated recordings. The tree model renders that as 'Unsorted'.
 """
 
 import logging
@@ -22,6 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..domain import AudioInventory, CampaignInventory, CardInventory, WeekInventory
+from ..domain.audio_import import WEEK_YEAR_ROUND
 from . import paths
 
 _log = logging.getLogger(__name__)
@@ -147,7 +149,7 @@ def _walk_campaigns(campaign_dirs: list[Path], pool: ThreadPoolExecutor) -> dict
                 by_week[week_num] = [Path(f.path) for f in files]
             loose_files = sorted((f for f in loose_by_card[card_entry] if is_audio[f]), key=lambda e: e.name)
             if loose_files:
-                by_week[-1] = [Path(f.path) for f in loose_files]
+                by_week[WEEK_YEAR_ROUND] = [Path(f.path) for f in loose_files]
             structures[campaign_dir].append(
                 _CardStructure(name=card_entry.name, folder=Path(card_entry.path), by_week=by_week)
             )

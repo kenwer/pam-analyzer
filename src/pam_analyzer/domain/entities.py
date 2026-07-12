@@ -103,7 +103,7 @@ class AnalysisRunResult:
 
 @dataclass(frozen=True, slots=True)
 class WeekInventory:
-    week: int  # BirdNET-style week number; -1 for files outside any week_NN folder
+    week: int  # BirdNET week number; audio_import.WEEK_YEAR_ROUND for files outside week_NN folders
     files: tuple[Path, ...]
     total_bytes: int
     file_sizes: tuple[int, ...] = ()  # parallel to files; populated by audio_inventory_discovery

@@ -62,6 +62,13 @@ class CardImportResult:
     dest_dir: Path | None
 
 
+# Sentinel week for recordings outside any week_NN folder. Mirrors the
+# birdnet geo API, where week=-1 requests the year-round species list
+# instead of a seasonal one; the same value is written to the detections
+# CSV Week column so a row's provenance stays visible.
+WEEK_YEAR_ROUND = -1
+
+
 def birdnet_week(dt: datetime) -> int:
     """Return the BirdNET week number [1-48] for a datetime."""
     return min(48, (dt.month - 1) * 4 + math.ceil(dt.day / 7))

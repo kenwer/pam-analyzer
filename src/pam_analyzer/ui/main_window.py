@@ -12,7 +12,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..app.settings import AppSettings
 from ..domain import AnalysisRunner
 from ..domain.audio_import import ImportSource
 from ..infrastructure import (
@@ -29,6 +28,7 @@ from .panels.campaigns_panel import CampaignsPanel
 from .panels.examine_panel import ExaminePanel
 from .panels.project_panel import ProjectPanel
 from .panels.welcome_panel import WelcomePanel
+from .settings import AppSettings
 from .ui_main_window import Ui_MainWindow
 
 

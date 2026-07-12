@@ -19,11 +19,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ...app.settings import AppSettings
 from ...domain import Campaign, FilterMode, LatLon
 from ...infrastructure import TomlCampaignRepository
 from ...workers import ImportOrchestrator
 from ..app_state import AppState
+from ..settings import AppSettings
 from .campaign_detail_widget import CampaignDetailWidget
 from .ui_campaigns_panel import Ui_CampaignsPanel
 

@@ -102,6 +102,43 @@ def test_save_round_trip_preserves_edits(tmp_path: Path) -> None:
     assert reloaded[0].comment == "edited"
 
 
+def test_save_failure_leaves_original_file_intact(tmp_path: Path, monkeypatch) -> None:
+    """A crash mid-write must not truncate the CSV holding user annotations.
+
+    The write goes to a '.part' sibling that is swapped in atomically, so a
+    serialization failure leaves the original bytes untouched and no temp
+    file behind.
+    """
+    _seed_csv(tmp_path, "east", [_sample("east")])
+    csv_path = campaign_csv_for_model(tmp_path, "east", "BirdNET-2.4")
+    original_bytes = csv_path.read_bytes()
+
+    repo = CsvDetectionRepository()
+    detections = repo.load_for_campaign(tmp_path, "east")
+
+    def _boom(_d):
+        raise RuntimeError("simulated crash mid-serialization")
+
+    monkeypatch.setattr(
+        "pam_analyzer.infrastructure.csv_detection_repo.schema.detection_to_row", _boom
+    )
+    try:
+        repo.save(detections)
+    except RuntimeError:
+        pass
+
+    assert csv_path.read_bytes() == original_bytes
+    assert not list(csv_path.parent.glob("*.part"))
+
+
+def test_save_leaves_no_temp_file(tmp_path: Path) -> None:
+    _seed_csv(tmp_path, "east", [_sample("east")])
+    repo = CsvDetectionRepository()
+    repo.save(repo.load_for_campaign(tmp_path, "east"))
+    csv_path = campaign_csv_for_model(tmp_path, "east", "BirdNET-2.4")
+    assert not list(csv_path.parent.glob("*.part"))
+
+
 def test_lat_lon_round_trip(tmp_path: Path) -> None:
     """Lat/Lon are core fields that map to named Detection attributes, not extra."""
     headers = _HEADERS + ["Lat", "Lon"]

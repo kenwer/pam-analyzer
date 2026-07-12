@@ -10,6 +10,12 @@ an on-screen table built from COLUMNS is a direct visual analog of the
 file on disk. Locale columns (Species_<locale>) are dynamic; they are
 spliced in right after Species by write_fieldnames and are otherwise
 carried in Detection.extra.
+
+A Week value of -1 (audio_import.WEEK_YEAR_ROUND) marks a row whose
+recording sat outside any week_NN folder and was therefore analyzed
+against the year-round species list; the birdnet geo API itself uses -1
+for "no week". An empty Week cell only occurs in files written by other
+tools and simply means "unknown".
 """
 
 from collections.abc import Callable, Iterable

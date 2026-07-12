@@ -20,11 +20,11 @@ from PySide6.QtWidgets import (
     QWidgetAction,
 )
 
-from ...app.settings import AppSettings
 from ...domain import Campaign, Detection, filter_top_per_aru_species
 from ...infrastructure import CsvDetectionRepository, SoundfileAudioExtractor
 from ..app_state import AppState
 from ..models.detections_table_model import DetectionsTableModel
+from ..settings import AppSettings
 from .ui_examine_panel import Ui_ExaminePanel
 
 _ALL_CAMPAIGNS_LABEL = "All campaigns"

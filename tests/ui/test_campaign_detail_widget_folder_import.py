@@ -20,7 +20,6 @@ from PySide6.QtCore import QMimeData, QPointF, Qt, QUrl
 from PySide6.QtGui import QDropEvent
 from PySide6.QtWidgets import QDialog
 
-from pam_analyzer.app.settings import AppSettings
 from pam_analyzer.domain import Campaign, FilterMode, LatLon, Project
 from pam_analyzer.domain.audio_import import DetectedCard
 from pam_analyzer.infrastructure import (
@@ -31,6 +30,7 @@ from pam_analyzer.infrastructure import (
 from pam_analyzer.ui.app_state import AppState
 from pam_analyzer.ui.dialogs.folder_import_dialog import FolderImportDialog
 from pam_analyzer.ui.panels.campaigns_panel import CampaignsPanel
+from pam_analyzer.ui.settings import AppSettings
 from pam_analyzer.workers import ImportOrchestrator
 
 SR = 48_000
@@ -83,7 +83,7 @@ def _drop_event(paths: list[Path]) -> QDropEvent:
 def _isolated_qsettings(tmp_path, monkeypatch):
     from PySide6.QtCore import QCoreApplication, QSettings
 
-    from pam_analyzer.app.settings import AppSettings
+    from pam_analyzer.ui.settings import AppSettings
 
     QCoreApplication.setOrganizationName("PAMAnalyzerTest")
     QCoreApplication.setApplicationName(f"PAMAnalyzerTest-{tmp_path.name}")

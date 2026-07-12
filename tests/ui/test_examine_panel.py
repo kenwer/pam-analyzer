@@ -7,7 +7,6 @@ import pytest
 from PySide6.QtCore import QCoreApplication, QPoint
 from PySide6.QtWidgets import QTabWidget, QWidget
 
-from pam_analyzer.app.settings import AppSettings
 from pam_analyzer.domain import Campaign, FilterMode, LatLon, Project
 from pam_analyzer.infrastructure import (
     CsvDetectionRepository,
@@ -18,6 +17,7 @@ from pam_analyzer.infrastructure import (
 from pam_analyzer.ui.app_state import AppState
 from pam_analyzer.ui.models.detections_table_model import COLUMNS_BY_NAME
 from pam_analyzer.ui.panels.examine_panel import ExaminePanel
+from pam_analyzer.ui.settings import AppSettings
 from pam_analyzer.widgets.filter_ops import FilterOp
 
 _HEADERS = [
@@ -97,7 +97,7 @@ def _isolated_qsettings(tmp_path, monkeypatch):
     don't leak between tests or pollute the developer's real config."""
     from PySide6.QtCore import QCoreApplication, QSettings
 
-    from pam_analyzer.app.settings import AppSettings
+    from pam_analyzer.ui.settings import AppSettings
 
     QCoreApplication.setOrganizationName("PAMAnalyzerTest")
     QCoreApplication.setApplicationName(f"PAMAnalyzerTest-{tmp_path.name}")
