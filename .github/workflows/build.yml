@@ -86,11 +86,16 @@ jobs:
           path: dist/.birdnet-models
           key: birdnet-models-${{ hashFiles('uv.lock') }}
 
+      - name: Prewarm models
+        # Populates the cache (with retry-on-failure) before tests run, so a cold
+        # cache never triggers a bare, un-retried download from inside pytest.
+        run: uv run --script scripts/build.py --prewarm-only
+
       - name: Run tests
         env:
           BIRDNET_APP_DATA: ${{ github.workspace }}/dist/.birdnet-models/birdnet-app-data
           KAGGLEHUB_CACHE: ${{ github.workspace }}/dist/.birdnet-models/kagglehub
-        run: uv run poe test-fast
+        run: uv run poe test
 
       - name: Build distributable
         run: uv run --script scripts/build.py

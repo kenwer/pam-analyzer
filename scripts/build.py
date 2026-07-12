@@ -25,8 +25,10 @@ touches the user's home directory or the network for model loading.
 
 Usage:
     uv run --script scripts/build.py
+    uv run --script scripts/build.py --prewarm-only  # only warm MODEL_CACHE, then exit
 """
 
+import argparse
 import os
 import shutil
 import subprocess
@@ -104,12 +106,18 @@ def run(cmd: list, env: dict | None = None) -> None:
     subprocess.run(cmd, check=True, env=env)
 
 
-def _prewarm_models(python: Path, build_env: dict) -> None:
+def _prewarm_models(download_env: dict, uv_run_prefix: list) -> None:
     """Download every model into MODEL_CACHE, with retry on transient failures.
 
     Skips the download when the cache already exists and is non-empty,
     so repeat builds reuse the previous download. Delete MODEL_CACHE to
     force a fresh fetch.
+
+    uv_run_prefix selects which venv runs the download: the isolated build
+    venv (['uv', 'run', '--no-project'], with VIRTUAL_ENV/UV_PROJECT_ENVIRONMENT
+    set in download_env) for packaging, or the regular project venv
+    (['uv', 'run']) for CI's --prewarm-only, which only needs the models on
+    disk before tests run and has no isolated venv to point at.
     """
     if MODEL_CACHE.exists() and any(MODEL_CACHE.rglob('*')):
         # Sanity check: the two subdirs the lib expects should both
@@ -123,18 +131,12 @@ def _prewarm_models(python: Path, build_env: dict) -> None:
     BIRDNET_APP_DATA_CACHE.mkdir(parents=True, exist_ok=True)
     KAGGLEHUB_CACHE.mkdir(parents=True, exist_ok=True)
 
-    download_env = {
-        **build_env,
-        'BIRDNET_APP_DATA': str(BIRDNET_APP_DATA_CACHE),
-        'KAGGLEHUB_CACHE': str(KAGGLEHUB_CACHE),
-    }
-
     print('  Pre-downloading model checkpoints (BirdNET acoustic + geo, Perch v2)')
     max_attempts = 3
     for attempt in range(1, max_attempts + 1):
         try:
             run(
-                ['uv', 'run', '--no-project', 'python', '-c', MODEL_PREWARM],
+                [*uv_run_prefix, 'python', '-c', MODEL_PREWARM],
                 env=download_env,
             )
             break
@@ -146,6 +148,28 @@ def _prewarm_models(python: Path, build_env: dict) -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '--prewarm-only',
+        action='store_true',
+        help=(
+            'Only pre-download models into MODEL_CACHE using the project venv, then exit. '
+            'Used by CI to warm the cache before the test step runs, so slow model-loading '
+            'tests never trigger a bare, un-retried download.'
+        ),
+    )
+    args = parser.parse_args()
+
+    if args.prewarm_only:
+        DIST_DIR.mkdir(parents=True, exist_ok=True)
+        download_env = {
+            **os.environ,
+            'BIRDNET_APP_DATA': str(BIRDNET_APP_DATA_CACHE),
+            'KAGGLEHUB_CACHE': str(KAGGLEHUB_CACHE),
+        }
+        _prewarm_models(download_env, ['uv', 'run'])
+        return
+
     is_mac = sys.platform == 'darwin'
     is_win = sys.platform == 'win32'
     python = VENV_DIR / ('Scripts/python.exe' if is_win else 'bin/python')
@@ -185,7 +209,12 @@ def main() -> None:
     print('  Installing project + pyinstaller')
     run(['uv', 'pip', 'install', '--quiet', ROOT_DIR, 'pyinstaller', '--python', python], env=build_env)
 
-    _prewarm_models(python, build_env)
+    download_env = {
+        **build_env,
+        'BIRDNET_APP_DATA': str(BIRDNET_APP_DATA_CACHE),
+        'KAGGLEHUB_CACHE': str(KAGGLEHUB_CACHE),
+    }
+    _prewarm_models(download_env, ['uv', 'run', '--no-project'])
 
     print('  Generating app icon')
     BUILD_DIR.mkdir(parents=True, exist_ok=True)

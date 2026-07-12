@@ -10,6 +10,7 @@
 - [Dev] Analysis runners now build domain `Detection` objects and serialize them through the detection schema, removing the last hand-built CSV row writer. Freshly written CSVs use the same number formatting as annotation saves (e.g. `0.85` instead of `0.8500`).
 - [Dev] Name the week `-1` sentinel `WEEK_YEAR_ROUND` in the domain and use it everywhere it appears (geo filter, CSV Week column, audio inventory). It mirrors the birdnet geo API, where week -1 requests the year-round species list.
 - [Dev] Move `AppSettings` from `app/` to `ui/` and enforce the ARCHITECTURE.md layer import rules with a new test case.
+- [Dev] Let CI run the full test suite, including the slow Perch tests.
 ### Fixed
 - Detections CSV discovery no longer misbehaves for campaign names containing glob characters such as `[`, `]`, `*`, or `?`.
 - Saving detection edits (Verified, Corrected Species, Comment) now writes the CSV atomically via a temp file. A crash or power loss during save can no longer truncate the file and lose annotations.
