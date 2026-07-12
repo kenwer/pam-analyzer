@@ -15,7 +15,6 @@ progress phases, and translates a Stop click into a CancelledError.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -83,11 +82,12 @@ def campaign_with_minute_wav(tmp_path: Path) -> tuple[Path, Path]:
 def campaign_with_short_wav(tmp_path: Path) -> tuple[Path, Path]:
     """One 6 s WAV, deliberately short, for the cancellation test only.
 
-    The run finishes almost immediately, so the cancel usually lands at or
-    after completion and CancelledError comes from the runner's post-session
-    check. A cancel landing mid-run would instead exercise birdnet's
-    cancel-then-join teardown, which can hang forever (birdnet issue 51), so
-    do not hand this test a longer file to make it "more realistic".
+    On a fast machine the run finishes before the cancel takes effect and
+    CancelledError comes from the runner's post-session check. On slower
+    machines the cancel lands mid-run and session.run() hangs forever
+    (birdnet issue 51), which is why the test is currently skipped. If the
+    upstream fix lands and the skip is removed, do not hand this test a
+    longer file: that guarantees a mid-run cancel on every machine.
     """
     return _campaign_with_one_wav(tmp_path, seconds=6.0)
 
@@ -181,11 +181,10 @@ def test_perch_runner_list_mode_filters_to_supplied_species(
 
 
 @pytest.mark.slow
-@pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="birdnet's session teardown after cancel() can hang forever in "
-    "ProcessManager.join(), which deadlocked Windows CI; see "
-    "https://github.com/birdnet-team/birdnet/issues/51",
+@pytest.mark.skip(
+    reason="a cancel landing mid-run hangs session.run() forever in "
+    "ProcessManager.wait_until_all_finished; hit on all four CI platforms; "
+    "see https://github.com/birdnet-team/birdnet/issues/51",
 )
 def test_perch_runner_honors_cancellation(
     campaign_with_short_wav: tuple[Path, Path], tmp_path: Path

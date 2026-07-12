@@ -14,7 +14,7 @@
 - [Dev] Upgrade dependencies.
 - Drop Intel Mac (macOS x86_64) support. Google stopped shipping macOS x86_64 TensorFlow wheels after 2.16, and Perch v2 requires 2.17+.
 - [Dev] Upgrade Python from 3.12 to 3.13 (the latest that are supported by birdnet and TensorFlow).
-- [Dev] Guard CI against hanging tests and skip the Perch cancellation test on Windows.
+- [Dev] Guard CI against hanging tests and skip the Perch cancellation test.
 - [Dev] CI runs the fast tests and the slow model tests as separate pytest invocations.
 - [Dev] Perch runner tests analyze a 60s audio like real AudioMoth recordings.
 ### Fixed
