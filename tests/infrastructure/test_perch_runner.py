@@ -15,6 +15,7 @@ progress phases, and translates a Stop click into a CancelledError.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -156,6 +157,12 @@ def test_perch_runner_list_mode_filters_to_supplied_species(
 
 
 @pytest.mark.slow
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="birdnet's session teardown after cancel() can hang forever in "
+    "ProcessManager.join(), which deadlocked Windows CI; see "
+    "https://github.com/birdnet-team/birdnet/issues/51",
+)
 def test_perch_runner_honors_cancellation(
     campaign_with_one_wav: tuple[Path, Path], tmp_path: Path
 ) -> None:

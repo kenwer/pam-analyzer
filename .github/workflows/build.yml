@@ -91,6 +91,11 @@ jobs:
         run: uv run --script scripts/build.py --prewarm-only
 
       - name: Run tests
+        # The suite normally finishes in about a minute per platform. A hung
+        # test should fail the job quickly instead of occupying a runner for
+        # the 6 hour default limit (seen with birdnet session teardown,
+        # https://github.com/birdnet-team/birdnet/issues/51).
+        timeout-minutes: 15
         env:
           BIRDNET_APP_DATA: ${{ github.workspace }}/dist/.birdnet-models/birdnet-app-data
           KAGGLEHUB_CACHE: ${{ github.workspace }}/dist/.birdnet-models/kagglehub

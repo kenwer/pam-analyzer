@@ -96,6 +96,9 @@ fmt = "ruff format src tests"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra -q"
+# Dump all-thread tracebacks to stderr when a single test exceeds this many
+# seconds, so a hang identifies itself in CI logs (it does not kill the test).
+faulthandler_timeout = 120
 qt_api = "pyside6"
 markers = [
     "slow: opt-in tests that load heavy ML models or download artifacts (run with: pytest -m slow)",
