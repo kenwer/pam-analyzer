@@ -1,4 +1,4 @@
-"""Smoke test for PerchRunner end-to-end on a tiny synthetic WAV.
+"""Smoke test for PerchRunner end-to-end on synthetic silent WAVs.
 
 Marked slow because it downloads the Perch v2 SavedModel via kagglehub on
 first run (cached afterwards) and pays the TensorFlow load cost (~10 s).
@@ -57,22 +57,46 @@ def _write_silent_wav(path: Path, seconds: float, sample_rate: int = 48000) -> N
     sf.write(str(path), samples, sample_rate, subtype="PCM_16")
 
 
-@pytest.fixture
-def campaign_with_one_wav(tmp_path: Path) -> tuple[Path, Path]:
-    """Layout: tmp_path/audio/c1/ARU-1/20240101_120000.WAV (6 s, silent)."""
+def _campaign_with_one_wav(tmp_path: Path, seconds: float) -> tuple[Path, Path]:
+    """Layout: tmp_path/audio/c1/ARU-1/20240101_120000.WAV (silent)."""
     audio_root = tmp_path / "audio"
     camp_dir = audio_root / "c1"
     aru_dir = camp_dir / "ARU-1"
     aru_dir.mkdir(parents=True)
-    _write_silent_wav(aru_dir / "20240101_120000.WAV", seconds=6.0)
+    _write_silent_wav(aru_dir / "20240101_120000.WAV", seconds=seconds)
     return audio_root, camp_dir
+
+
+@pytest.fixture
+def campaign_with_minute_wav(tmp_path: Path) -> tuple[Path, Path]:
+    """One 60 s WAV, the file length AudioMoth deployments produce.
+
+    Runs this long reach a steady state before winding down. Near-instant
+    runs can race birdnet's pipeline completion and hang session.run()
+    forever in ProcessManager.wait_until_all_finished (a session.cancel()
+    variant of the same hang is birdnet issue 51).
+    """
+    return _campaign_with_one_wav(tmp_path, seconds=60.0)
+
+
+@pytest.fixture
+def campaign_with_short_wav(tmp_path: Path) -> tuple[Path, Path]:
+    """One 6 s WAV, deliberately short, for the cancellation test only.
+
+    The run finishes almost immediately, so the cancel usually lands at or
+    after completion and CancelledError comes from the runner's post-session
+    check. A cancel landing mid-run would instead exercise birdnet's
+    cancel-then-join teardown, which can hang forever (birdnet issue 51), so
+    do not hand this test a longer file to make it "more realistic".
+    """
+    return _campaign_with_one_wav(tmp_path, seconds=6.0)
 
 
 @pytest.mark.slow
 def test_perch_runner_writes_detections_csv_for_silent_input(
-    campaign_with_one_wav: tuple[Path, Path], tmp_path: Path
+    campaign_with_minute_wav: tuple[Path, Path], tmp_path: Path
 ) -> None:
-    audio_root, camp_dir = campaign_with_one_wav
+    audio_root, camp_dir = campaign_with_minute_wav
     out_base = tmp_path / "out"
     settings = AnalysisSettings(min_conf=0.001, overlap=0.0, locales=("en_us",))
     ci = CampaignRunInput(
@@ -113,7 +137,7 @@ def test_perch_runner_writes_detections_csv_for_silent_input(
 
 @pytest.mark.slow
 def test_perch_runner_list_mode_filters_to_supplied_species(
-    campaign_with_one_wav: tuple[Path, Path], tmp_path: Path
+    campaign_with_minute_wav: tuple[Path, Path], tmp_path: Path
 ) -> None:
     """LIST mode restricts detections to the supplied scientific names.
 
@@ -121,7 +145,7 @@ def test_perch_runner_list_mode_filters_to_supplied_species(
     even though Perch's class axis is 14,795 wide, the lib only emits rows
     for species in the set.
     """
-    audio_root, camp_dir = campaign_with_one_wav
+    audio_root, camp_dir = campaign_with_minute_wav
     out_base = tmp_path / "out"
     settings = AnalysisSettings(min_conf=0.0001, overlap=0.0, locales=("en_us",))
     ci = CampaignRunInput(
@@ -164,9 +188,9 @@ def test_perch_runner_list_mode_filters_to_supplied_species(
     "https://github.com/birdnet-team/birdnet/issues/51",
 )
 def test_perch_runner_honors_cancellation(
-    campaign_with_one_wav: tuple[Path, Path], tmp_path: Path
+    campaign_with_short_wav: tuple[Path, Path], tmp_path: Path
 ) -> None:
-    audio_root, camp_dir = campaign_with_one_wav
+    audio_root, camp_dir = campaign_with_short_wav
     out_base = tmp_path / "out"
     settings = AnalysisSettings(min_conf=0.001, overlap=0.0, locales=("en_us",))
     ci = CampaignRunInput(
