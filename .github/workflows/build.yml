@@ -25,12 +25,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Disable macOS Apple Silicon (ARM) app bundle release as its size exceeds the GitHub release limit
-          # - os: macos-latest
-          #   name: macOS (arm64)
-          #   os_name: macos
-          #   arch: arm64
-          #   archive_ext: zip
+          - os: macos-latest
+            name: macOS (arm64)
+            os_name: macos
+            arch: arm64
+            archive_ext: zip
           # macOS Intel (x86_64) is disabled because TensorFlow dropped macOS x86_64
           # wheels starting with 2.21.0, and Perch 2.0 doesn't support Intel mac either
           # - os: macos-15-intel
@@ -108,7 +107,11 @@ jobs:
           case "${{ matrix.os_name }}" in
             macos)
               mv pam-analyzer.app "${versioned}.app"
-              zip -r -9 "$ARCHIVE_NAME" "${versioned}.app"
+              # -y stores the bundle's ~2000 internal symlinks as symlinks.
+              # Without it zip dereferences them, duplicating gigabytes of
+              # Frameworks/Resources content and blowing past the 2 GiB
+              # GitHub release asset limit.
+              zip -r -9 -y "$ARCHIVE_NAME" "${versioned}.app"
               rm -rf "${versioned}.app"
               ;;
             windows)
