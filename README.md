@@ -28,6 +28,7 @@ Automated bird species detection from acoustic recordings.
 - [Troubleshooting](#troubleshooting)
 - [Changelog](#changelog)
 - [Acknowledgements](#acknowledgements)
+- [Citation](#citation)
 - [License](#license)
 
 <!--TOC-->
@@ -281,6 +282,20 @@ The author would like to thank the following projects:
 * [soundfile](https://github.com/bastibe/python-soundfile)
 * [psutil](https://github.com/giampaolo/psutil)
      
+
+## Citation
+
+If you use PAM Analyzer in your work, you can [cite](CITATION.cff) it:
+
+```bibtex
+@software{Werner_PAM_Analyzer_2026,
+  author  = {Werner, Ken},
+  title   = {PAM Analyzer},
+  url     = {https://github.com/kenwer/pam-analyzer},
+  version = {0.3.1},
+  year    = {2026}
+}
+```
 
 ## License
 This project is licensed under the AGPL-3.0 license. See the LICENSE file for the full text.

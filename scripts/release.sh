@@ -15,19 +15,25 @@ set -euo pipefail
 #   4. Increment the version number in pyproject.toml
 #      sed -i "s/version = \"...\"/version = \"...\"/"
 #
-#   5. Regenerate uv.lock so it records the new version
+#   5. Update CITATION.cff (version and date-released)
+#      sed -i "s/^version: .../version: .../; s/^date-released: .../date-released: .../"
+#
+#   6. Update the citation BibTeX block in README.md (version and year)
+#      sed -i "s/version = {...}/version = {...}/; s/year    = {....}/year    = {....}/"
+#
+#   7. Regenerate uv.lock so it records the new version
 #      uv lock
 #
-#   6. Adjust CHANGELOG.md (replace "## unreleased" with the new version and date)
+#   8. Adjust CHANGELOG.md (replace "## unreleased" with the new version and date)
 #      sed -i "s/## unreleased/## [X.Y.Z] - YYYY-MM-DD/"
 #
-#   7. Commit the changes with a message like "Bump version to 0.2.0"
-#      git add pyproject.toml CHANGELOG.md uv.lock && git commit -m "Bump version to X.Y.Z"
+#   9. Commit the changes with a message like "Bump version to 0.2.0"
+#      git add pyproject.toml CITATION.cff README.md CHANGELOG.md uv.lock && git commit -m "Bump version to X.Y.Z"
 #
-#   8. Push to remote and wait for GitHub Actions to complete
+#   10. Push to remote and wait for GitHub Actions to complete
 #      git push
 #
-#   9. Tag the release and push the tag to trigger the release workflow
+#   11. Tag the release and push the tag to trigger the release workflow
 #      V="0.2.0"; git tag -a "v${V}" -m "Release version ${V}" && git push -u origin "v${V}"
 #
 # Usage:
@@ -44,6 +50,8 @@ NC='\033[0m' # No Color
 
 # File paths
 VERSION_FILE="pyproject.toml"
+CITATION_FILE="CITATION.cff"
+README_FILE="README.md"
 CHANGELOG_FILE="CHANGELOG.md"
 LOCK_FILE="uv.lock"
 
@@ -199,11 +207,13 @@ done
 echo ""
 info "Release plan:"
 echo -e "  4. Update version: ${CURRENT_VERSION} -> ${GREEN}${NEW_VERSION}${NC} in ${VERSION_FILE}"
-echo -e "  5. Regenerate ${LOCK_FILE} (uv lock)"
-echo -e "  6. Update CHANGELOG.md (unreleased -> [${NEW_VERSION}] - $(date +%Y-%m-%d))"
-echo -e "  7. Commit: \"Bump version to ${NEW_VERSION}\""
-echo -e "  8. Push to remote and wait for CI"
-echo "  9. Tag: v${NEW_VERSION}"
+echo -e "  5. Update ${CITATION_FILE} (version and date-released)"
+echo -e "  6. Update citation BibTeX block in ${README_FILE} (version and year)"
+echo -e "  7. Regenerate ${LOCK_FILE} (uv lock)"
+echo -e "  8. Update CHANGELOG.md (unreleased -> [${NEW_VERSION}] - $(date +%Y-%m-%d))"
+echo -e "  9. Commit: \"Bump version to ${NEW_VERSION}\""
+echo -e "  10. Push to remote and wait for CI"
+echo "  11. Tag: v${NEW_VERSION}"
 echo ""
 
 if ! confirm "Proceed with release?"; then
@@ -218,20 +228,41 @@ sed -i.bak "s/^version = \"${CURRENT_VERSION}\"/version = \"${NEW_VERSION}\"/" "
 rm -f "${VERSION_FILE}.bak"
 success "Version updated to ${NEW_VERSION}"
 
-# Step 5: Regenerate uv.lock so it records the new project version. Without
+# Step 5: Update CITATION.cff so its version and date-released track the
+# release, instead of drifting from pyproject.toml as an unmaintained copy.
+echo ""
+info "Step 5: Updating ${CITATION_FILE}..."
+TODAY=$(date +%Y-%m-%d)
+sed -i.bak -e "s/^version: .*/version: ${NEW_VERSION}/" -e "s/^date-released: .*/date-released: ${TODAY}/" "$CITATION_FILE"
+rm -f "${CITATION_FILE}.bak"
+success "${CITATION_FILE} updated"
+
+# Step 6: Update the citation BibTeX block in README.md so it doesn't drift
+# from CITATION.cff the way it already had before this step existed.
+echo ""
+info "Step 6: Updating citation block in ${README_FILE}..."
+YEAR="${TODAY:0:4}"
+sed -i.bak \
+    -e "s/^@software{Werner_PAM_Analyzer_[0-9]\{4\},/@software{Werner_PAM_Analyzer_${YEAR},/" \
+    -e "s/^  version = {[^}]*},/  version = {${NEW_VERSION}},/" \
+    -e "s/^  year    = {[0-9]\{4\}}/  year    = {${YEAR}}/" \
+    "$README_FILE"
+rm -f "${README_FILE}.bak"
+success "${README_FILE} citation block updated"
+
+# Step 7: Regenerate uv.lock so it records the new project version. Without
 # this the lockfile drifts (pyproject says X.Y.Z, lock still says the old
 # version) and the next `uv run` rewrites uv.lock outside of a release commit.
 echo ""
-info "Step 5: Regenerating ${LOCK_FILE}..."
+info "Step 7: Regenerating ${LOCK_FILE}..."
 if ! uv lock; then
     error "uv lock failed. Please resolve before releasing."
 fi
 success "${LOCK_FILE} updated"
 
-# Step 6: Update CHANGELOG.md
+# Step 8: Update CHANGELOG.md
 echo ""
-info "Step 6: Updating CHANGELOG.md..."
-TODAY=$(date +%Y-%m-%d)
+info "Step 8: Updating CHANGELOG.md..."
 sed -i.bak "s/## \[*[Uu]nreleased\]*/## [${NEW_VERSION}] - ${TODAY}/" "$CHANGELOG_FILE"
 rm -f "${CHANGELOG_FILE}.bak"
 success "CHANGELOG.md updated"
@@ -248,7 +279,7 @@ echo ""
 
 if ! confirm "Stage and commit these changes?"; then
     warn "Rolling back file changes..."
-    git checkout -- "$VERSION_FILE" "$CHANGELOG_FILE" "$LOCK_FILE" 2>/dev/null || true
+    git checkout -- "$VERSION_FILE" "$CITATION_FILE" "$README_FILE" "$CHANGELOG_FILE" "$LOCK_FILE" 2>/dev/null || true
     info "Changes rolled back."
     if ! confirm "Continue with remaining steps (push, tag) using existing commits?"; then
         info "Release cancelled."
@@ -256,10 +287,10 @@ if ! confirm "Stage and commit these changes?"; then
     fi
 fi
 
-# Step 7: Commit changes
+# Step 9: Commit changes
 echo ""
-info "Step 7: Staging and committing changes..."
-git add "$VERSION_FILE" "$CHANGELOG_FILE" "$LOCK_FILE"
+info "Step 9: Staging and committing changes..."
+git add "$VERSION_FILE" "$CITATION_FILE" "$README_FILE" "$CHANGELOG_FILE" "$LOCK_FILE"
 
 echo ""
 info "Staged files:"
@@ -270,7 +301,7 @@ echo ""
 
 if ! confirm "Create this commit?"; then
     warn "Unstaging changes..."
-    git reset HEAD -- "$VERSION_FILE" "$CHANGELOG_FILE" "$LOCK_FILE"
+    git reset HEAD -- "$VERSION_FILE" "$CITATION_FILE" "$README_FILE" "$CHANGELOG_FILE" "$LOCK_FILE"
     info "Commit cancelled. Files are still modified but not committed."
     if ! confirm "Continue with remaining steps (push, tag)?"; then
         info "Release cancelled."
@@ -281,11 +312,11 @@ fi
 git commit -m "Bump version to ${NEW_VERSION}"
 success "Changes committed"
 
-# Step 8: Push to remote
+# Step 10: Push to remote
 echo ""
 REMOTE_URL=$(git remote get-url origin)
 CURRENT_BRANCH=$(git branch --show-current)
-info "Step 8: Push to remote"
+info "Step 10: Push to remote"
 echo ""
 info "This will push:"
 echo "  • Branch: ${CURRENT_BRANCH}"
@@ -350,9 +381,9 @@ while true; do
     sleep 30
 done
 
-# Step 9: Create and push tag
+# Step 11: Create and push tag
 echo ""
-info "Step 9: Create and push tag"
+info "Step 11: Create and push tag"
 echo ""
 info "This will create:"
 echo "  • Tag: v${NEW_VERSION}"
