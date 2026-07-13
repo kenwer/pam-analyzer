@@ -7,13 +7,13 @@ main window owns AppSettings and the open/create handlers.
 
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QFont, QIcon
+from PySide6.QtCore import QModelIndex, QRect, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QIcon, QPainter, QPalette
 from PySide6.QtWidgets import (
-    QLabel,
     QListWidgetItem,
-    QSizePolicy,
-    QVBoxLayout,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
     QWidget,
 )
 
@@ -33,6 +33,7 @@ class WelcomePanel(QWidget):
         self.ui.setupUi(self)
 
         self.ui.icon_label.setPixmap(QIcon(":/icons/icon.svg").pixmap(QSize(112, 112)))
+        self.ui.recent_list.setItemDelegate(_RecentProjectDelegate(self.ui.recent_list))
 
         self.ui.new_button.clicked.connect(self.newRequested.emit)
         self.ui.open_button.clicked.connect(self.openRequested.emit)
@@ -51,10 +52,7 @@ class WelcomePanel(QWidget):
         for path_str in paths:
             item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, path_str)
-            row = _build_recent_row(path_str)
-            item.setSizeHint(row.sizeHint())
             self.ui.recent_list.addItem(item)
-            self.ui.recent_list.setItemWidget(item, row)
 
     def _on_recent_activated(self, item: QListWidgetItem) -> None:
         path = item.data(Qt.ItemDataRole.UserRole)
@@ -62,25 +60,57 @@ class WelcomePanel(QWidget):
             self.recentRequested.emit(path)
 
 
-def _build_recent_row(path_str: str) -> QWidget:
-    row = QWidget()
-    # Let clicks pass through to the underlying QListWidgetItem.
-    row.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-    layout = QVBoxLayout(row)
-    layout.setContentsMargins(8, 6, 8, 6)
-    layout.setSpacing(2)
+class _RecentProjectDelegate(QStyledItemDelegate):
+    """Paints each recent-project row as a centered bold name over a gray path.
 
-    name = QLabel(Path(path_str).stem)
-    name_font = QFont()
-    name_font.setBold(True)
-    name.setFont(name_font)
-    name.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    Painting directly into the row's rect (rather than a QListWidget item
+    widget) means the two lines stay centered across the full row width
+    automatically as the list is resized, no manual widget sizing needed.
+    """
 
-    path = QLabel(paths.contract_user_path(path_str))
-    path.setStyleSheet("color: #9ca3af;")
-    path.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    _MARGIN = 6
+    _SPACING = 2
 
-    layout.addWidget(name)
-    layout.addWidget(path)
-    row.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-    return row
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._name_font = QFont()
+        self._name_font.setBold(True)
+
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
+        path_str = index.data(Qt.ItemDataRole.UserRole)
+        if not isinstance(path_str, str):
+            super().paint(painter, option, index)
+            return
+
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        opt.text = ""
+        opt.widget.style().drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, opt.widget)
+
+        name_metrics = QFontMetrics(self._name_font)
+        path_metrics = QFontMetrics(option.font)
+        rect = option.rect
+
+        y = rect.top() + self._MARGIN
+        name_rect = QRect(rect.left(), y, rect.width(), name_metrics.height())
+        y += name_metrics.height() + self._SPACING
+        path_rect = QRect(rect.left(), y, rect.width(), path_metrics.height())
+
+        painter.save()
+        painter.setFont(self._name_font)
+        painter.setPen(option.palette.color(QPalette.ColorRole.Text))
+        painter.drawText(name_rect, Qt.AlignmentFlag.AlignCenter, Path(path_str).stem)
+        painter.setFont(option.font)
+        painter.setPen(QColor("#9ca3af"))
+        painter.drawText(path_rect, Qt.AlignmentFlag.AlignCenter, paths.contract_user_path(path_str))
+        painter.restore()
+
+    def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex) -> QSize:
+        path_str = index.data(Qt.ItemDataRole.UserRole)
+        if not isinstance(path_str, str):
+            return super().sizeHint(option, index)
+
+        name_metrics = QFontMetrics(self._name_font)
+        path_metrics = QFontMetrics(option.font)
+        height = name_metrics.height() + path_metrics.height() + self._SPACING + 2 * self._MARGIN
+        return QSize(0, height)
