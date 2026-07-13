@@ -258,7 +258,7 @@ class MainWindow(QMainWindow):
             empty.setEnabled(False)
         else:
             for path_str in recent:
-                action = QAction(self._display_path(path_str), self)
+                action = QAction(paths.contract_user_path(path_str), self)
                 action.triggered.connect(lambda _checked=False, p=path_str: self._open_recent(p))
                 menu.addAction(action)
         menu.addSeparator()
@@ -280,13 +280,6 @@ class MainWindow(QMainWindow):
         self._app_state.load_project(path)
         if self._app_state.project is not None:
             self._remember(path)
-
-    @staticmethod
-    def _display_path(path_str: str) -> str:
-        try:
-            return f"~/{Path(path_str).relative_to(Path.home())}"
-        except ValueError:
-            return path_str
 
     # state reactions
 

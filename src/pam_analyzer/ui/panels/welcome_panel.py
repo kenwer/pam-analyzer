@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ...infrastructure import paths
 from .. import resources_rc  # noqa: F401  registers :/icons/* resources
 from .ui_welcome_panel import Ui_WelcomePanel
 
@@ -75,7 +76,7 @@ def _build_recent_row(path_str: str) -> QWidget:
     name.setFont(name_font)
     name.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-    path = QLabel(path_str)
+    path = QLabel(paths.contract_user_path(path_str))
     path.setStyleSheet("color: #9ca3af;")
     path.setAlignment(Qt.AlignmentFlag.AlignCenter)
 

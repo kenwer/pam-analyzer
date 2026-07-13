@@ -5,6 +5,7 @@
 - Add support importing audio from folders via drag&drop at the campaign's detail panel.
 - Add context menu entries to sort the campaign list, and to open campaign folders in the file manage.
 ### Changed
+- Recent folder paths on the welcome screen now show `~` instead of the full home directory path.
 - File listing and size checks now run in parallel instead of one at a time. This mainly helps on network shares (e.g. SMB), where each check is a network round trip. Goal is to speed up scanning the audio folder when opening a project and after ARU data imports. 
 - [Dev] Consolidate the detection schema (columns, CSV serialization, filename pattern) into `domain/detection_schema.py`. All readers and writers derive from it.
 - [Dev] Analysis runners now build domain `Detection` objects and serialize them through the detection schema, removing the last hand-built CSV row writer. Freshly written CSVs use the same number formatting as annotation saves (e.g. `0.85` instead of `0.8500`).

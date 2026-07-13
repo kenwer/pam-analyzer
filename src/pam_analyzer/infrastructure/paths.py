@@ -1,5 +1,6 @@
 """Conventions for where things live on disk. Centralized so paths aren't hardcoded across repos."""
 
+import sys
 from pathlib import Path
 
 from platformdirs import user_log_dir
@@ -13,6 +14,22 @@ AUDIO_EXTENSIONS: frozenset[str] = frozenset({
 
 def log_dir() -> Path:
     return Path(user_log_dir("PAM Analyzer", appauthor=False))
+
+
+def contract_user_path(path_str: str) -> str:
+    """Replace a leading home directory with ~ for display.
+
+    Comparison is case-insensitive on Windows, since its filesystem is
+    case-insensitive but path strings aren't guaranteed consistent case.
+    """
+    home = str(Path.home())
+    if sys.platform == "win32":
+        starts_with_home = path_str.lower().startswith(home.lower())
+    else:
+        starts_with_home = path_str.startswith(home)
+    if starts_with_home:
+        return "~" + path_str[len(home):]
+    return path_str
 
 
 def campaign_toml(campaign_folder: Path) -> Path:
