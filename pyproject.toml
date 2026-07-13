@@ -93,6 +93,7 @@ test-fast = { cmd = "pytest -m 'not slow'", deps = ["compile-ui", "compile-qrc"]
 test-slow = { cmd = "pytest -m slow", deps = ["compile-ui", "compile-qrc"], help = "Compile UI/resources, then run only the slow model tests" }
 lint = "ruff check src tests"
 fmt = "ruff format src tests"
+install-hooks = { cmd = "git config core.hooksPath .githooks", help = "Point git at the repo's tracked hooks (pre-push runs test-fast)" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
