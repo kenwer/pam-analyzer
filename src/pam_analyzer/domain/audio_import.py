@@ -1,11 +1,14 @@
 """Value objects and pure logic for SD card audio import."""
 
 import math
-from collections.abc import Callable
+import re
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
+
+_RECORDING_TIME_RE = re.compile(r"(\d{8}_\d{6})")
 
 
 class ImportSource(Enum):
@@ -72,6 +75,29 @@ WEEK_YEAR_ROUND = -1
 def birdnet_week(dt: datetime) -> int:
     """Return the BirdNET week number [1-48] for a datetime."""
     return min(48, (dt.month - 1) * 4 + math.ceil(dt.day / 7))
+
+
+def parse_recording_time(stem: str) -> datetime | None:
+    """Pull a 'YYYYMMDD_HHMMSS' timestamp out of an audio filename."""
+    match = _RECORDING_TIME_RE.search(stem)
+    if match:
+        try:
+            return datetime.strptime(match.group(1), "%Y%m%d_%H%M%S")
+        except ValueError:
+            pass
+    return None
+
+
+def date_range_from_stems(stems: Iterable[str]) -> tuple[datetime, datetime] | None:
+    """Earliest and latest recording time parsed from filename stems.
+
+    Returns None when no stem carries a parseable timestamp, so callers can
+    render a blank range for recorders that don't stamp the time into names.
+    """
+    times = [t for stem in stems if (t := parse_recording_time(stem)) is not None]
+    if not times:
+        return None
+    return min(times), max(times)
 
 
 def discover_folder_cards(

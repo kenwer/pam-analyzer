@@ -537,3 +537,113 @@ def test_map_widget_clear_calls_qml(panel: CampaignsPanel, monkeypatch):
     panel._detail._map.clear()
 
     mock_root.clearMarker.assert_called_once()
+
+
+# empty-state overview
+
+
+def test_overview_lists_campaign_and_its_arus(
+    panel: CampaignsPanel, state: AppState, project_with_campaign
+):
+    """With nothing selected, the overview text lists each campaign and its ARUs."""
+    _proj, campaign = project_with_campaign
+    card = campaign.folder / "ARU-7"
+    (card / "week_01").mkdir(parents=True)
+    (card / "week_01" / "20240101_120000.WAV").write_bytes(b"\x00" * 2048)
+    (card / "week_01" / "20240103_120000.WAV").write_bytes(b"\x00" * 1024)
+    state.refresh_audio_inventory()
+
+    assert panel._detail.ui.stack.currentWidget() is panel._detail.ui.empty_page
+    assert panel._detail.ui.overview_scroll.isVisibleTo(panel._detail)
+    text = panel._detail.ui.overview_label.text()
+    assert "alpha" in text
+    assert "ARU-7" in text
+    assert "2 files" in text
+    assert "2024-01-01 to 01-03" in text  # date range
+
+
+def test_deselecting_campaign_returns_to_overview(qtbot, panel: CampaignsPanel):
+    """Clearing the list selection (current item unchanged) shows the overview."""
+    index = panel._model.index(0, 0)
+    panel.ui.campaign_list.setCurrentIndex(index)
+    qtbot.waitUntil(
+        lambda: panel._detail.ui.stack.currentWidget() is panel._detail.ui.view_page,
+        timeout=1000,
+    )
+    panel.ui.campaign_list.clearSelection()
+    assert panel._detail.ui.stack.currentWidget() is panel._detail.ui.empty_page
+
+
+def test_clicking_empty_space_deselects_and_shows_overview(qtbot, panel: CampaignsPanel):
+    """Clicking below the items clears the selection and shows the overview."""
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+
+    lst = panel.ui.campaign_list
+    idx = panel._model.index(0, 0)
+    lst.show()
+    QTest.mouseClick(lst.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, lst.visualRect(idx).center())
+    qtbot.waitUntil(
+        lambda: panel._detail.ui.stack.currentWidget() is panel._detail.ui.view_page,
+        timeout=1000,
+    )
+    empty_pt = QPoint(lst.viewport().width() // 2, lst.viewport().height() - 8)
+    assert not lst.indexAt(empty_pt).isValid()
+    QTest.mouseClick(lst.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, empty_pt)
+    assert not lst.selectionModel().hasSelection()
+    assert panel._detail.ui.stack.currentWidget() is panel._detail.ui.empty_page
+
+
+def test_cmd_click_deselect_returns_to_overview(qtbot, panel: CampaignsPanel):
+    """A Ctrl/Cmd+click that deselects the current item returns to the overview.
+
+    Such a click clears the selection (-> overview) but also emits `clicked`;
+    _on_list_clicked must not re-open the view for the now-deselected item.
+    """
+    idx = panel._model.index(0, 0)
+    panel.ui.campaign_list.setCurrentIndex(idx)
+    qtbot.waitUntil(
+        lambda: panel._detail.ui.stack.currentWidget() is panel._detail.ui.view_page,
+        timeout=1000,
+    )
+    panel.ui.campaign_list.clearSelection()  # the deselection half of the click
+    panel._on_list_clicked(idx)  # the stray clicked signal half
+    assert panel._detail.ui.stack.currentWidget() is panel._detail.ui.empty_page
+
+
+def test_escape_returns_to_overview_from_details(qtbot, panel: CampaignsPanel):
+    """Esc from the read-only details view returns to the overview."""
+    index = panel._model.index(0, 0)
+    panel.ui.campaign_list.setCurrentIndex(index)
+    qtbot.waitUntil(
+        lambda: panel._detail.ui.stack.currentWidget() is panel._detail.ui.view_page,
+        timeout=1000,
+    )
+    panel._on_escape()
+    assert panel._detail.ui.stack.currentWidget() is panel._detail.ui.empty_page
+
+
+def test_escape_ignored_while_editing(qtbot, panel: CampaignsPanel):
+    """Esc does nothing on the edit/create form (guarded by view-mode check)."""
+    panel.ui.new_button.click()
+    assert panel._detail.ui.stack.currentWidget() is panel._detail.ui.form_page
+    panel._on_escape()
+    assert panel._detail.ui.stack.currentWidget() is panel._detail.ui.form_page
+
+
+def test_overview_includes_campaign_without_audio(panel: CampaignsPanel):
+    """A campaign with no imported audio still appears, flagged as empty."""
+    text = panel._detail.ui.overview_label.text()
+    assert "alpha" in text
+    assert "no audio imported" in text
+
+
+def test_overview_empty_without_project(qtbot):
+    """No project loaded means empty overview text and the fallback state."""
+    state = AppState(TomlProjectRepository(), TomlCampaignRepository())
+    orchestrator = ImportOrchestrator(AudioImporter(), _FakeScanner())
+    p = CampaignsPanel(state, TomlCampaignRepository(), orchestrator, AppSettings())
+    qtbot.addWidget(p)
+    assert p._detail.ui.overview_label.text() == ""
+    assert not p._detail.ui.overview_scroll.isVisibleTo(p._detail)
+    assert p._detail.ui.no_campaigns_label.isVisibleTo(p._detail)

@@ -46,7 +46,7 @@ from ..domain import (
     Detection,
 )
 from ..domain import detection_schema as schema
-from ..domain.audio_import import WEEK_YEAR_ROUND
+from ..domain.audio_import import WEEK_YEAR_ROUND, parse_recording_time
 from ..domain.entities import CampaignRunResult
 from . import paths
 from ._analysis_helpers import (
@@ -56,7 +56,6 @@ from ._analysis_helpers import (
     count_audio_files,
     emit_progress,
     list_audio_files,
-    parse_recording_time,
     week_from_path,
     write_species_list_files,
 )

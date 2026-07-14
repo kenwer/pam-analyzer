@@ -92,6 +92,11 @@ class TomlCampaignRepository:
         f = paths.must_have_species_file(campaign.folder)
         return f.read_text(encoding="utf-8") if f.exists() else ""
 
+    def has_must_have_species(self, campaign: Campaign) -> bool:
+        """Whether a non-empty must-have list exists, via a stat (no file read)."""
+        f = paths.must_have_species_file(campaign.folder)
+        return f.exists() and f.stat().st_size > 0
+
     def write_must_have_species(self, campaign: Campaign, content: str) -> None:
         paths.must_have_species_file(campaign.folder).write_text(content, encoding="utf-8")
 

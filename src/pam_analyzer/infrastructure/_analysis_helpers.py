@@ -13,10 +13,8 @@ non-runner code (e.g. counting files before a run starts).
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable
 from dataclasses import replace
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -43,17 +41,6 @@ def list_audio_files(campaign_dir: Path) -> list[Path]:
         f for f in campaign_dir.rglob("*")
         if f.is_file() and f.suffix.lower() in paths.AUDIO_EXTENSIONS
     )
-
-
-def parse_recording_time(stem: str) -> datetime | None:
-    """Pull a 'YYYYMMDD_HHMMSS' timestamp out of an audio filename."""
-    match = re.search(r"(\d{8}_\d{6})", stem)
-    if match:
-        try:
-            return datetime.strptime(match.group(1), "%Y%m%d_%H%M%S")
-        except ValueError:
-            pass
-    return None
 
 
 def week_from_path(path: Path) -> int | None:

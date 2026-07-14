@@ -44,6 +44,7 @@ from ..app_state import AppState
 from ..dialogs.folder_import_dialog import FolderImportDialog
 from ..dialogs.import_conflict_dialog import ImportConflictDialog
 from ..models.audio_inventory_tree_model import AudioInventoryTreeModel, format_bytes
+from ..models.campaign_overview import CampaignOverviewEntry, format_overview_html
 from .ui_campaign_detail_widget import Ui_CampaignDetailWidget
 
 _Mode = Literal["empty", "view", "new", "edit", "confirm"]
@@ -102,6 +103,7 @@ class CampaignDetailWidget(QWidget):
         self._configure_view_page()
         self._wire_signals()
         self._apply_import_state()
+        self.set_overview([])
         self.show_empty()
 
     def _setup_spinboxes(self) -> None:
@@ -189,6 +191,22 @@ class CampaignDetailWidget(QWidget):
         self._campaign = None
         self.ui.stack.setCurrentWidget(self.ui.empty_page)
         self.editingChanged.emit(False)
+
+    def is_showing_overview(self) -> bool:
+        """True while the empty-state campaign overview is the active page."""
+        return self._mode == "empty"
+
+    def is_showing_view(self) -> bool:
+        """True while a campaign's read-only details page is active (not editing)."""
+        return self._mode == "view"
+
+    def set_overview(self, entries: list[CampaignOverviewEntry]) -> None:
+        """Render the empty-state overview text and toggle its empty fallback."""
+        has_entries = bool(entries)
+        self.ui.overview_title_label.setVisible(has_entries)
+        self.ui.overview_scroll.setVisible(has_entries)
+        self.ui.no_campaigns_label.setVisible(not has_entries)
+        self.ui.overview_label.setText(format_overview_html(entries) if has_entries else "")
 
     def open_view(
         self,

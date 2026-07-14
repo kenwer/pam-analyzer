@@ -10,7 +10,9 @@ from pam_analyzer.domain.audio_import import (
     DetectedCard,
     ImportSource,
     birdnet_week,
+    date_range_from_stems,
     discover_folder_cards,
+    parse_recording_time,
 )
 
 # birdnet_week
@@ -35,6 +37,30 @@ def test_birdnet_week_boundaries(month, day, expected):
 def test_birdnet_week_capped_at_48():
     dt = datetime(2024, 12, 31)
     assert birdnet_week(dt) <= 48
+
+
+# parse_recording_time / date_range_from_stems
+
+def test_parse_recording_time_extracts_stamp():
+    assert parse_recording_time("ARU1_20240501_063000") == datetime(2024, 5, 1, 6, 30, 0)
+
+
+def test_parse_recording_time_returns_none_without_stamp():
+    assert parse_recording_time("no_timestamp_here") is None
+    assert parse_recording_time("20241345_990000") is None  # invalid month/time
+
+
+def test_date_range_from_stems_returns_min_max():
+    stems = ["a_20240630_180000", "b_20240501_060000", "not-a-stamp"]
+    assert date_range_from_stems(stems) == (
+        datetime(2024, 5, 1, 6, 0, 0),
+        datetime(2024, 6, 30, 18, 0, 0),
+    )
+
+
+def test_date_range_from_stems_none_when_nothing_parses():
+    assert date_range_from_stems(["junk", "also-junk"]) is None
+    assert date_range_from_stems([]) is None
 
 
 # CardQueue

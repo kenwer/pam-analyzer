@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 ### Added
+- The Campaigns panel now shows an overview of all campaigns and their ARUs when no campaign is selected.
 - Add support importing audio from folders via drag&drop at the campaign's detail panel.
 - Add context menu entries to the campaign list to allow to
   - create a new campaign

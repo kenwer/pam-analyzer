@@ -83,7 +83,7 @@
         </layout>
        </item>
        <item>
-        <widget class="QListView" name="campaign_list">
+        <widget class="DeselectableListView" name="campaign_list">
          <property name="editTriggers">
           <set>QAbstractItemView::EditTrigger::NoEditTriggers</set>
          </property>
@@ -111,6 +111,13 @@
    </item>
   </layout>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>DeselectableListView</class>
+   <extends>QListView</extends>
+   <header>pam_analyzer.widgets.deselectable_list_view</header>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>
