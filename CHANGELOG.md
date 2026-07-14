@@ -12,6 +12,7 @@
 - Recent folder paths on the welcome screen now show `~` instead of the full home directory path.
 - The recent projects list on the welcome screen now grows with the window instead of staying at a fixed size.
 - File listing and size checks now run in parallel instead of one at a time. This mainly helps on network shares (e.g. SMB), where each check is a network round trip. Goal is to speed up scanning the audio folder when opening a project and after ARU data imports. 
+- Faster WAV imports to network shares (e.g. SMB) as the transcode now runs local and sends only the finished FLAC.
 - [Dev] Consolidate the detection schema (columns, CSV serialization, filename pattern) into `domain/detection_schema.py`. All readers and writers derive from it.
 - [Dev] Analysis runners now build domain `Detection` objects and serialize them through the detection schema, removing the last hand-built CSV row writer. Freshly written CSVs use the same number formatting as annotation saves (e.g. `0.85` instead of `0.8500`).
 - [Dev] Name the week `-1` sentinel `WEEK_YEAR_ROUND` in the domain and use it everywhere it appears (geo filter, CSV Week column, audio inventory). It mirrors the birdnet geo API, where week -1 requests the year-round species list.

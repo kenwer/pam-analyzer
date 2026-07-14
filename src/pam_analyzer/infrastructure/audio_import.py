@@ -12,6 +12,7 @@ would be lost on every transcoded recording.
 import logging
 import os
 import shutil
+import tempfile
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -142,14 +143,22 @@ def _flac_target_name(src: Path) -> str:
 def transcode_to_flac(src: Path, dst: Path) -> int:
     """Losslessly transcode a 16-bit PCM WAV at *src* to FLAC at *dst*.
 
-    Writes to a same-directory temp file, decodes it back, and asserts the
-    samples match the source before atomically moving it into place. The temp
-    name ends in '.part' (not '.flac') so a hard crash cannot leave a stray
-    file that inventory discovery or analysis would mistake for a recording.
+    Encodes to a local temp file, decodes it back, asserts the samples match
+    the source, and re-embeds any GUANO metadata, all before the result touches
+    *dst*'s filesystem. Only the finished, verified FLAC is copied to *dst*,
+    once. Keeping the encode/verify/metadata work local matters when *dst* is on
+    a network share: the verify re-read and mutagen's whole-file metadata
+    rewrite (libsndfile leaves no PADDING block for it to slot into) would
+    otherwise each cross the wire per file.
 
-    Any GUANO metadata on the source is re-embedded as a 'GUANO' Vorbis comment
-    after the verified FLAC is moved into place (best-effort: a metadata write
-    failure is logged, not raised, since the audio is already saved).
+    The final hop copies the local FLAC to a same-directory '.part' on *dst*,
+    then atomically renames it into place. The '.part' name (not '.flac') means
+    a hard crash cannot leave a stray file that inventory discovery or analysis
+    would mistake for a recording, and the rename stays within *dst*'s
+    filesystem so the swap is atomic.
+
+    GUANO embedding is best-effort: a metadata write failure is logged, not
+    raised, since the audio is already saved.
 
     Returns the number of frames written. Raises NotLosslessError if the
     source is not PCM_16, or VerifyError if the round-trip is not bit-exact;
@@ -161,20 +170,25 @@ def transcode_to_flac(src: Path, dst: Path) -> int:
 
     audio, _ = sf.read(src, dtype="int16")
     dst.parent.mkdir(parents=True, exist_ok=True)
-    tmp = dst.with_name(dst.name + ".part")
-    try:
-        sf.write(tmp, audio, info.samplerate, subtype="PCM_16", format="FLAC")
-        # libsndfile sniffs the format from the header on read, so the '.part'
-        # extension is fine and passing format= would be rejected for an
-        # existing file.
-        decoded, _ = sf.read(tmp, dtype="int16")
-        if not np.array_equal(decoded, audio):
-            raise VerifyError(f"FLAC verify mismatch for {dst.name}")
-        os.replace(tmp, dst)
-    finally:
-        # On success os.replace consumed tmp; on any failure discard the partial.
-        Path(tmp).unlink(missing_ok=True)
-    _embed_guano(src, dst)
+
+    dst_part = dst.with_name(dst.name + ".part")
+    with tempfile.TemporaryDirectory(prefix="pam_flac_") as scratch:
+        local_tmp = Path(scratch) / dst.name
+        try:
+            sf.write(local_tmp, audio, info.samplerate, subtype="PCM_16", format="FLAC")
+            # libsndfile sniffs the format from the header on read, so passing
+            # format= would be rejected for an existing file.
+            decoded, _ = sf.read(local_tmp, dtype="int16")
+            if not np.array_equal(decoded, audio):
+                raise VerifyError(f"FLAC verify mismatch for {dst.name}")
+            _embed_guano(src, local_tmp)
+            shutil.copyfile(local_tmp, dst_part)
+            os.replace(dst_part, dst)
+        finally:
+            # The scratch dir (and local_tmp in it) is removed on block exit.
+            # Only dst_part needs manual rollback, and just for the narrow window
+            # between the copy and the rename (os.replace consumes it on success).
+            dst_part.unlink(missing_ok=True)
     return len(audio)
 
 
