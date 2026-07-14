@@ -2,8 +2,7 @@
 
 ## [0.4.1] - 2026-07-14
 ### Fixed
-- The app now works fully offline.
-- [Dev] Pin the Perch v2 model to Kaggle version 1, so builds, tests, and the app always use the exact checkpoint the logit calibration was tuned on.
+- [Dev] Pin the Perch v2 model to Kaggle version 1, so builds, tests, and the app always use the exact same checkpoint.
 
 ## [0.4.0] - 2026-07-14
 ### Added
