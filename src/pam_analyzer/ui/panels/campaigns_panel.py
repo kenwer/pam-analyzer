@@ -286,14 +286,16 @@ class CampaignsPanel(QWidget):
         index = self.ui.campaign_list.indexAt(pos)
         campaign = self._campaign_at(index)
         menu = QMenu(self)
+        menu.addAction("New Campaign…").triggered.connect(self._on_new)
         if campaign is not None:
+            menu.addSeparator()
             menu.addAction("Edit").triggered.connect(lambda: self._open_edit(campaign))
             menu.addAction("Rename…").triggered.connect(lambda: self._rename_campaign(campaign))
             menu.addAction("Open Campaign Folder").triggered.connect(
                 lambda: self._open_campaign_folder(campaign)
             )
             menu.addAction("Delete…").triggered.connect(lambda: self._show_delete_confirm(campaign))
-            menu.addSeparator()
+        menu.addSeparator()
         menu.addMenu(self._build_sort_menu(menu))
         menu.exec(self.ui.campaign_list.viewport().mapToGlobal(pos))
 

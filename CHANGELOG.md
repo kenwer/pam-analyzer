@@ -3,7 +3,10 @@
 ## [Unreleased]
 ### Added
 - Add support importing audio from folders via drag&drop at the campaign's detail panel.
-- Add context menu entries to sort the campaign list, and to open campaign folders in the file manage.
+- Add context menu entries to the campaign list to allow to
+  - create a new campaign
+  - sort the campaign list
+  - open a campaign folder in the file manager
 - [Dev] Add a pre-push git hook that runs the fast test suite, plus `poe install-hooks` to enable it.
 ### Changed
 - Recent folder paths on the welcome screen now show `~` instead of the full home directory path.

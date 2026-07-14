@@ -394,6 +394,54 @@ def test_sort_menu_marks_current_order_checked(panel: CampaignsPanel):
     assert checked == [SORT_ORDER_LABELS[CampaignSortOrder.NAME_ASC]]
 
 
+def test_context_menu_offers_new_campaign_without_selection(panel: CampaignsPanel, monkeypatch):
+    from PySide6.QtCore import QPoint
+    from PySide6.QtWidgets import QMenu
+
+    captured = {}
+
+    def fake_exec(self, *args, **kwargs):
+        captured["actions"] = [a.text() for a in self.actions()]
+        return None
+
+    monkeypatch.setattr(QMenu, "exec", fake_exec)
+    panel.ui.campaign_list.clearSelection()
+    panel._on_context_menu(QPoint(0, 0))
+
+    assert "New Campaign…" in captured["actions"]
+
+
+def test_context_menu_new_campaign_action_triggers_on_new(
+    panel: CampaignsPanel, project_with_campaign, monkeypatch
+):
+    from PySide6.QtWidgets import QMenu
+
+    proj, campaign = project_with_campaign
+    called = []
+    monkeypatch.setattr(panel, "_on_new", lambda: called.append(True))
+    index = panel._model.indexFromItem(panel._model.item(0))
+    panel.ui.campaign_list.setCurrentIndex(index)
+
+    original_exec = QMenu.exec
+    captured = {}
+
+    def fake_exec(self, *args, **kwargs):
+        captured["actions"] = [a.text() for a in self.actions()]
+        for action in self.actions():
+            if action.text() == "New Campaign…":
+                action.trigger()
+        return None
+
+    monkeypatch.setattr(QMenu, "exec", fake_exec)
+    try:
+        panel._on_context_menu(panel.ui.campaign_list.visualRect(index).center())
+    finally:
+        monkeypatch.setattr(QMenu, "exec", original_exec)
+
+    assert "New Campaign…" in captured["actions"]
+    assert called == [True]
+
+
 def test_open_campaign_folder_uses_desktop_services(
     panel: CampaignsPanel, project_with_campaign, monkeypatch
 ):
