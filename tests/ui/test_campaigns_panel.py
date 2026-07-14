@@ -394,18 +394,20 @@ def test_sort_menu_marks_current_order_checked(panel: CampaignsPanel):
     assert checked == [SORT_ORDER_LABELS[CampaignSortOrder.NAME_ASC]]
 
 
-def test_context_menu_offers_new_campaign_without_selection(panel: CampaignsPanel, monkeypatch):
-    from PySide6.QtCore import QPoint
-    from PySide6.QtWidgets import QMenu
+def test_context_menu_offers_new_campaign_without_selection(panel: CampaignsPanel):
+    from PySide6.QtCore import QPoint, QTimer
+    from PySide6.QtWidgets import QApplication
 
     captured = {}
 
-    def fake_exec(self, *args, **kwargs):
-        captured["actions"] = [a.text() for a in self.actions()]
-        return None
+    def close_popup():
+        popup = QApplication.activePopupWidget()
+        if popup is not None:
+            captured["actions"] = [a.text() for a in popup.actions()]
+            popup.close()
 
-    monkeypatch.setattr(QMenu, "exec", fake_exec)
     panel.ui.campaign_list.clearSelection()
+    QTimer.singleShot(0, close_popup)
     panel._on_context_menu(QPoint(0, 0))
 
     assert "New Campaign…" in captured["actions"]
@@ -414,7 +416,8 @@ def test_context_menu_offers_new_campaign_without_selection(panel: CampaignsPane
 def test_context_menu_new_campaign_action_triggers_on_new(
     panel: CampaignsPanel, project_with_campaign, monkeypatch
 ):
-    from PySide6.QtWidgets import QMenu
+    from PySide6.QtCore import QTimer
+    from PySide6.QtWidgets import QApplication
 
     proj, campaign = project_with_campaign
     called = []
@@ -422,21 +425,20 @@ def test_context_menu_new_campaign_action_triggers_on_new(
     index = panel._model.indexFromItem(panel._model.item(0))
     panel.ui.campaign_list.setCurrentIndex(index)
 
-    original_exec = QMenu.exec
     captured = {}
 
-    def fake_exec(self, *args, **kwargs):
-        captured["actions"] = [a.text() for a in self.actions()]
-        for action in self.actions():
+    def trigger_new_campaign():
+        popup = QApplication.activePopupWidget()
+        if popup is None:
+            return
+        captured["actions"] = [a.text() for a in popup.actions()]
+        for action in popup.actions():
             if action.text() == "New Campaign…":
                 action.trigger()
-        return None
+        popup.close()
 
-    monkeypatch.setattr(QMenu, "exec", fake_exec)
-    try:
-        panel._on_context_menu(panel.ui.campaign_list.visualRect(index).center())
-    finally:
-        monkeypatch.setattr(QMenu, "exec", original_exec)
+    QTimer.singleShot(0, trigger_new_campaign)
+    panel._on_context_menu(panel.ui.campaign_list.visualRect(index).center())
 
     assert "New Campaign…" in captured["actions"]
     assert called == [True]
