@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.4.0] - 2026-07-14
 ### Added
 - The Campaigns panel now shows an overview of all campaigns and their ARUs when no campaign is selected.
 - Add support importing audio from folders via drag&drop at the campaign's detail panel.
