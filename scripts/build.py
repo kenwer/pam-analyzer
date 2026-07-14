@@ -89,15 +89,18 @@ def _load_dependencies() -> list[str]:
 # downloads happen here (with retry-on-failure) rather than on first user
 # click. BIRDNET_APP_DATA / KAGGLEHUB_CACHE point at the build cache, so
 # files land in a known location ready for PyInstaller bundling.
+# Perch v2 goes through the app's own pinned loader so the bundle contains
+# exactly the version the app will ask kagglehub for at runtime.
 MODEL_PREWARM = textwrap.dedent("""
     import sys
     import birdnet
+    from pam_analyzer.infrastructure.birdnet_lib import load_perch_v2_pinned
     print('Pre-downloading birdnet acoustic v2.4 (en_us)...', file=sys.stderr)
     birdnet.load('acoustic', '2.4', 'tf', lang='en_us')
     print('Pre-downloading birdnet geo v2.4 (en_us)...', file=sys.stderr)
     birdnet.load('geo', '2.4', 'tf', lang='en_us')
     print('Pre-downloading Perch v2 (CPU)...', file=sys.stderr)
-    birdnet.load_perch_v2(device='CPU')
+    load_perch_v2_pinned()
     print('All models cached.')
 """).strip()
 
@@ -109,9 +112,12 @@ def run(cmd: list, env: dict | None = None) -> None:
 def _prewarm_models(download_env: dict, uv_run_prefix: list) -> None:
     """Download every model into MODEL_CACHE, with retry on transient failures.
 
-    Skips the download when the cache already exists and is non-empty,
-    so repeat builds reuse the previous download. Delete MODEL_CACHE to
-    force a fresh fetch.
+    Always runs the prewarm script; each library skips work it has already
+    done (birdnet checks its local files, kagglehub resolves the pinned
+    Perch version from its cache without a network call), so a warm run
+    finishes in about a second. A coarse "cache directory is non-empty"
+    skip used to live here, but it could ship a stale bundle after a
+    PERCH_V2_KAGGLE_VERSION bump.
 
     uv_run_prefix selects which venv runs the download: the isolated build
     venv (['uv', 'run', '--no-project'], with VIRTUAL_ENV/UV_PROJECT_ENVIRONMENT
@@ -119,15 +125,6 @@ def _prewarm_models(download_env: dict, uv_run_prefix: list) -> None:
     (['uv', 'run']) for CI's --prewarm-only, which only needs the models on
     disk before tests run and has no isolated venv to point at.
     """
-    if MODEL_CACHE.exists() and any(MODEL_CACHE.rglob('*')):
-        # Sanity check: the two subdirs the lib expects should both
-        # contain files. If either is empty, fall through to a refetch.
-        a_ok = BIRDNET_APP_DATA_CACHE.exists() and any(BIRDNET_APP_DATA_CACHE.rglob('*'))
-        k_ok = KAGGLEHUB_CACHE.exists() and any(KAGGLEHUB_CACHE.rglob('*'))
-        if a_ok and k_ok:
-            print(f'  Using cached models at {MODEL_CACHE}')
-            return
-
     BIRDNET_APP_DATA_CACHE.mkdir(parents=True, exist_ok=True)
     KAGGLEHUB_CACHE.mkdir(parents=True, exist_ok=True)
 

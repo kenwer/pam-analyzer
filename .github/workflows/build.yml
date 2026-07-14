@@ -83,7 +83,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: dist/.birdnet-models
-          key: birdnet-models-${{ hashFiles('uv.lock') }}
+          key: birdnet-models-${{ hashFiles('uv.lock', 'src/pam_analyzer/infrastructure/model_versions.py') }}
 
       - name: Prewarm models
         # Populates the cache (with retry-on-failure) before tests run, so a cold

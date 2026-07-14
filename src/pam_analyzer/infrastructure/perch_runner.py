@@ -21,6 +21,7 @@ from typing import Any
 
 from ..domain import AnalysisSettings
 from .base_analysis_runner import BaseAnalysisRunner, ParsedRow
+from .birdnet_lib import load_perch_v2_pinned
 
 # Perch v2's class head emits positive logits everywhere: pure silence
 # sits around +4.5, and real ambient noise (wind, distant traffic) sits
@@ -60,8 +61,9 @@ def _perch_logit_to_prob(logit: float) -> float:
 class PerchRunner(BaseAnalysisRunner):
     """AnalysisRunner implementation backed by Google's Perch v2 model.
 
-    Loads the model once via birdnet.load_perch_v2() and reuses it across
-    campaigns and files. The lib handles audio I/O, resampling to 32 kHz,
+    Loads the model once via load_perch_v2_pinned() (resolved from the
+    local kagglehub cache, downloaded only on a cold cache) and reuses it
+    across campaigns and files. The lib handles audio I/O, resampling to 32 kHz,
     5 s window framing, and batched TF inference. We operate in raw-logit
     space (apply_sigmoid=False) and translate to a calibrated probability
     inside _parse_row; see _PERCH_LOGIT_OFFSET for why a vanilla sigmoid is
@@ -83,9 +85,7 @@ class PerchRunner(BaseAnalysisRunner):
     log_prefix = "perch"
 
     def _load_model(self) -> Any:
-        import birdnet
-
-        return birdnet.load_perch_v2(device="CPU")
+        return load_perch_v2_pinned()
 
     def _open_predict_session(
         self,

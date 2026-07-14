@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+### Fixed
+- The app now works fully offline.
+- [Dev] Pin the Perch v2 model to Kaggle version 1, so builds, tests, and the app always use the exact checkpoint the logit calibration was tuned on.
+
 ## [0.4.0] - 2026-07-14
 ### Added
 - The Campaigns panel now shows an overview of all campaigns and their ARUs when no campaign is selected.

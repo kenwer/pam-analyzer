@@ -11,6 +11,9 @@ Both BirdnetRunner and PerchRunner need three pieces from this library:
 - The list of locales the v2.4 model has labels for, to populate the
   language picker in the UI. Replaces birdnet_runner._get_available_locales.
 
+The module also hosts load_perch_v2_pinned, which loads Perch v2 from the
+local cache without a Kaggle API call.
+
 We deliberately do not import `birdnet` at module load. Loading the lib
 triggers logging setup and bringing in `birdnet` is cheap, but `import
 tensorflow` further down the call chain is not. Every public function
@@ -24,6 +27,52 @@ happens here so callers see a plain {sci: common} dict.
 from __future__ import annotations
 
 from functools import cache, lru_cache
+from pathlib import Path
+from typing import Any
+
+from .model_versions import PERCH_V2_KAGGLE_VERSION
+
+
+def load_perch_v2_pinned() -> Any:
+    """Load Perch v2 (CPU) pinned to PERCH_V2_KAGGLE_VERSION.
+
+    Mirrors birdnet.load_perch_v2() but requests a versioned Kaggle handle.
+    The lib's own loader uses an unversioned handle, which makes kagglehub
+    ask the Kaggle API for the current version number before it consults
+    its on-disk cache, so loading an already-downloaded (or bundled) model
+    still requires network access. A versioned handle resolves entirely
+    from the local cache; kagglehub only downloads when that exact version
+    is missing.
+
+    scripts/build.py prewarms the build cache through this same function,
+    so the packaged app always finds the version it asks for in the bundle
+    and never touches the network.
+    """
+    import kagglehub
+    from birdnet.acoustic.models.perch_v2.model import AcousticModelPerchV2
+    from birdnet.acoustic.models.perch_v2.pb import (
+        AcousticPBBackendFP32PerchV2,
+        AcousticPBDownloaderPerchV2,
+    )
+    from birdnet.utils.helper import check_is_intel_macos, get_species_from_file
+
+    # Same guard as birdnet.load_perch_v2: the SavedModel's XlaCallModule
+    # cannot be deserialized on Intel macOS.
+    if check_is_intel_macos():
+        raise OSError("The Perch v2 model is not supported on Intel macOS systems.")
+
+    handle = f"{AcousticPBDownloaderPerchV2.MODEL_HANDLE_CPU}/{PERCH_V2_KAGGLE_VERSION}"
+    model_dir = Path(kagglehub.model_download(handle))
+    labels = get_species_from_file(model_dir / "assets" / "labels.csv", encoding="utf8")
+    labels.remove(AcousticPBDownloaderPerchV2.LABELS_HEADER)
+    if len(labels) != 14795:
+        raise ValueError(f"Expected 14795 Perch v2 species, got {len(labels)}")
+    return AcousticModelPerchV2.load(
+        model_dir,
+        labels,
+        backend_type=AcousticPBBackendFP32PerchV2,
+        backend_kwargs={},
+    )
 
 
 def _split_sci_common(line: str) -> tuple[str, str]:
