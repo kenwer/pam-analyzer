@@ -3,33 +3,34 @@ Automated bird species detection from acoustic recordings.
 
 <!--TOC-->
 
-- [About](#about)
-- [Download](#download)
-- [Features](#features)
-- [Usage](#usage)
-- [Workflow](#workflow)
-  - [Project Settings](#project-settings)
-  - [Campaigns](#campaigns)
-  - [Run bird species detection using BirdNET-2.4 or Perch-2.0](#run-bird-species-detection-using-birdnet-24-or-perch-20)
-  - [Output files](#output-files)
-  - [Examine Detections](#examine-detections)
-- [Keyboard shortcuts](#keyboard-shortcuts)
-  - [Global](#global)
-  - [Examine panel: detection row selected](#examine-panel-detection-row-selected)
-- [Core Concepts](#core-concepts)
-  - [Project](#project)
-  - [Campaign](#campaign)
-  - [ARU (Autonomous Recording Unit)](#aru-autonomous-recording-unit)
-- [Models](#models)
-  - [BirdNET v2.4](#birdnet-v24)
-  - [Perch v2](#perch-v2)
-    - [Logit calibration](#logit-calibration)
-  - [Choosing a model](#choosing-a-model)
-- [Troubleshooting](#troubleshooting)
-- [Changelog](#changelog)
-- [Acknowledgements](#acknowledgements)
-- [Citation](#citation)
-- [License](#license)
+- [PAM Analyzer](#pam-analyzer)
+  - [About](#about)
+  - [Download](#download)
+  - [Features](#features)
+  - [Usage](#usage)
+  - [Workflow](#workflow)
+    - [Project Settings](#project-settings)
+    - [Campaigns](#campaigns)
+    - [Run bird species detection using BirdNET-2.4 or Perch-2.0](#run-bird-species-detection-using-birdnet-24-or-perch-20)
+    - [Output files](#output-files)
+    - [Examine Detections](#examine-detections)
+  - [Keyboard shortcuts](#keyboard-shortcuts)
+    - [Global](#global)
+    - [Examine panel: detection row selected](#examine-panel-detection-row-selected)
+  - [Core Concepts](#core-concepts)
+    - [Project](#project)
+    - [Campaign](#campaign)
+    - [ARU (Autonomous Recording Unit)](#aru-autonomous-recording-unit)
+  - [Models](#models)
+    - [BirdNET v2.4](#birdnet-v24)
+    - [Perch v2](#perch-v2)
+      - [Logit calibration](#logit-calibration)
+    - [Choosing a model](#choosing-a-model)
+  - [Troubleshooting](#troubleshooting)
+  - [Changelog](#changelog)
+  - [Acknowledgements](#acknowledgements)
+  - [Citation](#citation)
+  - [License](#license)
 
 <!--TOC-->
 
@@ -81,6 +82,20 @@ Create and manage the campaigns that belong to this project. The panel shows all
   - **Location mode**: specify a lat/lon on a map or enter coordinates manually; BirdNET derives the species list from this location. Here you can also add species you want to have always included when feeding the detection models.
   - **Species list mode**: provide a `.txt` species list file, which is copied into the campaign folder alongside the audio.
 - **Edit** species filter settings at any time.
+- **Specifying species** (species list mode and the location-mode must-have list use the same input and format): type or paste species names directly into the text box, one per line, or drag-and-drop a `.txt` file onto it (or use the import button to browse for one). Either way, the file's contents are loaded into the box rather than just referenced by path.
+  - Example, one entry per line:
+
+    ```text
+    # This is comment
+    Turdus merula
+    Parus major_Great Tit # another comment
+    Fringilla coelebs_Buchfink
+    Corvus corax
+    ```
+
+    Each line is a scientific (Latin binomial) name, e.g. `Turdus merula`. Lines copied from a BirdNET-style species list in `Scientific name_Common name` form also work, since everything from the underscore onward is ignored, regardless of which language the common name is in, so `Parus major_Great Tit` (English) and `Fringilla coelebs_Buchfink` (German) are parsed the same way as their bare scientific names. A `#` starts a comment that runs to the end of the line, whether on its own line or trailing a species name; the app uses this to mark must-have entries when it writes `applied-species-list*.txt`, so that file can be pasted straight back into the species list or must-have box. Blank lines are ignored.
+
+    The species names BirdNET v2.4 was trained on can be found at https://zenodo.org/records/15050749. The `labels` directory has a label file per language, each listing the detectable species as `Scientific name_Common name`, so any single language's file also doubles as the full scientific-name reference.
 - **Delete** a campaign via the trash icon on its list card, with an inline confirmation step.
 - **Import audio** from SD cards directly within a campaign's detail view. Click the import button to start monitoring for SD card volumes matching the configured name pattern. When a matching card is inserted, files are imported into the `campaign/ARU/week` directory structure with deduplication and conflict resolution. WAV recordings are transcoded to FLAC (lossless, 16-bit PCM) to save disk space, and any GUANO metadata (timestamp, location, device) is carried across into the FLAC. The encode is verified against the source before a card is cleared, so a recording is never lost to a bad transcode; FLAC sources and the device's provenance file are copied through untouched. The device family is recognised from the card layout: AudioMoth keeps recordings and a `CONFIG.TXT` at the card root, while Song Meter keeps recordings under `Data/` and a `<serial>_Summary.txt` log at the root.
 
