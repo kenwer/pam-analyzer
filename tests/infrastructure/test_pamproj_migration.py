@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from pam_analyzer.infrastructure import (
+    AudioRootNotFound,
     TomlProjectRepository,
     find_legacy_pamproj,
     load_legacy,
@@ -158,12 +159,40 @@ def test_load_legacy_rejects_missing_audio_root(tmp_path: Path) -> None:
     pamproj.write_text(
         '[project]\naudio_recordings_path = "/does/not/exist"\n', encoding="utf-8"
     )
-    with pytest.raises(ValueError):
+    with pytest.raises(AudioRootNotFound):
         load_legacy(pamproj)
 
     pamproj.write_text("[project]\n", encoding="utf-8")
     with pytest.raises(ValueError):
         load_legacy(pamproj)
+
+
+def test_load_legacy_audio_root_override_recovers_from_stale_path(tmp_path: Path) -> None:
+    """A caller (the UI's folder picker) can redirect a stale audio_recordings_path."""
+    pamproj = tmp_path / "demo.pamproj"
+    pamproj.write_text(
+        '[project]\naudio_recordings_path = "/does/not/exist"\nbirdnet_min_conf = 0.4\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(AudioRootNotFound) as exc_info:
+        load_legacy(pamproj)
+    assert exc_info.value.recorded_path == "/does/not/exist"
+
+    real_audio_root = tmp_path / "actual-audio"
+    real_audio_root.mkdir()
+
+    legacy = load_legacy(pamproj, audio_root=real_audio_root)
+
+    assert legacy.audio_root == real_audio_root
+    assert legacy.project.birdnet_min_conf == 0.4
+
+
+def test_load_legacy_audio_root_override_still_validated(tmp_path: Path) -> None:
+    pamproj = tmp_path / "demo.pamproj"
+    pamproj.write_text('[project]\naudio_recordings_path = "/does/not/exist"\n', encoding="utf-8")
+
+    with pytest.raises(AudioRootNotFound):
+        load_legacy(pamproj, audio_root=tmp_path / "also-does-not-exist")
 
 
 def test_migrate_is_rerunnable(tmp_path: Path) -> None:

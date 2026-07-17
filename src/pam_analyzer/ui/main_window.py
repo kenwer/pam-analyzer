@@ -1,3 +1,4 @@
+import logging
 import sys
 from pathlib import Path
 
@@ -15,7 +16,9 @@ from PySide6.QtWidgets import (
 from ..domain import AnalysisRunner
 from ..domain.audio_import import ImportSource
 from ..infrastructure import (
+    AudioRootNotFound,
     CsvDetectionRepository,
+    LegacyProject,
     SoundfileAudioExtractor,
     TomlCampaignRepository,
     find_legacy_pamproj,
@@ -33,6 +36,8 @@ from .panels.project_panel import ProjectPanel
 from .panels.welcome_panel import WelcomePanel
 from .settings import AppSettings
 from .ui_main_window import Ui_MainWindow
+
+_log = logging.getLogger(__name__)
 
 
 class MainWindow(QMainWindow):
@@ -112,6 +117,7 @@ class MainWindow(QMainWindow):
     def _wire_actions(self) -> None:
         self.ui.action_new.triggered.connect(self._on_new)
         self.ui.action_open.triggered.connect(self._on_open)
+        self.ui.action_open_legacy_pamproj.triggered.connect(self._on_open_legacy_pamproj)
         self.ui.action_close.triggered.connect(self._on_close_project)
         self.ui.action_clear_recent.triggered.connect(self._on_clear_recent)
         self.ui.action_quit.triggered.connect(self.close)
@@ -190,6 +196,24 @@ class MainWindow(QMainWindow):
         if folder_str:
             self._open_folder(Path(folder_str), confirm_create=True)
 
+    def _on_open_legacy_pamproj(self) -> None:
+        """Migrate a legacy .pamproj file wherever it lives.
+
+        Unlike _on_open, this doesn't require the file to sit inside the
+        folder being browsed to: the audio root is read from the file
+        itself (with a picker fallback in _migrate_legacy if that path
+        turns out to be stale), so a .pamproj not yet moved into its audio
+        root can still be migrated directly.
+        """
+        file_str, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open legacy project file",
+            self._settings.last_directory,
+            "PAM Analyzer legacy project (*.pamproj)",
+        )
+        if file_str:
+            self._migrate_legacy(Path(file_str))
+
     def _open_folder(self, folder: Path, *, confirm_create: bool) -> None:
         """Open folder as a project, offering legacy migration or initialization.
 
@@ -232,6 +256,10 @@ class MainWindow(QMainWindow):
         """Offer and run the one-time conversion of a legacy .pamproj project."""
         try:
             legacy = load_legacy(pamproj_path)
+        except AudioRootNotFound as exc:
+            legacy = self._relocate_legacy_audio_root(pamproj_path, exc.recorded_path)
+            if legacy is None:
+                return
         except (OSError, ValueError) as exc:
             QMessageBox.warning(self, "Cannot migrate project", str(exc))
             return
@@ -261,12 +289,45 @@ class MainWindow(QMainWindow):
         except Exception as exc:  # noqa: BLE001  surface any filesystem failure to the user
             QMessageBox.warning(self, "Migration failed", str(exc))
             return
+        _log.debug(
+            "migration finished: project_folder=%s moved_csvs=%d warnings=%d; "
+            "campaign_folders now=%s",
+            report.project_folder,
+            report.moved_csvs,
+            len(report.warnings),
+            [d.name for d in paths.campaign_folders(report.project_folder)],
+        )
         if report.warnings:
             QMessageBox.information(
                 self, "Migration finished with warnings", "\n".join(report.warnings)
             )
         self._settings.remove_recent_project(str(pamproj_path))
         self._load_and_remember(report.project_folder)
+
+    def _relocate_legacy_audio_root(self, pamproj_path: Path, recorded_path: str) -> LegacyProject | None:
+        """Ask the user where the audio now lives when the recorded path isn't there.
+
+        Common after moving a project between machines or remounting a
+        network share under a different path. Returns None when the user
+        cancels or the chosen folder still doesn't check out.
+        """
+        QMessageBox.information(
+            self,
+            "Audio folder not found",
+            f"'{pamproj_path.name}' expects its audio recordings at:\n{recorded_path}\n\n"
+            "That folder isn't available on this machine. Choose where the "
+            "audio now lives to continue migrating.",
+        )
+        folder_str = QFileDialog.getExistingDirectory(
+            self, "Locate the audio recordings folder", str(pamproj_path.parent)
+        )
+        if not folder_str:
+            return None
+        try:
+            return load_legacy(pamproj_path, audio_root=Path(folder_str))
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Cannot migrate project", str(exc))
+            return None
 
     def _on_close_project(self) -> None:
         if not self._confirm_cancel_running():

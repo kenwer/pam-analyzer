@@ -233,7 +233,13 @@ class AppState(QObject):
         if self._project is None:
             self._set_audio_inventory(AudioInventory())
             return
-        self._set_audio_inventory(discover_audio_inventory(self._project.folder))
+        inventory = discover_audio_inventory(self._project.folder)
+        _log.debug(
+            "refresh_audio_inventory: folder=%s -> %s",
+            self._project.folder,
+            {c.name: c.file_count for c in inventory.campaigns},
+        )
+        self._set_audio_inventory(inventory)
 
     def _set_audio_inventory(self, inventory: AudioInventory) -> None:
         self._audio_inventory = inventory
@@ -251,6 +257,7 @@ class AppState(QObject):
             if self._project is not None
             else []
         )
+        _log.debug("refresh_campaigns: %s", [c.name for c in campaigns])
         self._apply_campaigns(campaigns)
 
     def _apply_project(self, project: Project | None) -> None:

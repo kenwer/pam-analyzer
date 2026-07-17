@@ -45,6 +45,20 @@ class MigrationReport:
     warnings: tuple[str, ...]
 
 
+class AudioRootNotFound(ValueError):
+    """The legacy file's audio_recordings_path doesn't exist on this machine.
+
+    Common after moving a project between machines or remounting a network
+    share under a different path. Callers can catch this specifically to
+    offer the user a folder picker and retry via load_legacy's audio_root
+    override, instead of just failing the migration outright.
+    """
+
+    def __init__(self, recorded_path: str) -> None:
+        self.recorded_path = recorded_path
+        super().__init__(f"Audio recording folder does not exist: {recorded_path}")
+
+
 def find_legacy_pamproj(folder: Path) -> Path | None:
     """The single legacy .pamproj file directly in folder, if any.
 
@@ -54,22 +68,31 @@ def find_legacy_pamproj(folder: Path) -> Path | None:
     return candidates[0] if len(candidates) == 1 else None
 
 
-def load_legacy(pamproj_path: Path) -> LegacyProject:
+def load_legacy(pamproj_path: Path, *, audio_root: Path | None = None) -> LegacyProject:
     """Parse a legacy .pamproj file.
 
-    Raises ValueError when the file has no usable audio_recordings_path,
-    since the audio root is what becomes the project folder.
+    audio_root overrides the file's own audio_recordings_path, for when the
+    caller already knows the recorded path isn't valid on this machine (e.g.
+    after the user redirected it via a folder picker).
+
+    Raises ValueError when the file has no usable audio_recordings_path.
+    Raises AudioRootNotFound when neither the override nor the recorded path
+    is an existing directory, since the audio root is what becomes the
+    project folder.
     """
     with open(pamproj_path, "rb") as f:
         data = tomllib.load(f)
     table = data.get("project", {})
 
-    audio_raw = str(table.get("audio_recordings_path", "") or "")
-    if not audio_raw:
-        raise ValueError(f"{pamproj_path.name} has no audio_recordings_path")
-    audio_root = Path(audio_raw)
-    if not audio_root.is_dir():
-        raise ValueError(f"Audio recording folder does not exist: {audio_root}")
+    if audio_root is None:
+        audio_raw = str(table.get("audio_recordings_path", "") or "")
+        if not audio_raw:
+            raise ValueError(f"{pamproj_path.name} has no audio_recordings_path")
+        audio_root = Path(audio_raw)
+        if not audio_root.is_dir():
+            raise AudioRootNotFound(audio_raw)
+    elif not audio_root.is_dir():
+        raise AudioRootNotFound(str(audio_root))
 
     out_raw = str(table.get("detections_output_path", "") or "")
     output_base = Path(out_raw) if out_raw else audio_root / f"{pamproj_path.stem}-detections"

@@ -113,6 +113,7 @@
     </widget>
     <addaction name="action_new"/>
     <addaction name="action_open"/>
+    <addaction name="action_open_legacy_pamproj"/>
     <addaction name="recent_projects_menu"/>
     <addaction name="separator"/>
     <addaction name="action_close"/>
@@ -145,6 +146,11 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+O</string>
+   </property>
+  </action>
+  <action name="action_open_legacy_pamproj">
+   <property name="text">
+    <string>Open &amp;Legacy Project File…</string>
    </property>
   </action>
   <action name="action_close">

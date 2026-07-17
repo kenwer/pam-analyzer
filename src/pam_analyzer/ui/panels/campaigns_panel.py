@@ -1,6 +1,7 @@
 """Campaigns panel: master/detail list for creating and editing campaigns."""
 
 import dataclasses
+import logging
 from enum import Enum
 
 from PySide6.QtCore import Qt, QUrl
@@ -27,6 +28,8 @@ from ..models.campaign_overview import CampaignOverviewEntry
 from ..settings import AppSettings
 from .campaign_detail_widget import CampaignDetailWidget
 from .ui_campaigns_panel import Ui_CampaignsPanel
+
+_log = logging.getLogger(__name__)
 
 
 class CampaignSortOrder(Enum):
@@ -147,8 +150,15 @@ class CampaignsPanel(QWidget):
     def _refresh_overview_if_visible(self, *_args) -> None:
         # Connected to campaignsChanged (list) and audioInventoryChanged (object);
         # the payloads are unused, we just re-derive the overview from AppState.
-        if self._detail.is_showing_overview():
-            self._detail.set_overview(self._overview_entries())
+        showing = self._detail.is_showing_overview()
+        _log.debug("_refresh_overview_if_visible: is_showing_overview=%s", showing)
+        if showing:
+            entries = self._overview_entries()
+            _log.debug(
+                "_refresh_overview_if_visible: entries=%s",
+                [(e.name, e.inventory.file_count if e.inventory else None) for e in entries],
+            )
+            self._detail.set_overview(entries)
 
     def _overview_entries(self) -> list[CampaignOverviewEntry]:
         inventory = self._app_state.audio_inventory
