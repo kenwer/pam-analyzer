@@ -17,6 +17,16 @@ from pam_analyzer.infrastructure import (
 _CSV_HEADER = "Campaign,Species,Confidence,File,Verified,CustomTag\n"
 
 
+def _toml_str(path: Path) -> str:
+    """Escape a filesystem path for embedding in a TOML basic string.
+
+    Windows paths contain backslashes, which TOML basic strings treat as
+    escape sequences (e.g. "\\U..." demands 8 hex digits), so they must be
+    doubled before being written into a .pamproj fixture.
+    """
+    return str(path).replace("\\", "\\\\")
+
+
 def _make_legacy_project(
     tmp_path: Path,
     *,
@@ -41,10 +51,10 @@ def _make_legacy_project(
         (out_dir / f"{name}-species-list.txt").write_text("Robin\n", encoding="utf-8")
         (out_dir / f"{name}-species-list-week-08.txt").write_text("Robin\n", encoding="utf-8")
 
-    out_line = f'detections_output_path = "{output_base}"\n' if explicit_output else ""
+    out_line = f'detections_output_path = "{_toml_str(output_base)}"\n' if explicit_output else ""
     pamproj.write_text(
         "[project]\n"
-        f'audio_recordings_path = "{audio_root}"\n'
+        f'audio_recordings_path = "{_toml_str(audio_root)}"\n'
         + out_line
         + 'sdcard_name_pattern = "^FIELD-"\n'
         + "birdnet_min_conf = 0.4\n",
@@ -126,8 +136,8 @@ def test_migrate_output_base_equals_audio_root(tmp_path: Path) -> None:
     pamproj = tmp_path / "demo.pamproj"
     pamproj.write_text(
         "[project]\n"
-        f'audio_recordings_path = "{audio_root}"\n'
-        f'detections_output_path = "{audio_root}"\n',
+        f'audio_recordings_path = "{_toml_str(audio_root)}"\n'
+        f'detections_output_path = "{_toml_str(audio_root)}"\n',
         encoding="utf-8",
     )
 
@@ -144,7 +154,7 @@ def test_migrate_without_output_tree_still_writes_project_file(tmp_path: Path) -
     audio_root.mkdir()
     pamproj = tmp_path / "demo.pamproj"
     pamproj.write_text(
-        f'[project]\naudio_recordings_path = "{audio_root}"\n', encoding="utf-8"
+        f'[project]\naudio_recordings_path = "{_toml_str(audio_root)}"\n', encoding="utf-8"
     )
 
     report = migrate(load_legacy(pamproj))
