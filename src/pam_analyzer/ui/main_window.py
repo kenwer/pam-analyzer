@@ -116,7 +116,7 @@ class MainWindow(QMainWindow):
 
     def _wire_actions(self) -> None:
         self.ui.action_new.triggered.connect(self._on_new)
-        self.ui.action_open.triggered.connect(self._on_open)
+        self.ui.action_open_project_folder.triggered.connect(self._on_open_project_folder)
         self.ui.action_open_legacy_pamproj.triggered.connect(self._on_open_legacy_pamproj)
         self.ui.action_close.triggered.connect(self._on_close_project)
         self.ui.action_clear_recent.triggered.connect(self._on_clear_recent)
@@ -173,21 +173,20 @@ class MainWindow(QMainWindow):
 
     def _wire_welcome(self) -> None:
         self._welcome_panel.newRequested.connect(self._on_new)
-        self._welcome_panel.openRequested.connect(self._on_open)
+        self._welcome_panel.openProjectFolderRequested.connect(self._on_open_project_folder)
         self._welcome_panel.recentRequested.connect(self._open_recent)
 
     # File menu handlers
 
     def _on_new(self) -> None:
-        folder_str = QFileDialog.getExistingDirectory(
-            self,
-            "Choose or create the project folder",
-            self._settings.last_directory,
-        )
-        if folder_str:
-            self._open_folder(Path(folder_str), confirm_create=False)
+        dialog = QFileDialog(self, "Choose or create the project folder", self._settings.last_directory)
+        dialog.setFileMode(QFileDialog.FileMode.Directory)
+        dialog.setOption(QFileDialog.Option.ShowDirsOnly)
+        dialog.setLabelText(QFileDialog.DialogLabel.Accept, "Initialize Project")
+        if dialog.exec() == QFileDialog.DialogCode.Accepted and dialog.selectedFiles():
+            self._open_folder(Path(dialog.selectedFiles()[0]), confirm_create=False)
 
-    def _on_open(self) -> None:
+    def _on_open_project_folder(self) -> None:
         folder_str = QFileDialog.getExistingDirectory(
             self,
             "Open project folder",
@@ -199,7 +198,7 @@ class MainWindow(QMainWindow):
     def _on_open_legacy_pamproj(self) -> None:
         """Migrate a legacy .pamproj file wherever it lives.
 
-        Unlike _on_open, this doesn't require the file to sit inside the
+        Unlike _on_open_project_folder, this doesn't require the file to sit inside the
         folder being browsed to: the audio root is read from the file
         itself (with a picker fallback in _migrate_legacy if that path
         turns out to be stale), so a .pamproj not yet moved into its audio

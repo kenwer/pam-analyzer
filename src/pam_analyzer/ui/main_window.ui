@@ -112,7 +112,7 @@
      <addaction name="action_clear_recent"/>
     </widget>
     <addaction name="action_new"/>
-    <addaction name="action_open"/>
+    <addaction name="action_open_project_folder"/>
     <addaction name="action_open_legacy_pamproj"/>
     <addaction name="recent_projects_menu"/>
     <addaction name="separator"/>
@@ -140,9 +140,9 @@
     <string>Ctrl+N</string>
    </property>
   </action>
-  <action name="action_open">
+  <action name="action_open_project_folder">
    <property name="text">
-    <string>&amp;Open Project…</string>
+    <string>&amp;Open Project Folder…</string>
    </property>
    <property name="shortcut">
     <string>Ctrl+O</string>

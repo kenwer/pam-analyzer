@@ -24,7 +24,7 @@ from .ui_welcome_panel import Ui_WelcomePanel
 
 class WelcomePanel(QWidget):
     newRequested = Signal()
-    openRequested = Signal()
+    openProjectFolderRequested = Signal()
     recentRequested = Signal(str)  # path str
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -36,7 +36,7 @@ class WelcomePanel(QWidget):
         self.ui.recent_list.setItemDelegate(_RecentProjectDelegate(self.ui.recent_list))
 
         self.ui.new_button.clicked.connect(self.newRequested.emit)
-        self.ui.open_button.clicked.connect(self.openRequested.emit)
+        self.ui.open_project_folder_button.clicked.connect(self.openProjectFolderRequested.emit)
         self.ui.recent_list.itemActivated.connect(self._on_recent_activated)
         self.ui.recent_list.itemClicked.connect(self._on_recent_activated)
 
