@@ -67,9 +67,7 @@ class AnalysisRunner(Protocol):
         self,
         *,
         campaigns: list[CampaignRunInput],
-        output_base: Path,
         settings: AnalysisSettings,
         preferred_lang: str,
-        audio_root: Path,
         progress: AnalysisProgress,
     ) -> AnalysisRunResult: ...

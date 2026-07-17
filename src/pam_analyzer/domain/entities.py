@@ -7,15 +7,14 @@ from .values import LatLon
 
 @dataclass(frozen=True, slots=True)
 class Project:
-    """Project settings persisted in a .pamproj TOML file.
+    """Project settings persisted as pam-analyzer.toml inside the project folder.
 
-    Field names mirror the original PAM Analyzer schema for drop-in compatibility.
+    The folder is the project: it holds the settings file and one subfolder
+    per campaign, so a project stores no paths and can be moved freely.
     """
 
-    path: Path
-    audio_recordings_path: Path
+    folder: Path
     sdcard_name_pattern: str = "^(MSD-|2MM)"  # AudioMoth (MSD-) and Song Meter (2MM serials)
-    detections_output_path: Path | None = None
     analysis_model: str = "BirdNET-2.4"
     birdnet_min_conf: float = 0.25
     birdnet_overlap: float = 0.0
@@ -26,18 +25,12 @@ class Project:
 
     @property
     def name(self) -> str:
-        return self.path.stem
-
-    @property
-    def output_base(self) -> Path:
-        if self.detections_output_path:
-            return self.detections_output_path
-        return self.audio_recordings_path / f"{self.name}-detections"
+        return self.folder.name
 
 
 @dataclass(frozen=True, slots=True)
 class Campaign:
-    """A time-bounded ARU deployment. Lives as a folder under audio_recordings_path."""
+    """A time-bounded ARU deployment. Lives as a folder under the project folder."""
 
     name: str
     folder: Path
@@ -129,7 +122,7 @@ class CampaignInventory:
 
 @dataclass(frozen=True, slots=True)
 class AudioInventory:
-    """What audio is on disk under a project's audio_recordings_path.
+    """What audio is on disk under a project folder.
 
     The empty inventory (campaigns=()) is the natural 'no project loaded' value
     and also the state before discovery runs.

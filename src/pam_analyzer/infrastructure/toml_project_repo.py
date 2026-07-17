@@ -1,21 +1,26 @@
-"""Reads/writes .pamproj TOML files. Drop-in compatible with the original schema."""
+"""Reads/writes the pam-analyzer.toml TOML file inside a project folder.
+
+The file stores settings only, never paths: the folder it lives in IS the
+project, so projects stay relocatable. Unknown keys (including the path
+fields of the legacy standalone .pamproj format) are dropped on load and
+missing keys fall back to dataclass defaults.
+"""
 
 import tomllib
-from dataclasses import asdict, dataclass, field, fields, replace
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
 import tomli_w
 
 from ..domain import Project
+from . import paths
 
 
 @dataclass
 class _ProjectToml:
-    """Mirrors the original ProjectSettings TOML schema exactly."""
+    """Mirrors the on-disk [project] table exactly."""
 
-    audio_recordings_path: str = ""
     sdcard_name_pattern: str = "^(MSD-|2MM)"
-    detections_output_path: str = ""
     analysis_model: str = "BirdNET-2.4"
     birdnet_min_conf: float = 0.25
     birdnet_overlap: float = 0.0
@@ -25,34 +30,37 @@ class _ProjectToml:
     snippet_padding_after: float = 0.0
 
 
+def project_from_table(folder: Path, table: dict) -> Project:
+    """Build a Project from a [project] TOML table, dropping unknown keys.
+
+    Shared with the legacy .pamproj migration, whose settings keys are a
+    superset of the current schema, so a new setting only needs to be added
+    here and in _ProjectToml.
+    """
+    valid = {f.name for f in fields(_ProjectToml)}
+    raw = _ProjectToml(**{k: v for k, v in table.items() if k in valid})
+    return Project(
+        folder=folder,
+        sdcard_name_pattern=raw.sdcard_name_pattern,
+        analysis_model=raw.analysis_model,
+        birdnet_min_conf=raw.birdnet_min_conf,
+        birdnet_overlap=raw.birdnet_overlap,
+        birdnet_locales=tuple(raw.birdnet_locales),
+        preferred_species_lang=raw.preferred_species_lang,
+        snippet_padding_before=raw.snippet_padding_before,
+        snippet_padding_after=raw.snippet_padding_after,
+    )
+
+
 class TomlProjectRepository:
-    def load(self, path: Path) -> Project:
-        with open(path, "rb") as f:
+    def load(self, folder: Path) -> Project:
+        with open(paths.project_toml(folder), "rb") as f:
             data = tomllib.load(f)
-        valid = {f.name for f in fields(_ProjectToml)}
-        kwargs = {k: v for k, v in data.get("project", {}).items() if k in valid}
-        raw = _ProjectToml(**kwargs)
-        audio_path = Path(raw.audio_recordings_path) if raw.audio_recordings_path else Path.home()
-        out_path = Path(raw.detections_output_path) if raw.detections_output_path else None
-        return Project(
-            path=path,
-            audio_recordings_path=audio_path,
-            sdcard_name_pattern=raw.sdcard_name_pattern,
-            detections_output_path=out_path,
-            analysis_model=raw.analysis_model,
-            birdnet_min_conf=raw.birdnet_min_conf,
-            birdnet_overlap=raw.birdnet_overlap,
-            birdnet_locales=tuple(raw.birdnet_locales),
-            preferred_species_lang=raw.preferred_species_lang,
-            snippet_padding_before=raw.snippet_padding_before,
-            snippet_padding_after=raw.snippet_padding_after,
-        )
+        return project_from_table(folder, data.get("project", {}))
 
     def save(self, project: Project) -> None:
         raw = _ProjectToml(
-            audio_recordings_path=str(project.audio_recordings_path),
             sdcard_name_pattern=project.sdcard_name_pattern,
-            detections_output_path=(str(project.detections_output_path) if project.detections_output_path else ""),
             analysis_model=project.analysis_model,
             birdnet_min_conf=project.birdnet_min_conf,
             birdnet_overlap=project.birdnet_overlap,
@@ -61,18 +69,12 @@ class TomlProjectRepository:
             snippet_padding_before=project.snippet_padding_before,
             snippet_padding_after=project.snippet_padding_after,
         )
-        project.path.parent.mkdir(parents=True, exist_ok=True)
-        with open(project.path, "wb") as f:
+        project.folder.mkdir(parents=True, exist_ok=True)
+        with open(paths.project_toml(project.folder), "wb") as f:
             tomli_w.dump({"project": asdict(raw)}, f)
 
-    def create(self, path: Path) -> Project:
-        """Create a new project file at path with default audio root = path.parent."""
-        project = Project(path=path, audio_recordings_path=path.parent)
+    def create(self, folder: Path) -> Project:
+        """Initialize folder as a project by writing a default pam-analyzer.toml."""
+        project = Project(folder=folder)
         self.save(project)
         return project
-
-    def save_as(self, project: Project, new_path: Path) -> Project:
-        """Persist project under new_path and return the rebound copy."""
-        rebound = replace(project, path=new_path)
-        self.save(rebound)
-        return rebound

@@ -1,9 +1,13 @@
 """User-level persistent settings (QSettings wrapper).
 
 Tracks recent projects and window geometry across sessions. Project content
-itself is stored in `.pamproj` TOML files. This module only holds UI/host state.
+itself is stored in the project folder's pam-analyzer.toml TOML file. This
+module only holds UI/host state. Recent entries are project folder paths.
+Pre-upgrade entries pointing at legacy .pamproj files are kept so the main
+window can offer migration when they are opened.
 """
 
+from pathlib import PurePath
 from typing import TypeVar, cast
 
 from PySide6.QtCore import QByteArray, QDir, QSettings
@@ -51,6 +55,15 @@ class AppSettings:
         self._settings.setValue(self.KEY_RECENT_PROJECTS, recent)
         self._settings.endGroup()
 
+    def remove_recent_project(self, path: str) -> None:
+        recent = self.recent_projects
+        if path not in recent:
+            return
+        recent.remove(path)
+        self._settings.beginGroup(self.GROUP_RECENT)
+        self._settings.setValue(self.KEY_RECENT_PROJECTS, recent)
+        self._settings.endGroup()
+
     def clear_recent_projects(self) -> None:
         self._settings.beginGroup(self.GROUP_RECENT)
         self._settings.remove(self.KEY_RECENT_PROJECTS)
@@ -58,8 +71,9 @@ class AppSettings:
 
     @property
     def last_directory(self) -> str:
+        """Folder containing the most recent project folder, as a dialog start dir."""
         recent = self.recent_projects
-        return str(recent[0]).rsplit("/", 1)[0] if recent else QDir.homePath()
+        return str(PurePath(recent[0]).parent) if recent else QDir.homePath()
 
     # window geometry
 

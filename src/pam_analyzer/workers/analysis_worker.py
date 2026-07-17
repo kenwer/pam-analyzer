@@ -79,10 +79,8 @@ class AnalysisWorker(QObject):
             ]
             result = self._runner.run(
                 campaigns=inputs,
-                output_base=self._project.output_base,
                 settings=self._settings,
                 preferred_lang=self._project.preferred_species_lang,
-                audio_root=self._project.audio_recordings_path,
                 progress=prog,
             )
         except CancelledError:

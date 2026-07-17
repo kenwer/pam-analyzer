@@ -26,7 +26,7 @@ def test_format_tags_must_haves_only() -> None:
 def test_format_then_parse_round_trips() -> None:
     """Writing a list with markers and feeding it back as input must yield
     the same scientific names. This is the property the marker convention
-    depends on: a user can copy lines from a *-species-list.txt into a
+    depends on: a user can copy lines from an applied-species-list.txt into a
     campaign's species_list.txt without manual cleanup."""
     species = frozenset({"Parus major", "Corvus corone", "Erithacus rubecula"})
     must_haves = frozenset({"Parus major"})

@@ -522,7 +522,7 @@ class BirdNetPanel(QWidget):
     def _current_output_dir(self) -> Path | None:
         if self._app_state.project is None:
             return None
-        return self._app_state.project.output_base
+        return self._app_state.project.folder
 
     def _open_path(self, path: Path | None) -> None:
         if path is None:

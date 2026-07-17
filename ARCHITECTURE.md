@@ -98,7 +98,7 @@ knowledge of `AppState`; the panel relays relevant signals (`watching_started`,
 ### Detection schema
 `domain/detection_schema.py` is the single definition of the Detection record's
 shape: column names and canonical order, per-column access (`ColumnSpec`), CSV row
-serialization, and the `{campaign}-detections-{model_key}.csv` filename pattern.
+serialization, and the `detections-{model_key}.csv` filename pattern.
 `CsvDetectionRepository`, `BaseAnalysisRunner`, `paths`, `analysis_discovery`, and
 `DetectionsTableModel` all derive from it, so a schema change (new column, renamed
 column, filename convention) lands in one file. The Examine panel's compound table

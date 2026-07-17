@@ -104,13 +104,10 @@ class BaseAnalysisRunner(ABC):
         self,
         *,
         campaigns: list[CampaignRunInput],
-        output_base: Path,
         settings: AnalysisSettings,
         preferred_lang: str,
-        audio_root: Path,
         progress: AnalysisProgress,
     ) -> AnalysisRunResult:
-        output_base.mkdir(parents=True, exist_ok=True)
         t0 = time.monotonic()
 
         # Project files saved under the old birdnet_analyzer locale scheme
@@ -135,15 +132,12 @@ class BaseAnalysisRunner(ABC):
             if progress.is_cancelled():
                 raise CancelledError()
             run_progress.start_campaign(files_completed)
-            camp_out = output_base / ci.name
             try:
                 results.append(
                     self._run_campaign(
                         ci,
-                        camp_out,
                         settings,
                         preferred_lang,
-                        audio_root,
                         run_progress,
                         i,
                         total,
@@ -167,10 +161,8 @@ class BaseAnalysisRunner(ABC):
     def _run_campaign(
         self,
         ci: CampaignRunInput,
-        output_dir: Path,
         settings: AnalysisSettings,
         preferred_lang: str,
-        audio_root: Path,
         progress: AnalysisProgress,
         campaign_index: int,
         total_campaigns: int,
@@ -178,7 +170,9 @@ class BaseAnalysisRunner(ABC):
     ) -> CampaignRunResult:
         campaign_name = ci.name
         t0 = time.monotonic()
-        output_dir.mkdir(parents=True, exist_ok=True)
+        # Analysis artifacts live inside the campaign folder itself, so a
+        # campaign stays self-contained and relocatable.
+        output_dir = ci.folder
 
         emit_progress(
             progress,
@@ -193,9 +187,7 @@ class BaseAnalysisRunner(ABC):
         wav_files = list_audio_files(ci.folder)
         wav_count = len(wav_files)
 
-        detections_csv = paths.campaign_csv_for_model(
-            output_dir.parent, campaign_name, self.model_key
-        )
+        detections_csv = paths.campaign_csv_for_model(ci.folder, self.model_key)
 
         # Resolve the species filter before opening the inference session:
         # in LOCATION mode this pre-warms the geo model and computes per-
@@ -211,7 +203,7 @@ class BaseAnalysisRunner(ABC):
         # round-trips cleanly if anyone pastes lines back into a campaign's
         # species_list.txt.
         species_list_txt = write_species_list_files(
-            output_dir, campaign_name, per_week_allowed, must_haves
+            output_dir, per_week_allowed, must_haves
         )
 
         fieldnames = schema.write_fieldnames(settings.locales)
@@ -368,8 +360,10 @@ class BaseAnalysisRunner(ABC):
                     aru = ""
                 aru_set.add(aru)
 
+                # Campaign-relative so the campaign folder can be renamed or
+                # moved without invalidating its own CSV.
                 try:
-                    file_rel = parsed.file_path.relative_to(audio_root).as_posix()
+                    file_rel = parsed.file_path.relative_to(ci.folder).as_posix()
                 except ValueError:
                     file_rel = parsed.file_path.as_posix()
 

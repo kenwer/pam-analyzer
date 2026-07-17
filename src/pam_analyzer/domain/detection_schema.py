@@ -182,18 +182,21 @@ def detection_to_row(d: Detection) -> dict[str, str]:
     return row
 
 
-_DETECTIONS_INFIX = "-detections-"
+_DETECTIONS_PREFIX = "detections-"
 _CSV_SUFFIX = ".csv"
 
 
-def detections_csv_name(campaign_name: str, model_key: str) -> str:
-    """Filename of a campaign's detections CSV for one model run."""
-    return f"{campaign_name}{_DETECTIONS_INFIX}{model_key}{_CSV_SUFFIX}"
+def detections_csv_name(model_key: str) -> str:
+    """Filename of a campaign's detections CSV for one model run.
+
+    Deliberately free of the campaign name so renaming a campaign folder
+    never invalidates its CSVs.
+    """
+    return f"{_DETECTIONS_PREFIX}{model_key}{_CSV_SUFFIX}"
 
 
-def model_key_from_csv_name(campaign_name: str, filename: str) -> str | None:
+def model_key_from_csv_name(filename: str) -> str | None:
     """Inverse of detections_csv_name; None when the name doesn't match."""
-    prefix = f"{campaign_name}{_DETECTIONS_INFIX}"
-    if not (filename.startswith(prefix) and filename.endswith(_CSV_SUFFIX)):
+    if not (filename.startswith(_DETECTIONS_PREFIX) and filename.endswith(_CSV_SUFFIX)):
         return None
-    return filename[len(prefix) : -len(_CSV_SUFFIX)]
+    return filename[len(_DETECTIONS_PREFIX) : -len(_CSV_SUFFIX)]

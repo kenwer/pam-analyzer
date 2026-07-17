@@ -1,4 +1,4 @@
-"""Reads/writes campaign.toml files and discovers campaigns under an audio root."""
+"""Reads/writes campaign.toml files and discovers campaigns under a project folder."""
 
 import dataclasses
 import logging
@@ -16,17 +16,11 @@ _log = logging.getLogger(__name__)
 
 
 class TomlCampaignRepository:
-    def discover(self, audio_root: Path) -> list[Campaign]:
-        if not audio_root.exists():
-            return []
+    def discover(self, project_folder: Path) -> list[Campaign]:
         dbg = _log.isEnabledFor(logging.DEBUG)
 
         t0 = time.perf_counter() if dbg else 0.0
-        candidates = [
-            d
-            for d in audio_root.iterdir()
-            if d.is_dir() and paths.campaign_toml(d).exists()
-        ]
+        candidates = paths.campaign_folders(project_folder)
         if dbg:
             _log.debug("TomlCampaignRepository.discover: %d candidates, scan %.2fs", len(candidates), time.perf_counter() - t0)
 

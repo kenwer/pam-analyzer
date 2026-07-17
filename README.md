@@ -50,7 +50,7 @@ Note: On any supported OS you can also easily run PAM Analyzer from source using
 
 
 ## Features
-* **Project & campaign management**: Organizes monitoring deployments into projects (`.pamproj`) and campaigns, each supporting independent species filters (via geographic coordinates or custom species lists).
+* **Project & campaign management**: Organizes monitoring deployments into self-contained project folders. A project folder contains the campaigns, each supporting independent species filters (via geographic coordinates and/or custom species lists). Projects and campaigns store no absolute paths, so they are relocatable.
 * **SD card import**: Automatically detects ARU SD cards matching a configured volume name pattern and imports audio into a structured `campaign/ARU/week` directory layout. Both AudioMoth and Wildlife Acoustics Song Meter Micro cards are supported, including Song Meter's `Data/` subfolder layout. WAV recordings are transcoded to FLAC (lossless, 16-bit PCM) on import to save disk space.
 * **Multi-model analysis**: Run BirdNET-2.4 or Google's Perch-2.0 from the same panel via a model selector. Both support per-campaign or batch-across-campaigns runs with a configurable confidence threshold and segment overlap. Each model writes its own CSV per campaign so multiple model runs can coexist (see [Output files](#output-files)).
 * **Detection review**: Provides a tabular interface for detections with multi-column sorting, filtering, inline annotation (verification status, species correction, comments), and integrated audio playback.
@@ -60,21 +60,19 @@ Note: On any supported OS you can also easily run PAM Analyzer from source using
 ## Usage
 Download and execute the binary for your platform from the [Download](#download) section.
 
-Upon first launch, use `New Project` to initialize a project and configure the audio root and output paths. Then create at least one campaign in the `Campaigns` panel (audio import from SD cards is also handled there), run analysis in the `BirdNET` panel, and review detections in the `Examine` panel. More details are in the workflow section below.
+Upon first launch, use `New Project` and pick (or create) the folder that will hold your data such as recordings and detection CSVs. The app marks it as a project by writing a `pam-analyzer.toml` settings file into it. Then create at least one campaign in the `Campaigns` panel (audio import from SD cards is also handled there), run analysis in the `BirdNET` panel, and review detections in the `Examine` panel. More details are in the workflow section below.
 
 
 ## Workflow
 The application is organized into four panels that map to the steps of a typical PAM analysis workflow.
 
 ### Project Settings
-Configure a study in the project settings: 
+Configure a study in the project settings:
 
-- Set the **audio recordings root directory**: this is where the audio data from the ARUs gets imported to.
-- the detections output path
 - If needed adjust the **SD card volume name pattern**: A regular expression to match SD card volume names for your ARUs. The default matches both AudioMoth (`MSD-`) and Song Meter (`2MM`) cards; widen or narrow it to suit your devices.
 - You can also set the **preferred species language** that is used when exporting audio snippets and for the species column in the examine data table.
 
-After making project config changes you may want to save your project using `File -> Save Project` (or `⌘S` / `Ctrl+S`) to save this configuration as a `.pamproj` file.
+All settings are saved automatically to the `pam-analyzer.toml` file inside the project folder.
 
 ### Campaigns
 Create and manage the campaigns that belong to this project. The panel shows all discovered campaigns in a scrollable list. Clicking a campaign opens its settings in an inline form on the right. From here you can:
@@ -86,7 +84,7 @@ Create and manage the campaigns that belong to this project. The panel shows all
 - **Delete** a campaign via the trash icon on its list card, with an inline confirmation step.
 - **Import audio** from SD cards directly within a campaign's detail view. Click the import button to start monitoring for SD card volumes matching the configured name pattern. When a matching card is inserted, files are imported into the `campaign/ARU/week` directory structure with deduplication and conflict resolution. WAV recordings are transcoded to FLAC (lossless, 16-bit PCM) to save disk space, and any GUANO metadata (timestamp, location, device) is carried across into the FLAC. The encode is verified against the source before a card is cleared, so a recording is never lost to a bad transcode; FLAC sources and the device's provenance file are copied through untouched. The device family is recognised from the card layout: AudioMoth keeps recordings and a `CONFIG.TXT` at the card root, while Song Meter keeps recordings under `Data/` and a `<serial>_Summary.txt` log at the root.
 
-Campaigns are discovered automatically from the audio recordings root: any subdirectory containing a `campaign.toml` sidecar is treated as a campaign.
+Campaigns are discovered automatically from the project folder: any subdirectory containing a `campaign.toml` sidecar is treated as a campaign.
 
 ### Run bird species detection using BirdNET-2.4 or Perch-2.0
 Pick a model from the dropdown and configure its parameters in the panel. See [Models](#models) for a side-by-side comparison of BirdNET-2.4 and Perch-2.0 and guidance on when to use each.
@@ -94,25 +92,18 @@ Pick a model from the dropdown and configure its parameters in the panel. See [M
 Common parameters include minimum confidence threshold and additional language columns for species names. Each detection is assigned a within-segment `Rank` (1 = highest-confidence species in that window), useful for deprioritising detections that are consistently outcompeted by other species in the same clip. Analyses can be run per-campaign or across all campaigns. See [Output files](#output-files) for what is written to disk.
 
 ### Output files
-Analysis results are written to the **detections output path** set in Project Settings. When that path is left empty it defaults to `{audio_recordings_root}/{project}-detections/`. Each campaign gets its own subfolder there, with one detections CSV **per model run**:
+Analysis results are written directly into each campaign folder, next to the audio, with one detections CSV **per model run**:
 
 ```
-{detections_output_path}/
+{project}/
 └── {campaign}/
-    ├── {campaign}-detections-BirdNET-2.4.csv  # one row per BirdNET detection
-    ├── {campaign}-detections-Perch-2.0.csv    # one row per Perch v2 detection (only if Perch was run)
-    ├── {campaign}-species-list.txt            # location mode only: the geographic species list BirdNET used
-    └── {aru}/.../week_NN/
-        └── *.BirdNET.results.csv              # BirdNET's own raw output, one file per recording
+    ├── detections-BirdNET-2.4.csv        # one row per BirdNET detection
+    ├── detections-Perch-2.0.csv          # one row per Perch v2 detection (only if Perch was run)
+    └── applied-species-list-week-NN.txt  # per BirdNET week, when the audio is organised in week_NN folders
 ```
 
-- **`{campaign}-detections-{model_key}.csv`** is the file you work with. The `{model_key}` suffix is the runner's identifier (`BirdNET-2.4` or `Perch-2.0`), so multiple model runs coexist for the same campaign. Every row carries a `Model` column identifying its source, plus the annotation columns (`Verified`, `Corrected_Species`, `Comment`). The Examine panel loads every model file it finds for the campaign and concatenates them; annotations are written back to the file the row came from.
-- **`*.BirdNET.results.csv`** are BirdNET-Analyzer's raw per-recording outputs. The app parses them to build the BirdNET detections CSV and then leaves them on disk, so a re-run can reuse them. (Perch v2 doesn't produce intermediate per-recording files.)
-
-Alongside the CSVs the app saves the species lists involved in the run as plain `.txt` files:
-
-- **`{campaign}-species-list-input.txt`** (and, per week, `{campaign}-species-list-week-NN-input.txt`) is the list handed *to* BirdNET as input. It is written in species-list mode (a copy of your list) and in location mode when a must-have species list is merged on top of the geographic list. Plain location mode writes no input file, because BirdNET filters directly from the coordinates.
-- **`{campaign}-species-list.txt`** (and, per week, `{campaign}-species-list-week-NN.txt`) is the geographic species list BirdNET *derived* from the campaign's coordinates, exported in location mode for reference. Perch v2 reuses these lists as its post-filter when run in location mode.
+- For each campaign **`detections-{model_key}.csv`** is the file where the species detections are stored. The `{model_key}` suffix is the runner's identifier (`BirdNET-2.4` or `Perch-2.0`), so multiple model runs coexist for the same campaign. Every row carries a `Model` column identifying its source, plus the annotation columns (`Verified`, `Corrected_Species`, `Comment`). The Examine panel loads every model file it finds for the campaign and concatenates them. Annotations are written back to the file the row came from. The `File` column is stored relative to the campaign folder, so renaming or moving a campaign never breaks its CSVs.
+- **`applied-species-list*.txt`** is the merged list (geographic list plus an optional must-have species list, the latter tagged `# must-have`) the run actually filtered against, exported in location mode for reference.
 
 No combined, summary, or per-week CSVs are produced: the "All campaigns" view in the Examine panel concatenates the per-campaign CSVs in memory, so it always reflects the current per-campaign files.
 
@@ -131,11 +122,9 @@ Both suffixes can appear together, e.g. `…_corrected_confirmed.wav`.
 ### Global
 | Windows/Linux | macOS | Action | Description |
 | --- | --- | --- | --- |
-| Ctrl+N        | ⌘N   | **New Project**        | Create a new empty in-memory project |
-| Ctrl+O        | ⌘O   | **Open Project...**    | Open an existing `.pamproj` file |
-| Ctrl+S        | ⌘S   | **Save Project**       | Save to the current file, or prompt if unsaved |
-| Ctrl+Shift+S  | ⇧⌘S  | **Save Project As...** | Save to a new location |
-| Ctrl+W        | ⌘W   | **Close Project**      | Close and return to the welcome screen |
+| Ctrl+N        | ⌘N   | **New Project Folder**        | Initialize a folder as a new project |
+| Ctrl+O        | ⌘O   | **Open Project Folder...**    | Open an existing project folder |
+| Ctrl+W        | ⌘W   | **Close Project**      | Close the current project and return to the welcome screen |
 | Ctrl+Q        | ⌘Q   | **Quit**               | Exit the application |
 
 ### Examine panel: detection row selected
@@ -157,12 +146,12 @@ These shortcuts work whenever a row is selected in the Examine panel and no cell
 
 ## Core Concepts
 ### Project
-The largest organisational unit. A project represents a study or monitoring programme, e.g. "Bird survey of Lake Constance wetlands 2026". It holds project-wide configuration (audio recordings root path, ARU SD card volume name pattern, preferred species name language) and groups all campaigns belonging to that study. A project maps to one `.pamproj` file on disk.
+The largest organisational unit. A project represents a study or monitoring programme, e.g. "Bird survey of Lake Constance wetlands 2026". A project is a folder: it holds a `pam-analyzer.toml` settings file (ARU SD card volume name pattern, preferred species name language) and one subfolder per campaign. The settings file stores no paths, so the whole project can be moved, backed up, or shared as one folder. The project name is simply the folder name.
 
 > **Note:** Species filter settings (lat/lon location or species list) are campaign-scoped, not project-scoped.
 
 ### Campaign
-A campaign is a time-bounded field deployment during which a set of ARUs were active. The campaign name is chosen by the researcher and typically encodes start date, end date, and study area, e.g. `Campaign-20260114-20260216-Federsee`. On the file system each campaign lives in its own subdirectory under the audio recordings root and carries a `campaign.toml` sidecar that stores its species filter configuration. Because the sidecar travels with the audio, campaigns are self-contained and can be moved, archived, or shared independently of the project file. Campaigns are discovered automatically from the audio root. Individual ARUs within a campaign may be deployed at distinct locations within the study area.
+A campaign is a time-bounded field deployment during which a set of ARUs were active. The campaign name is chosen by the researcher and typically encodes start date, end date, and study area, e.g. `Campaign-20260114-20260216-Federsee`. On the file system each campaign lives in its own subdirectory under the project folder and carries a `campaign.toml` sidecar that stores its species filter configuration. Detection CSVs are written into the campaign folder too, with audio paths stored relative to it, so a campaign is fully self-contained and can be moved, archived, or shared, including its analysis results and annotations. Campaigns are discovered automatically from the project folder. Individual ARUs within a campaign may be deployed at distinct locations within the study area.
 
 ```toml
 species_filter_mode = "location"  # "location" or "list"
@@ -179,7 +168,8 @@ An individual recording device, identified by its SD card volume name (e.g. `MSD
 
 After setting up a project and importing ARU SD cards, the resulting directory structure looks like this:
 ```
-{audio_recordings_root_path}/
+{project}/
+├── pam-analyzer.toml             # project settings, written automatically
 └── {campaign}/
     ├── campaign.toml             # species filter configuration sidecar
     ├── species_list.txt          # species-list mode only: the campaign's species filter list
@@ -187,7 +177,7 @@ After setting up a project and importing ARU SD cards, the resulting directory s
     └── {aru}/
 ```
 
-`campaign.toml`, `species_list.txt`, and `must_have_species.txt` live in the campaign folder, beside the audio, so a campaign stays self-contained and can be moved, archived, or shared independently of the project file. The species-list files are present only when the corresponding filter option is used.
+`campaign.toml`, `species_list.txt`, `must_have_species.txt`, and (after a run) the detection CSVs live in the campaign folder, beside the audio, so a campaign stays self-contained and can be moved, archived, or shared independently of the project. The species-list files are present only when the corresponding filter option is used.
 
 Example:
 ```

@@ -1,7 +1,7 @@
-"""Walks audio_recordings_path to produce an AudioInventory snapshot.
+"""Walks a project folder to produce an AudioInventory snapshot.
 
 The disk layout we discover is what AudioImporter writes:
-  audio_recordings_path/
+  <project folder>/
     <campaign>/                   # has campaign.toml
       <card>/                     # one subfolder per imported SD card
         week_NN/
@@ -47,8 +47,8 @@ class _CardStructure:
     by_week: dict[int, list[Path]]
 
 
-def discover_audio_inventory(audio_root: Path) -> AudioInventory:
-    """Build an AudioInventory from the filesystem under audio_root.
+def discover_audio_inventory(project_folder: Path) -> AudioInventory:
+    """Build an AudioInventory from the filesystem under the project folder.
 
     Directory structure and file sizes are both resolved with a bounded
     thread pool: on local disks the per-entry type/size checks are
@@ -57,15 +57,12 @@ def discover_audio_inventory(audio_root: Path) -> AudioInventory:
     on latency rather than throughput. Safe to call synchronously from the
     UI thread on project load and after each import.
     """
-    if not audio_root.exists():
-        return AudioInventory()
-
     dbg = _log.isEnabledFor(logging.DEBUG)
     t0 = time.perf_counter() if dbg else 0.0
 
-    campaign_dirs = [
-        sub for sub in sorted(audio_root.iterdir()) if sub.is_dir() and paths.campaign_toml(sub).exists()
-    ]
+    campaign_dirs = paths.campaign_folders(project_folder)
+    if not campaign_dirs:
+        return AudioInventory()
     if dbg:
         _log.debug("audio_inventory: %d campaign dirs, candidate scan %.2fs", len(campaign_dirs), time.perf_counter() - t0)
 

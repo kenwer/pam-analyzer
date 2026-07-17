@@ -175,7 +175,7 @@ class ExaminePanel(QWidget):
             self._flush_autosave()
         loaded = project is not None
         self._set_controls_enabled(loaded)
-        audio_root = project.audio_recordings_path if loaded else None  # type: ignore[union-attr]
+        audio_root = project.folder if loaded else None  # type: ignore[union-attr]
         self.ui.detections_table.setAudioRoot(audio_root)
         # Sync padding spinboxes + audio player from the new project.
         before = float(getattr(project, "snippet_padding_before", 0.0) or 0.0)
@@ -215,9 +215,9 @@ class ExaminePanel(QWidget):
         data = self.ui.campaign_combo.itemData(index)
         try:
             if data == _ALL_CAMPAIGNS_DATA:
-                self._raw_detections = self._service.load_combined(project.output_base)
+                self._raw_detections = self._service.load_combined(project.folder)
             else:
-                self._raw_detections = self._service.load_for_campaign(project.output_base, str(data))
+                self._raw_detections = self._service.load_for_campaign(project.folder / str(data))
         except Exception as exc:
             self._app_state.errorOccurred.emit(f"Failed to load detections: {exc}")
             self._raw_detections = []
@@ -320,7 +320,7 @@ class ExaminePanel(QWidget):
         if not folder_str:
             return
         folder = Path(folder_str)
-        audio_root = project.audio_recordings_path
+        audio_root = project.folder
         pad_before = float(project.snippet_padding_before or 0.0)
         pad_after = float(project.snippet_padding_after or 0.0)
 

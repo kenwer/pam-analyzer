@@ -32,8 +32,24 @@ def contract_user_path(path_str: str) -> str:
     return path_str
 
 
+PROJECT_FILENAME = "pam-analyzer.toml"
+
+
+def project_toml(project_folder: Path) -> Path:
+    return project_folder / PROJECT_FILENAME
+
+
 def campaign_toml(campaign_folder: Path) -> Path:
     return campaign_folder / "campaign.toml"
+
+
+def campaign_folders(project_folder: Path) -> list[Path]:
+    """Campaign folders under a project: subdirs containing campaign.toml, sorted by name."""
+    if not project_folder.is_dir():
+        return []
+    return sorted(
+        d for d in project_folder.iterdir() if d.is_dir() and campaign_toml(d).exists()
+    )
 
 
 def species_list_file(campaign_folder: Path) -> Path:
@@ -44,23 +60,27 @@ def must_have_species_file(campaign_folder: Path) -> Path:
     return campaign_folder / "must_have_species.txt"
 
 
-def campaign_csv_for_model(output_base: Path, campaign_name: str, model_key: str) -> Path:
+def applied_species_list_file(campaign_folder: Path) -> Path:
+    """Species list the last analysis run actually applied (location mode)."""
+    return campaign_folder / "applied-species-list.txt"
+
+
+def campaign_csv_for_model(campaign_folder: Path, model_key: str) -> Path:
     """CSV path for a specific model run within a campaign.
 
     Different model runs (BirdNET, Perch v2, ...) write into the same
-    campaign directory under different filenames so the panel can load
+    campaign folder under different filenames so the panel can load
     them all and aggregate via the Model column.
     """
-    return output_base / campaign_name / detection_schema.detections_csv_name(campaign_name, model_key)
+    return campaign_folder / detection_schema.detections_csv_name(model_key)
 
 
-def campaign_csvs(output_base: Path, campaign_name: str) -> list[Path]:
+def campaign_csvs(campaign_folder: Path) -> list[Path]:
     """All detection CSVs for a campaign, sorted by name."""
-    camp_dir = output_base / campaign_name
-    if not camp_dir.is_dir():
+    if not campaign_folder.is_dir():
         return []
     return sorted(
         p
-        for p in camp_dir.iterdir()
-        if p.is_file() and detection_schema.model_key_from_csv_name(campaign_name, p.name) is not None
+        for p in campaign_folder.iterdir()
+        if p.is_file() and detection_schema.model_key_from_csv_name(p.name) is not None
     )

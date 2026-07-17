@@ -181,7 +181,6 @@ def build_allowed_lookup(
 
 def write_species_list_files(
     output_dir: Path,
-    campaign_name: str,
     per_week_allowed: dict[int, frozenset[str]],
     must_haves: frozenset[str],
 ) -> Path | None:
@@ -190,9 +189,12 @@ def write_species_list_files(
     Each file contains the merged list (geo + must-haves) the runner
     actually filtered against, with `  # must-have` appended to lines whose
     species came from the user's must-have input. One file per week when
-    week_NN folders are present, or a single <campaign>-species-list.txt
+    week_NN folders are present, or a single applied-species-list.txt
     when they are not; that single-file path is returned for inclusion in
-    CampaignRunResult.species_list_txt.
+    CampaignRunResult.species_list_txt. Filenames carry no campaign name so
+    a campaign folder rename never orphans them, and the 'applied-' prefix
+    keeps them apart from the user inputs species_list.txt and
+    must_have_species.txt.
     """
     if not per_week_allowed:
         return None
@@ -200,7 +202,7 @@ def write_species_list_files(
     output_dir.mkdir(parents=True, exist_ok=True)
     weeks = sorted(per_week_allowed)
     if weeks == [WEEK_YEAR_ROUND]:
-        single_path = output_dir / f"{campaign_name}-species-list.txt"
+        single_path = paths.applied_species_list_file(output_dir)
         single_path.write_text(
             _format_species_lines(per_week_allowed[WEEK_YEAR_ROUND], must_haves),
             encoding="utf-8",
@@ -212,11 +214,11 @@ def write_species_list_files(
             # Files without a week_NN segment in a campaign that does have
             # week folders are rare; fall back to a 'no-week' file so the
             # list is still preserved.
-            (output_dir / f"{campaign_name}-species-list.txt").write_text(
+            paths.applied_species_list_file(output_dir).write_text(
                 _format_species_lines(species, must_haves), encoding="utf-8"
             )
         else:
-            (output_dir / f"{campaign_name}-species-list-week-{w:02d}.txt").write_text(
+            (output_dir / f"applied-species-list-week-{w:02d}.txt").write_text(
                 _format_species_lines(species, must_haves), encoding="utf-8"
             )
     return None

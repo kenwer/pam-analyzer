@@ -18,6 +18,9 @@ from ..infrastructure import (
     CsvDetectionRepository,
     SoundfileAudioExtractor,
     TomlCampaignRepository,
+    find_legacy_pamproj,
+    load_legacy,
+    migrate,
     paths,
 )
 from ..workers import ImportOrchestrator
@@ -109,8 +112,6 @@ class MainWindow(QMainWindow):
     def _wire_actions(self) -> None:
         self.ui.action_new.triggered.connect(self._on_new)
         self.ui.action_open.triggered.connect(self._on_open)
-        self.ui.action_save.triggered.connect(self._app_state.save_project)
-        self.ui.action_save_as.triggered.connect(self._on_save_as)
         self.ui.action_close.triggered.connect(self._on_close_project)
         self.ui.action_clear_recent.triggered.connect(self._on_clear_recent)
         self.ui.action_quit.triggered.connect(self.close)
@@ -121,7 +122,6 @@ class MainWindow(QMainWindow):
         self._app_state.statusMessage.connect(lambda msg: self.ui.status_bar.showMessage(msg, 5000))
         self._app_state.errorOccurred.connect(lambda msg: QMessageBox.warning(self, "PAM Analyzer", msg))
         self._app_state.projectChanged.connect(self._on_project_changed)
-        self._app_state.projectDirtyChanged.connect(self._on_dirty_changed)
         self._app_state.analysisStarted.connect(self._on_analysis_started)
         self._app_state.analysisFinished.connect(self._on_analysis_finished)
         self._app_state.importStarted.connect(self._on_import_started)
@@ -173,60 +173,102 @@ class MainWindow(QMainWindow):
     # File menu handlers
 
     def _on_new(self) -> None:
-        path_str, _ = QFileDialog.getSaveFileName(
+        folder_str = QFileDialog.getExistingDirectory(
             self,
-            "New project",
+            "Choose or create the project folder",
             self._settings.last_directory,
-            "PAM Analyzer projects (*.pamproj)",
         )
-        if not path_str:
-            return
-        if not self._confirm_cancel_running():
-            return
-        path = Path(path_str)
-        if path.suffix != ".pamproj":
-            path = path.with_suffix(".pamproj")
-        self._app_state.create_project(path)
-        if self._app_state.project is not None:
-            self._remember(path)
+        if folder_str:
+            self._open_folder(Path(folder_str), confirm_create=False)
 
     def _on_open(self) -> None:
-        path_str, _ = QFileDialog.getOpenFileName(
+        folder_str = QFileDialog.getExistingDirectory(
             self,
-            "Open project",
+            "Open project folder",
             self._settings.last_directory,
-            "PAM Analyzer projects (*.pamproj)",
         )
-        if not path_str:
+        if folder_str:
+            self._open_folder(Path(folder_str), confirm_create=True)
+
+    def _open_folder(self, folder: Path, *, confirm_create: bool) -> None:
+        """Open folder as a project, offering legacy migration or initialization.
+
+        New and Open share this path so a legacy .pamproj folder is detected
+        either way; they differ only in whether initializing a fresh folder
+        needs confirmation.
+        """
+        if paths.project_toml(folder).exists():
+            self._load_and_remember(folder)
+            return
+        legacy = find_legacy_pamproj(folder)
+        if legacy is not None:
+            self._migrate_legacy(legacy)
+            return
+        if confirm_create:
+            choice = QMessageBox.question(
+                self,
+                "Not a project",
+                f"'{folder.name}' is not a PAM Analyzer project.\n"
+                "Initialize it as a new project?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Yes,
+            )
+            if choice != QMessageBox.StandardButton.Yes:
+                return
+        if not self._confirm_cancel_running():
+            return
+        self._app_state.create_project(folder)
+        if self._app_state.project is not None:
+            self._remember(folder)
+
+    def _load_and_remember(self, folder: Path) -> None:
+        if not self._confirm_cancel_running():
+            return
+        self._app_state.load_project(folder)
+        if self._app_state.project is not None:
+            self._remember(folder)
+
+    def _migrate_legacy(self, pamproj_path: Path) -> None:
+        """Offer and run the one-time conversion of a legacy .pamproj project."""
+        try:
+            legacy = load_legacy(pamproj_path)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Cannot migrate project", str(exc))
+            return
+        choice = QMessageBox.question(
+            self,
+            "Migrate project?",
+            f"'{pamproj_path.name}' uses the old project format.\n\n"
+            f"Migrating will:\n"
+            f"- write {paths.PROJECT_FILENAME} into {legacy.audio_root}\n"
+            f"- move detection CSVs into their campaign folders\n"
+            f"- keep the old file as {pamproj_path.name}.bak\n\n"
+            f"Migrate now?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Yes,
+        )
+        if choice != QMessageBox.StandardButton.Yes:
             return
         if not self._confirm_cancel_running():
             return
-        path = Path(path_str)
-        self._app_state.load_project(path)
-        if self._app_state.project is not None:
-            self._remember(path)
-
-    def _on_save_as(self) -> None:
-        if self._app_state.project is None:
+        try:
+            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+            try:
+                report = migrate(legacy)
+            finally:
+                # Restore before any dialog so the message box gets a normal cursor.
+                QApplication.restoreOverrideCursor()
+        except Exception as exc:  # noqa: BLE001  surface any filesystem failure to the user
+            QMessageBox.warning(self, "Migration failed", str(exc))
             return
-        path_str, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save project as",
-            str(self._app_state.project.path),
-            "PAM Analyzer projects (*.pamproj)",
-        )
-        if not path_str:
-            return
-        path = Path(path_str)
-        if path.suffix != ".pamproj":
-            path = path.with_suffix(".pamproj")
-        self._app_state.save_project_as(path)
-        if self._app_state.project is not None:
-            self._remember(path)
+        if report.warnings:
+            QMessageBox.information(
+                self, "Migration finished with warnings", "\n".join(report.warnings)
+            )
+        self._settings.remove_recent_project(str(pamproj_path))
+        self._load_and_remember(report.project_folder)
 
     def _on_close_project(self) -> None:
-        if not self._confirm_discard_dirty():
-            return
         if not self._confirm_cancel_running():
             return
         self._app_state.close_project()
@@ -268,18 +310,18 @@ class MainWindow(QMainWindow):
 
     def _open_recent(self, path_str: str) -> None:
         path = Path(path_str)
-        if not path.exists():
-            QMessageBox.warning(
-                self,
-                "Project not found",
-                f"The project file is no longer accessible:\n{path}",
-            )
+        if path.is_dir() and paths.project_toml(path).exists():
+            self._load_and_remember(path)
             return
-        if not self._confirm_cancel_running():
+        if path.is_file() and path.suffix == ".pamproj":
+            # A pre-upgrade recent entry pointing at a legacy project file.
+            self._migrate_legacy(path)
             return
-        self._app_state.load_project(path)
-        if self._app_state.project is not None:
-            self._remember(path)
+        QMessageBox.warning(
+            self,
+            "Project not found",
+            f"The project is no longer accessible:\n{path}",
+        )
 
     # state reactions
 
@@ -289,9 +331,8 @@ class MainWindow(QMainWindow):
             self.setWindowTitle("PAM Analyzer")
             self._show_welcome()
         else:
-            name = project.path.name  # type: ignore[attr-defined]
-            dirty = "*" if self._app_state.is_dirty else ""
-            self.setWindowTitle(f"PAM Analyzer - {name}{dirty}")
+            name = project.name  # type: ignore[attr-defined]
+            self.setWindowTitle(f"PAM Analyzer - {name}")
             self._show_tabs()
 
     def _show_welcome(self) -> None:
@@ -303,19 +344,8 @@ class MainWindow(QMainWindow):
         # Always land on the Project tab when a new project loads.
         self.ui.tab_widget.setCurrentIndex(self.ui.tab_widget.indexOf(self._project_panel))
 
-    def _on_dirty_changed(self, dirty: bool) -> None:
-        project = self._app_state.project
-        if project is None:
-            return
-        marker = "*" if dirty else ""
-        self.setWindowTitle(f"PAM Analyzer - {project.path.name}{marker}")
-        self.ui.action_save.setEnabled(dirty)
-
     def _refresh_action_state(self, project: object) -> None:
-        loaded = project is not None
-        self.ui.action_save.setEnabled(loaded and self._app_state.is_dirty)
-        self.ui.action_save_as.setEnabled(loaded)
-        self.ui.action_close.setEnabled(loaded)
+        self.ui.action_close.setEnabled(project is not None)
 
     # geometry / close
 
@@ -325,9 +355,6 @@ class MainWindow(QMainWindow):
             self.restoreGeometry(geom)
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802  Qt API
-        if not self._confirm_discard_dirty():
-            event.ignore()
-            return
         self._birdnet_panel.request_shutdown()
         self._campaigns_panel.request_shutdown()
         self._settings.window_geometry = self.saveGeometry()
@@ -368,22 +395,6 @@ class MainWindow(QMainWindow):
         finally:
             QApplication.restoreOverrideCursor()
             self.ui.status_bar.clearMessage()
-
-    def _confirm_discard_dirty(self) -> bool:
-        if not self._app_state.is_dirty:
-            return True
-        choice = QMessageBox.question(
-            self,
-            "Unsaved changes",
-            "The current project has unsaved changes. Save before continuing?",
-            QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
-            QMessageBox.StandardButton.Save,
-        )
-        if choice == QMessageBox.StandardButton.Cancel:
-            return False
-        if choice == QMessageBox.StandardButton.Save:
-            self._app_state.save_project()
-        return True
 
     # splash screen
 

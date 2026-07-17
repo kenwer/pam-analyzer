@@ -65,10 +65,7 @@ class FakeCampaignRepo:
 
 
 def _project(tmp_path: Path) -> Project:
-    return Project(
-        path=tmp_path / "p.pamproj",
-        audio_recordings_path=tmp_path / "audio",
-    )
+    return Project(folder=tmp_path)
 
 
 def test_run_passes_species_list_text_only_for_list_mode(tmp_path: Path, qtbot) -> None:
@@ -101,11 +98,7 @@ def test_run_passes_species_list_text_only_for_list_mode(tmp_path: Path, qtbot) 
 
 def test_run_forwards_project_fields(tmp_path: Path, qtbot) -> None:
     runner = FakeRunner()
-    proj = Project(
-        path=tmp_path / "p.pamproj",
-        audio_recordings_path=tmp_path / "audio",
-        preferred_species_lang="de",
-    )
+    proj = Project(folder=tmp_path, preferred_species_lang="de")
     campaigns = [Campaign(name="X", folder=tmp_path / "X", species_filter_mode=FilterMode.LOCATION)]
     worker = AnalysisWorker(runner, FakeCampaignRepo(), proj, campaigns, AnalysisSettings())
 
@@ -113,5 +106,8 @@ def test_run_forwards_project_fields(tmp_path: Path, qtbot) -> None:
 
     call = runner.calls[0]
     assert call["preferred_lang"] == "de"
-    assert call["audio_root"] == tmp_path / "audio"
-    assert call["output_base"] == proj.output_base
+    # The runner no longer receives paths; each campaign folder is both
+    # input and output.
+    assert "audio_root" not in call
+    assert "output_base" not in call
+    assert call["campaigns"][0].folder == tmp_path / "X"

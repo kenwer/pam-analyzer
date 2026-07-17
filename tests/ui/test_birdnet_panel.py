@@ -61,24 +61,24 @@ class _FakeRunner:
 
 @pytest.fixture
 def project_and_campaigns(tmp_path: Path):
-    audio_root = tmp_path / "audio"
-    audio_root.mkdir()
+    project_folder = tmp_path / "proj"
+    project_folder.mkdir()
     campaigns = [
         Campaign(
             name="alpha",
-            folder=audio_root / "alpha",
+            folder=project_folder / "alpha",
             species_filter_mode=FilterMode.LOCATION,
             location=LatLon(48.0, 11.0),
         ),
         Campaign(
             name="beta",
-            folder=audio_root / "beta",
+            folder=project_folder / "beta",
             species_filter_mode=FilterMode.LIST,
         ),
     ]
     for c in campaigns:
         TomlCampaignRepository().create(c)
-    proj = Project(path=tmp_path / "demo.pamproj", audio_recordings_path=audio_root)
+    proj = Project(folder=project_folder)
     TomlProjectRepository().save(proj)
     return proj, campaigns
 
@@ -93,7 +93,7 @@ def panel(qtbot, state: AppState, project_and_campaigns) -> BirdNetPanel:
     proj, _ = project_and_campaigns
     p = BirdNetPanel(state, {"BirdNET-2.4": _FakeRunner()}, TomlCampaignRepository())
     qtbot.addWidget(p)
-    state.load_project(proj.path)
+    state.load_project(proj.folder)
     return p
 
 
@@ -145,14 +145,15 @@ def test_slider_autosave_calls_update_birdnet_settings(panel: BirdNetPanel, stat
 
 
 def _make_result_on_disk(state: AppState, count: int = 42) -> AnalysisRunResult:
-    """Plant a real CSV under the project's output_base so the disk-discovery
+    """Plant a real CSV inside the alpha campaign folder so the disk-discovery
     triggered by _on_succeeded picks it up, and return a matching in-memory
     AnalysisRunResult for completeness."""
     project = state.project
     assert project is not None
-    campaign_dir = project.output_base / "alpha"
+    campaign_dir = project.folder / "alpha"
     campaign_dir.mkdir(parents=True, exist_ok=True)
-    csv_path = campaign_dir / "alpha-detections-BirdNET-2.4.csv"
+    (campaign_dir / "campaign.toml").touch()
+    csv_path = campaign_dir / "detections-BirdNET-2.4.csv"
     csv_path.write_text(
         "Species,Confidence\n" + "Robin,0.9\n" * count,
         encoding="utf-8",
@@ -186,15 +187,13 @@ def test_on_succeeded_switches_to_results_page(panel: BirdNetPanel, state: AppSt
 def test_loads_previous_results_from_disk(qtbot, tmp_path: Path):
     """Opening a project that already has detection CSVs should surface them
     in the BirdNET panel without the user re-running analysis."""
-    audio_root = tmp_path / "audio"
-    audio_root.mkdir()
-    proj = Project(path=tmp_path / "loaded.pamproj", audio_recordings_path=audio_root)
+    proj = Project(folder=tmp_path / "loaded")
     TomlProjectRepository().save(proj)
 
-    output_base = proj.output_base
-    campaign_dir = output_base / "alpha"
+    campaign_dir = proj.folder / "alpha"
     campaign_dir.mkdir(parents=True)
-    csv_path = campaign_dir / "alpha-detections-BirdNET-2.4.csv"
+    (campaign_dir / "campaign.toml").touch()
+    csv_path = campaign_dir / "detections-BirdNET-2.4.csv"
     csv_path.write_text(
         "Species,Confidence\n"
         "Robin,0.9\n"
@@ -207,7 +206,7 @@ def test_loads_previous_results_from_disk(qtbot, tmp_path: Path):
     panel = BirdNetPanel(state, {"BirdNET-2.4": _FakeRunner()}, TomlCampaignRepository())
     qtbot.addWidget(panel)
 
-    state.load_project(proj.path)
+    state.load_project(proj.folder)
 
     assert panel.ui.status_stack.currentIndex() == 2  # page_results
     assert state.last_analysis_result is not None
@@ -220,16 +219,15 @@ def test_panel_shows_all_csvs_regardless_of_model_selection(qtbot, tmp_path: Pat
     to run next; it does not filter the result view, because the filename
     suffix already tells the user which model each row belongs to.
     """
-    audio_root = tmp_path / "audio"
-    audio_root.mkdir()
-    proj = Project(path=tmp_path / "dual.pamproj", audio_recordings_path=audio_root)
+    proj = Project(folder=tmp_path / "dual")
     TomlProjectRepository().save(proj)
 
-    campaign_dir = proj.output_base / "alpha"
+    campaign_dir = proj.folder / "alpha"
     campaign_dir.mkdir(parents=True)
-    bn = campaign_dir / "alpha-detections-BirdNET-2.4.csv"
+    (campaign_dir / "campaign.toml").touch()
+    bn = campaign_dir / "detections-BirdNET-2.4.csv"
     bn.write_text("Species,Confidence\nRobin,0.9\n", encoding="utf-8")
-    pc = campaign_dir / "alpha-detections-Perch-2.0.csv"
+    pc = campaign_dir / "detections-Perch-2.0.csv"
     pc.write_text("Species,Confidence\nCrow,0.7\nJay,0.6\n", encoding="utf-8")
 
     state = AppState(TomlProjectRepository(), TomlCampaignRepository())
@@ -242,7 +240,7 @@ def test_panel_shows_all_csvs_regardless_of_model_selection(qtbot, tmp_path: Pat
         TomlCampaignRepository(),
     )
     qtbot.addWidget(panel)
-    state.load_project(proj.path)
+    state.load_project(proj.folder)
 
     # Both rows visible from the start: 1 (birdnet) + 2 (perch) = 3 detections.
     assert "3 detections" in panel.ui.summary_label.text()
@@ -260,18 +258,17 @@ def test_panel_keeps_birdnet_after_perch_run(qtbot, tmp_path: Path):
     test: previously the in-memory result was replaced with only the fresh
     run's rows, so the earlier sibling-model CSV vanished from the view.
     """
-    audio_root = tmp_path / "audio"
-    audio_root.mkdir()
-    proj = Project(path=tmp_path / "seq.pamproj", audio_recordings_path=audio_root)
+    proj = Project(folder=tmp_path / "seq")
     TomlProjectRepository().save(proj)
-    campaign_dir = proj.output_base / "alpha"
+    campaign_dir = proj.folder / "alpha"
     campaign_dir.mkdir(parents=True)
+    (campaign_dir / "campaign.toml").touch()
     # The on-disk artifact BirdNET would have written.
-    (campaign_dir / "alpha-detections-BirdNET-2.4.csv").write_text(
+    (campaign_dir / "detections-BirdNET-2.4.csv").write_text(
         "Species,Confidence\nRobin,0.9\nWren,0.8\n", encoding="utf-8"
     )
     # And the artifact Perch wrote during its run.
-    perch_csv = campaign_dir / "alpha-detections-Perch-2.0.csv"
+    perch_csv = campaign_dir / "detections-Perch-2.0.csv"
     perch_csv.write_text("Species,Confidence\nCrow,0.7\n", encoding="utf-8")
 
     state = AppState(TomlProjectRepository(), TomlCampaignRepository())
@@ -284,7 +281,7 @@ def test_panel_keeps_birdnet_after_perch_run(qtbot, tmp_path: Path):
         TomlCampaignRepository(),
     )
     qtbot.addWidget(panel)
-    state.load_project(proj.path)
+    state.load_project(proj.folder)
 
     # Simulate Perch finishing: the runner has already written its CSV, and
     # _on_succeeded triggers a fresh on-disk discovery.
@@ -325,11 +322,9 @@ def test_project_switch_clears_stale_results(
     assert state.last_analysis_result is not None
 
     # Build a second project on disk and switch to it.
-    other_root = tmp_path / "audio2"
-    other_root.mkdir()
-    other = Project(path=tmp_path / "other.pamproj", audio_recordings_path=other_root)
+    other = Project(folder=tmp_path / "other")
     TomlProjectRepository().save(other)
-    state.load_project(other.path)
+    state.load_project(other.folder)
 
     assert state.last_analysis_result is None
     assert panel.ui.status_stack.currentIndex() == 0  # page_idle

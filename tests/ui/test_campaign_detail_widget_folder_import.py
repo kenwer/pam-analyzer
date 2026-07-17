@@ -108,16 +108,16 @@ def _isolated_qsettings(tmp_path, monkeypatch):
 
 @pytest.fixture
 def project_with_campaign(tmp_path: Path) -> tuple[Project, Campaign]:
-    audio_root = tmp_path / "audio"
-    audio_root.mkdir()
+    project_folder = tmp_path / "proj"
+    project_folder.mkdir()
     campaign = Campaign(
         name="alpha",
-        folder=audio_root / "alpha",
+        folder=project_folder / "alpha",
         species_filter_mode=FilterMode.LOCATION,
         location=LatLon(48.0, 11.0),
     )
     TomlCampaignRepository().create(campaign)
-    proj = Project(path=tmp_path / "demo.pamproj", audio_recordings_path=audio_root)
+    proj = Project(folder=project_folder)
     TomlProjectRepository().save(proj)
     return proj, campaign
 
@@ -134,7 +134,7 @@ def panel(qtbot, project_with_campaign, scanner: _FakeScanner) -> CampaignsPanel
     orchestrator = ImportOrchestrator(AudioImporter(), scanner)
     p = CampaignsPanel(state, TomlCampaignRepository(), orchestrator, AppSettings())
     qtbot.addWidget(p)
-    state.load_project(proj.path)
+    state.load_project(proj.folder)
     return p
 
 

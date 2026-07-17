@@ -56,18 +56,17 @@ def _write_silent_wav(path: Path, seconds: float, sample_rate: int = 48000) -> N
     sf.write(str(path), samples, sample_rate, subtype="PCM_16")
 
 
-def _campaign_with_one_wav(tmp_path: Path, seconds: float) -> tuple[Path, Path]:
-    """Layout: tmp_path/audio/c1/ARU-1/20240101_120000.WAV (silent)."""
-    audio_root = tmp_path / "audio"
-    camp_dir = audio_root / "c1"
+def _campaign_with_one_wav(tmp_path: Path, seconds: float) -> Path:
+    """Layout: tmp_path/project/c1/ARU-1/20240101_120000.WAV (silent)."""
+    camp_dir = tmp_path / "project" / "c1"
     aru_dir = camp_dir / "ARU-1"
     aru_dir.mkdir(parents=True)
     _write_silent_wav(aru_dir / "20240101_120000.WAV", seconds=seconds)
-    return audio_root, camp_dir
+    return camp_dir
 
 
 @pytest.fixture
-def campaign_with_minute_wav(tmp_path: Path) -> tuple[Path, Path]:
+def campaign_with_minute_wav(tmp_path: Path) -> Path:
     """One 60 s WAV, the file length AudioMoth deployments produce.
 
     Runs this long reach a steady state before winding down. Near-instant
@@ -79,7 +78,7 @@ def campaign_with_minute_wav(tmp_path: Path) -> tuple[Path, Path]:
 
 
 @pytest.fixture
-def campaign_with_short_wav(tmp_path: Path) -> tuple[Path, Path]:
+def campaign_with_short_wav(tmp_path: Path) -> Path:
     """One 6 s WAV, deliberately short, for the cancellation test only.
 
     On a fast machine the run finishes before the cancel takes effect and
@@ -94,10 +93,9 @@ def campaign_with_short_wav(tmp_path: Path) -> tuple[Path, Path]:
 
 @pytest.mark.slow
 def test_perch_runner_writes_detections_csv_for_silent_input(
-    campaign_with_minute_wav: tuple[Path, Path], tmp_path: Path
+    campaign_with_minute_wav: Path, tmp_path: Path
 ) -> None:
-    audio_root, camp_dir = campaign_with_minute_wav
-    out_base = tmp_path / "out"
+    camp_dir = campaign_with_minute_wav
     settings = AnalysisSettings(min_conf=0.001, overlap=0.0, locales=("en_us",))
     ci = CampaignRunInput(
         name="c1",
@@ -110,10 +108,8 @@ def test_perch_runner_writes_detections_csv_for_silent_input(
 
     result = PerchRunner().run(
         campaigns=[ci],
-        output_base=out_base,
         settings=settings,
         preferred_lang="en_us",
-        audio_root=audio_root,
         progress=progress,
     )
 
@@ -121,6 +117,7 @@ def test_perch_runner_writes_detections_csv_for_silent_input(
     camp = result.campaigns[0]
     assert camp.campaign_name == "c1"
     assert camp.wav_count == 1
+    assert camp.detections_csv == camp_dir / "detections-Perch-2.0.csv"
     assert camp.detections_csv.exists()
 
     header = camp.detections_csv.read_text(encoding="utf-8").splitlines()[0]
@@ -137,7 +134,7 @@ def test_perch_runner_writes_detections_csv_for_silent_input(
 
 @pytest.mark.slow
 def test_perch_runner_list_mode_filters_to_supplied_species(
-    campaign_with_minute_wav: tuple[Path, Path], tmp_path: Path
+    campaign_with_minute_wav: Path, tmp_path: Path
 ) -> None:
     """LIST mode restricts detections to the supplied scientific names.
 
@@ -145,8 +142,7 @@ def test_perch_runner_list_mode_filters_to_supplied_species(
     even though Perch's class axis is 14,795 wide, the lib only emits rows
     for species in the set.
     """
-    audio_root, camp_dir = campaign_with_minute_wav
-    out_base = tmp_path / "out"
+    camp_dir = campaign_with_minute_wav
     settings = AnalysisSettings(min_conf=0.0001, overlap=0.0, locales=("en_us",))
     ci = CampaignRunInput(
         name="c1",
@@ -160,10 +156,8 @@ def test_perch_runner_list_mode_filters_to_supplied_species(
 
     result = PerchRunner().run(
         campaigns=[ci],
-        output_base=out_base,
         settings=settings,
         preferred_lang="en_us",
-        audio_root=audio_root,
         progress=progress,
     )
 
@@ -187,10 +181,9 @@ def test_perch_runner_list_mode_filters_to_supplied_species(
     "see https://github.com/birdnet-team/birdnet/issues/51",
 )
 def test_perch_runner_honors_cancellation(
-    campaign_with_short_wav: tuple[Path, Path], tmp_path: Path
+    campaign_with_short_wav: Path, tmp_path: Path
 ) -> None:
-    audio_root, camp_dir = campaign_with_short_wav
-    out_base = tmp_path / "out"
+    camp_dir = campaign_with_short_wav
     settings = AnalysisSettings(min_conf=0.001, overlap=0.0, locales=("en_us",))
     ci = CampaignRunInput(
         name="c1",
@@ -205,9 +198,7 @@ def test_perch_runner_honors_cancellation(
     with pytest.raises(CancelledError):
         PerchRunner().run(
             campaigns=[ci],
-            output_base=out_base,
             settings=settings,
             preferred_lang="en_us",
-            audio_root=audio_root,
             progress=progress,
         )

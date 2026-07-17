@@ -279,7 +279,7 @@ class CampaignsPanel(QWidget):
             return
         campaign = Campaign(
             name=name,
-            folder=project.audio_recordings_path / name,
+            folder=project.folder / name,
             species_filter_mode=mode,
             location=location,
         )

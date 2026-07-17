@@ -72,16 +72,16 @@ def _isolated_qsettings(tmp_path, monkeypatch):
 
 @pytest.fixture
 def project_with_campaign(tmp_path: Path) -> tuple[Project, Campaign]:
-    audio_root = tmp_path / "audio"
-    audio_root.mkdir()
+    project_folder = tmp_path / "proj"
+    project_folder.mkdir()
     campaign = Campaign(
         name="alpha",
-        folder=audio_root / "alpha",
+        folder=project_folder / "alpha",
         species_filter_mode=FilterMode.LOCATION,
         location=LatLon(48.0, 11.0),
     )
     TomlCampaignRepository().create(campaign)
-    proj = Project(path=tmp_path / "demo.pamproj", audio_recordings_path=audio_root)
+    proj = Project(folder=project_folder)
     TomlProjectRepository().save(proj)
     return proj, campaign
 
@@ -104,7 +104,7 @@ def panel(
     orchestrator = ImportOrchestrator(AudioImporter(), scanner)
     p = CampaignsPanel(state, TomlCampaignRepository(), orchestrator, AppSettings())
     qtbot.addWidget(p)
-    state.load_project(proj.path)
+    state.load_project(proj.folder)
     return p
 
 
@@ -274,7 +274,7 @@ def test_campaign_switch_while_watching_prompts(
     proj, _ = project_with_campaign
     second = Campaign(
         name="beta",
-        folder=proj.audio_recordings_path / "beta",
+        folder=proj.folder / "beta",
         species_filter_mode=FilterMode.LOCATION,
         location=LatLon(50.0, 8.0),
     )
@@ -318,7 +318,7 @@ def test_campaign_switch_while_watching_prompts(
 def _add_campaign(proj: Project, name: str) -> Campaign:
     campaign = Campaign(
         name=name,
-        folder=proj.audio_recordings_path / name,
+        folder=proj.folder / name,
         species_filter_mode=FilterMode.LOCATION,
         location=LatLon(50.0, 8.0),
     )
@@ -467,11 +467,9 @@ def test_inventory_clears_when_project_switches(
     state.refresh_audio_inventory()
     assert state.audio_inventory.for_campaign("alpha") is not None
 
-    other_audio = tmp_path / "audio2"
-    other_audio.mkdir()
-    other = Project(path=tmp_path / "other.pamproj", audio_recordings_path=other_audio)
+    other = Project(folder=tmp_path / "other")
     TomlProjectRepository().save(other)
-    state.load_project(other.path)
+    state.load_project(other.folder)
 
     assert state.audio_inventory.campaigns == ()
 

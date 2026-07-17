@@ -40,14 +40,12 @@ _HEADERS = [
 
 @pytest.fixture
 def project(tmp_path: Path) -> Project:
-    audio_root = tmp_path / "audio"
-    audio_root.mkdir()
-    out_base = tmp_path / "out"
-    out_base.mkdir()
+    project_folder = tmp_path / "proj"
+    project_folder.mkdir()
 
     cam_repo = TomlCampaignRepository()
     for name, aru in (("alpha", "MSD-1"), ("beta", "MSD-2")):
-        folder = audio_root / name
+        folder = project_folder / name
         folder.mkdir()
         cam_repo.save(
             Campaign(
@@ -57,8 +55,7 @@ def project(tmp_path: Path) -> Project:
                 location=LatLon(48.0, 11.0),
             )
         )
-        csv_path = out_base / name / f"{name}-detections-BirdNET-2.4.csv"
-        csv_path.parent.mkdir()
+        csv_path = folder / "detections-BirdNET-2.4.csv"
         with open(csv_path, "w", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
             w.writerow(_HEADERS)
@@ -82,11 +79,7 @@ def project(tmp_path: Path) -> Project:
                     ]
                 )
 
-    proj = Project(
-        path=tmp_path / "demo.pamproj",
-        audio_recordings_path=audio_root,
-        detections_output_path=out_base,
-    )
+    proj = Project(folder=project_folder)
     TomlProjectRepository().save(proj)
     return proj
 
@@ -127,7 +120,7 @@ def panel(qtbot, project: Project) -> ExaminePanel:
     state = AppState(TomlProjectRepository(), TomlCampaignRepository())
     panel = ExaminePanel(state, CsvDetectionRepository(), AppSettings(), SoundfileAudioExtractor())
     qtbot.addWidget(panel)
-    state.load_project(project.path)
+    state.load_project(project.folder)
     return panel
 
 
@@ -160,7 +153,7 @@ def test_autosave_debounces_and_persists(qtbot, panel: ExaminePanel, project) ->
     # Pick the row whose campaign we'll re-read after the save.
     detection = panel._model.detection_at(0)
     assert detection is not None
-    csv_path = project.output_base / detection.campaign / f"{detection.campaign}-detections-BirdNET-2.4.csv"
+    csv_path = project.folder / detection.campaign / "detections-BirdNET-2.4.csv"
 
     panel._model.setData(idx, "true")
     # Auto-save runs after the debounce window. Wait for the timer to fire and
@@ -181,7 +174,7 @@ def test_autosave_preserves_unedited_rows(qtbot, panel: ExaminePanel, project) -
     idx = panel._model.index(0, col)
     detection = panel._model.detection_at(0)
     assert detection is not None
-    csv_path = project.output_base / detection.campaign / f"{detection.campaign}-detections-BirdNET-2.4.csv"
+    csv_path = project.folder / detection.campaign / "detections-BirdNET-2.4.csv"
 
     rows_before = csv_path.read_text(encoding="utf-8").splitlines()
     assert len(rows_before) == 4  # header + 3 fixture rows
@@ -226,40 +219,37 @@ def test_padding_spinboxes_init_from_project(qtbot, project: Project) -> None:
     state = AppState(TomlProjectRepository(), TomlCampaignRepository())
     panel = ExaminePanel(state, CsvDetectionRepository(), AppSettings(), SoundfileAudioExtractor())
     qtbot.addWidget(panel)
-    state.load_project(p.path)
+    state.load_project(p.folder)
 
     assert panel.pad_before_spin.value() == pytest.approx(1.5)
     assert panel.pad_after_spin.value() == pytest.approx(2.0)
 
 
-def test_changing_padding_persists_to_pamproj(panel: ExaminePanel, project: Project) -> None:
-    """Editing a padding spinbox writes the new value back to the .pamproj."""
+def test_changing_padding_persists_to_project_toml(panel: ExaminePanel, project: Project) -> None:
+    """Editing a padding spinbox writes the new value back to pam-analyzer.toml."""
     panel.pad_before_spin.setValue(3.5)
     panel.pad_after_spin.setValue(0.5)
 
     from pam_analyzer.infrastructure import TomlProjectRepository
 
-    reloaded = TomlProjectRepository().load(project.path)
+    reloaded = TomlProjectRepository().load(project.folder)
     assert reloaded.snippet_padding_before == pytest.approx(3.5)
     assert reloaded.snippet_padding_after == pytest.approx(0.5)
 
 
-def test_old_pamproj_without_padding_loads_with_zero(qtbot, tmp_path: Path) -> None:
-    """A .pamproj written before snippet_padding_* existed must still load."""
-    pamproj = tmp_path / "old.pamproj"
-    audio_dir = tmp_path / "audio"
-    audio_dir.mkdir()
-    out_dir = tmp_path / "out"
-    out_dir.mkdir()
-    pamproj.write_text(
-        f'[project]\naudio_recordings_path = "{audio_dir}"\ndetections_output_path = "{out_dir}"\n',
+def test_project_toml_without_padding_loads_with_zero(qtbot, tmp_path: Path) -> None:
+    """A pam-analyzer.toml written before snippet_padding_* existed must still load."""
+    from pam_analyzer.infrastructure import paths
+
+    paths.project_toml(tmp_path).write_text(
+        '[project]\nsdcard_name_pattern = "^X-"\n',
         encoding="utf-8",
     )
 
     state = AppState(TomlProjectRepository(), TomlCampaignRepository())
     panel = ExaminePanel(state, CsvDetectionRepository(), AppSettings(), SoundfileAudioExtractor())
     qtbot.addWidget(panel)
-    state.load_project(pamproj)
+    state.load_project(tmp_path)
 
     assert panel.pad_before_spin.value() == 0.0
     assert panel.pad_after_spin.value() == 0.0
@@ -271,7 +261,7 @@ def test_hidden_columns_persist_across_panel_instances(qtbot, project: Project) 
     settings = AppSettings()
     panel = ExaminePanel(state, CsvDetectionRepository(), settings, SoundfileAudioExtractor())
     qtbot.addWidget(panel)
-    state.load_project(project.path)
+    state.load_project(project.folder)
 
     rank_col = COLUMNS_BY_NAME["Rank"]
     panel.ui.detections_table._toggle_column(rank_col, False)
@@ -281,7 +271,7 @@ def test_hidden_columns_persist_across_panel_instances(qtbot, project: Project) 
     state2 = AppState(TomlProjectRepository(), TomlCampaignRepository())
     panel2 = ExaminePanel(state2, CsvDetectionRepository(), AppSettings(), SoundfileAudioExtractor())
     qtbot.addWidget(panel2)
-    state2.load_project(project.path)
+    state2.load_project(project.folder)
     assert panel2.ui.detections_table._table.isColumnHidden(rank_col)
 
 
@@ -349,7 +339,7 @@ def test_export_snippets_uses_padding(panel: ExaminePanel, project: Project, tmp
 
     monkeypatch.setattr(panel._audio_extractor, "extract", fake_extract)
     # The fixture rows reference 'f.wav' which doesn't exist, so synthesize it.
-    audio_root = project.audio_recordings_path
+    audio_root = project.folder
     for d in panel._raw_detections:
         f = audio_root / d.file
         f.parent.mkdir(parents=True, exist_ok=True)
@@ -401,7 +391,7 @@ def test_filter_inputs_visible_when_mounted_in_hidden_tab(qtbot, project: Projec
     tabs.setCurrentIndex(0)  # Examine tab is hidden
 
     # Load project while ExaminePanel is not visible. This triggers setModel.
-    state.load_project(project.path)
+    state.load_project(project.folder)
     qtbot.waitExposed(tabs)
 
     # Switch to Examine tab and let Qt settle geometry.

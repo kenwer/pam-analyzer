@@ -30,7 +30,6 @@ _log = logging.getLogger(__name__)
 
 class AppState(QObject):
     projectChanged = Signal(object)  # Project | None
-    projectDirtyChanged = Signal(bool)
     campaignsChanged = Signal(list)  # list[Campaign]
     currentCampaignChanged = Signal(object)  # Campaign | None
     statusMessage = Signal(str)
@@ -54,7 +53,6 @@ class AppState(QObject):
         self._project_repo = project_repo
         self._campaign_repo = campaign_repo
         self._project: Project | None = None
-        self._dirty: bool = False
         self._campaigns: list[Campaign] = []
         self._current_campaign: Campaign | None = None
         self._last_analysis_result: AnalysisRunResult | None = None
@@ -74,10 +72,6 @@ class AppState(QObject):
         return self._current_campaign
 
     @property
-    def is_dirty(self) -> bool:
-        return self._dirty
-
-    @property
     def last_analysis_result(self) -> AnalysisRunResult | None:
         return self._last_analysis_result
 
@@ -89,18 +83,18 @@ class AppState(QObject):
     def audio_inventory(self) -> AudioInventory:
         return self._audio_inventory
 
-    def load_project(self, path: Path) -> None:
+    def load_project(self, folder: Path) -> None:
         dbg = _log.isEnabledFor(logging.DEBUG)
         t0 = time.perf_counter() if dbg else 0.0
         try:
-            project = self._project_repo.load(path)
+            project = self._project_repo.load(folder)
         except Exception as exc:
-            self.errorOccurred.emit(f"Failed to open {path.name}: {exc}")
+            self.errorOccurred.emit(f"Failed to open {folder.name}: {exc}")
             return
         if dbg:
             _log.debug("load_project: repo.load %.2fs", time.perf_counter() - t0)
 
-        self._apply_project(project, dirty=False)
+        self._apply_project(project)
 
         t = time.perf_counter() if dbg else 0.0
         self.refresh_campaigns()
@@ -113,68 +107,46 @@ class AppState(QObject):
             _log.debug("load_project: refresh_audio_inventory %.2fs", time.perf_counter() - t)
 
         t = time.perf_counter() if dbg else 0.0
-        discovered = discover_analysis_result(project.output_base)
+        discovered = discover_analysis_result(project.folder)
         if dbg:
             _log.debug("load_project: discover_analysis_result %.2fs", time.perf_counter() - t)
             _log.debug("load_project: total %.2fs", time.perf_counter() - t0)
 
         self.set_last_analysis_result(discovered)
-        self.statusMessage.emit(f"Opened {path.name}")
+        self.statusMessage.emit(f"Opened {project.name}")
 
-    def create_project(self, path: Path) -> None:
+    def create_project(self, folder: Path) -> None:
         try:
-            project = self._project_repo.create(path)
+            project = self._project_repo.create(folder)
         except Exception as exc:
-            self.errorOccurred.emit(f"Failed to create {path.name}: {exc}")
+            self.errorOccurred.emit(f"Failed to create {folder.name}: {exc}")
             return
-        self._apply_project(project, dirty=False)
+        self._apply_project(project)
         self.refresh_campaigns()
-        self.statusMessage.emit(f"Created {path.name}")
+        self.statusMessage.emit(f"Created {project.name}")
 
     def update_project(self, project: Project) -> None:
-        """Replace the in-memory project after a user edit. Marks dirty, does not persist.
+        """Replace the in-memory project after a user edit and persist it immediately.
 
-        Callers must invoke save_project() to flush to disk.
+        Deliberately does not go through _apply_project: that clears
+        session-derived state (analysis results, inventory), which is only
+        correct when switching projects. A settings edit cannot change the
+        project folder, so nothing derived needs to be rebuilt.
         """
-        previous = self._project
-        if project == previous:
+        if project == self._project:
             return
-        self._apply_project(project, dirty=True)
-        if previous is None or previous.audio_recordings_path != project.audio_recordings_path:
-            self.refresh_campaigns()
-            self.refresh_audio_inventory()
-        # _apply_project always clears analysis results regardless of what changed,
-        # so always re-discover them here. Discovery is cheap (0.00s) when nothing exists.
-        self.set_last_analysis_result(discover_analysis_result(project.output_base))
-
-    def save_project(self) -> None:
-        if self._project is None:
-            return
+        self._project = project
         try:
-            self._project_repo.save(self._project)
+            self._project_repo.save(project)
         except Exception as exc:
             self.errorOccurred.emit(f"Save failed: {exc}")
-            return
-        self._set_dirty(False)
-        self.statusMessage.emit(f"Saved {self._project.path.name}")
-
-    def save_project_as(self, new_path: Path) -> None:
-        if self._project is None:
-            return
-        try:
-            project = self._project_repo.save_as(self._project, new_path)
-        except Exception as exc:
-            self.errorOccurred.emit(f"Save failed: {exc}")
-            return
-        self._apply_project(project, dirty=False)
-        self.statusMessage.emit(f"Saved as {new_path.name}")
+        self.projectChanged.emit(project)
 
     def close_project(self) -> None:
-        """Drop the in-memory project. Does not prompt about unsaved edits.
-        The caller is responsible for confirming with the user."""
+        """Drop the in-memory project. Settings are already persisted on every edit."""
         if self._project is None:
             return
-        self._apply_project(None, dirty=False)
+        self._apply_project(None)
         self.refresh_campaigns()
 
     def update_birdnet_settings(
@@ -185,7 +157,7 @@ class AppState(QObject):
         overlap: float | None = None,
         locales: tuple[str, ...] | None = None,
     ) -> None:
-        """Persist BirdNET settings immediately without marking the project dirty."""
+        """Persist BirdNET settings immediately without a full projectChanged broadcast."""
         if self._project is None:
             return
         fields: dict = {}
@@ -209,7 +181,7 @@ class AppState(QObject):
             self.errorOccurred.emit(f"Failed to save BirdNET settings: {exc}")
 
     def update_padding(self, before: float, after: float) -> None:
-        """Persist playback-padding values immediately without marking the project dirty.
+        """Persist playback-padding values immediately.
 
         Skips the projectChanged broadcast because only the audio player cares
         about padding and the panel updates its own spinboxes directly.
@@ -246,7 +218,7 @@ class AppState(QObject):
         if self._project is None:
             self.set_last_analysis_result(None)
             return
-        self.set_last_analysis_result(discover_analysis_result(self._project.output_base))
+        self.set_last_analysis_result(discover_analysis_result(self._project.folder))
 
     def append_import_result(self, result: CardImportResult) -> None:
         self._import_results.append(result)
@@ -261,7 +233,7 @@ class AppState(QObject):
         if self._project is None:
             self._set_audio_inventory(AudioInventory())
             return
-        self._set_audio_inventory(discover_audio_inventory(self._project.audio_recordings_path))
+        self._set_audio_inventory(discover_audio_inventory(self._project.folder))
 
     def _set_audio_inventory(self, inventory: AudioInventory) -> None:
         self._audio_inventory = inventory
@@ -275,13 +247,13 @@ class AppState(QObject):
 
     def refresh_campaigns(self) -> None:
         campaigns = (
-            self._campaign_repo.discover(self._project.audio_recordings_path)
+            self._campaign_repo.discover(self._project.folder)
             if self._project is not None
             else []
         )
         self._apply_campaigns(campaigns)
 
-    def _apply_project(self, project: Project | None, *, dirty: bool = False) -> None:
+    def _apply_project(self, project: Project | None) -> None:
         self._project = project
         # Clear session-scoped derived state before emitting projectChanged so
         # any panel that re-reads these properties during its render sees the
@@ -296,7 +268,6 @@ class AppState(QObject):
             self._audio_inventory = AudioInventory()
             self.audioInventoryChanged.emit(self._audio_inventory)
         self.projectChanged.emit(project)
-        self._set_dirty(dirty)
 
     def _apply_campaigns(self, campaigns: list[Campaign]) -> None:
         self._campaigns = campaigns
@@ -307,9 +278,3 @@ class AppState(QObject):
         """Replace the in-memory project without broadcasting signals.
         Used for auto-save operations that must not trigger a full UI refresh."""
         self._project = project
-
-    def _set_dirty(self, value: bool) -> None:
-        if value == self._dirty:
-            return
-        self._dirty = value
-        self.projectDirtyChanged.emit(value)

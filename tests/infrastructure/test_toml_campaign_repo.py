@@ -63,6 +63,27 @@ def test_rename_preserves_mode_and_location(repo, audio_root):
     assert renamed.species_filter_mode == FilterMode.LOCATION
 
 
+def test_rename_keeps_detection_csvs_valid(repo, audio_root):
+    """CSV names and File paths carry no campaign name, so a folder rename
+    leaves the campaign's detections fully usable."""
+    from pam_analyzer.infrastructure import CsvDetectionRepository, paths
+
+    c = _new_campaign(audio_root, "before")
+    repo.create(c)
+    csv_path = paths.campaign_csv_for_model(c.folder, "BirdNET-2.4")
+    csv_path.write_text(
+        "Campaign,Species,Confidence,File\nbefore,Robin,0.9,MSD-1/week_08/r.flac\n",
+        encoding="utf-8",
+    )
+
+    renamed = repo.rename(c, "after")
+
+    assert paths.campaign_csvs(renamed.folder) == [renamed.folder / "detections-BirdNET-2.4.csv"]
+    detections = CsvDetectionRepository().load_for_campaign(renamed.folder)
+    assert detections[0].file == "after/MSD-1/week_08/r.flac"
+    assert (audio_root / detections[0].file).parent == renamed.folder / "MSD-1" / "week_08"
+
+
 def test_delete_removes_entire_folder(repo, audio_root):
     c = _new_campaign(audio_root, "to-delete")
     repo.create(c)

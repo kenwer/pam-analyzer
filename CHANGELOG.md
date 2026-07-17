@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+### Changed
+- Projects are now self-contained folders. The `pam-analyzer.toml` file inside the project folder stores the settings. The audio root and detections output path settings are gone. New Project and Open Project pick a folder instead of a file.
+- Detection CSVs now live inside each campaign folder as `detections-{model}.csv`, with File paths relative to the campaign folder. Campaigns can be renamed, moved, or archived together with their results.
+- Location-mode species lists are written as `applied-species-list.txt` inside the campaign folder.
+- Project settings save automatically on every change. The Save and Save As menu items have been removed.
+- Opening a legacy `.pamproj` project (via New or Open on its audio root folder, or from the recent list) offers a one-time migration that moves the detection CSVs into their campaign folders and keeps the old file as `.bak`. A legacy `.pamproj` stored outside its audio root must be moved into it first.
+
 ## [0.4.1] - 2026-07-14
 ### Fixed
 - [Dev] Pin the Perch v2 model to Kaggle version 1, so builds, tests, and the app always use the exact same checkpoint.

@@ -12,18 +12,9 @@ from pam_analyzer.domain import (
 )
 
 
-def test_project_default_output_base_uses_audio_root():
-    project = Project(path=Path("/tmp/x.pamproj"), audio_recordings_path=Path("/tmp/audio"))
-    assert project.output_base == Path("/tmp/audio/x-detections")
-
-
-def test_project_explicit_output_base_wins():
-    project = Project(
-        path=Path("/tmp/x.pamproj"),
-        audio_recordings_path=Path("/tmp/audio"),
-        detections_output_path=Path("/elsewhere"),
-    )
-    assert project.output_base == Path("/elsewhere")
+def test_project_name_is_folder_name():
+    project = Project(folder=Path("/tmp/My Project"))
+    assert project.name == "My Project"
 
 
 def test_latlon_rejects_out_of_range():

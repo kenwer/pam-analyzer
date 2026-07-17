@@ -111,14 +111,14 @@ class TestRowRoundTrip:
 
 class TestFilenamePattern:
     def test_build_and_parse_are_inverse(self):
-        name = schema.detections_csv_name("Camp-A", "Perch-2.0")
-        assert name == "Camp-A-detections-Perch-2.0.csv"
-        assert schema.model_key_from_csv_name("Camp-A", name) == "Perch-2.0"
+        name = schema.detections_csv_name("Perch-2.0")
+        assert name == "detections-Perch-2.0.csv"
+        assert schema.model_key_from_csv_name(name) == "Perch-2.0"
 
     def test_parse_rejects_foreign_names(self):
-        assert schema.model_key_from_csv_name("Camp-A", "Camp-A-detections.csv") is None
-        assert schema.model_key_from_csv_name("Camp-A", "Camp-B-detections-x.csv") is None
-        assert schema.model_key_from_csv_name("Camp-A", "Camp-A-species-list.txt") is None
+        assert schema.model_key_from_csv_name("detections.csv") is None
+        assert schema.model_key_from_csv_name("Camp-A-detections-x.csv") is None
+        assert schema.model_key_from_csv_name("applied-species-list.txt") is None
 
     def test_locale_column_helpers(self):
         assert schema.locale_column("de") == "Species_de"

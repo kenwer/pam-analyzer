@@ -32,6 +32,18 @@ def _write_csv(path: Path, detections: list[Detection], fieldnames: list[str]) -
         if f not in full_fields:
             full_fields.append(f)
     path.parent.mkdir(parents=True, exist_ok=True)
+    # On disk the File column is campaign-relative so a campaign folder can be
+    # renamed or moved without breaking its CSVs. In memory it is
+    # project-relative (load_for_campaign prepends the folder name), so strip
+    # the prefix from the row dict here, never from the shared Detection.
+    campaign_prefix = path.parent.name + "/"
+
+    def _row(d: Detection) -> dict[str, str]:
+        row = schema.detection_to_row(d)
+        if row["File"].startswith(campaign_prefix):
+            row["File"] = row["File"][len(campaign_prefix):]
+        return row
+
     # Write to a sibling temp file and swap it in atomically: this CSV holds
     # the user's annotations, so a crash mid-write must not truncate the only
     # copy. The '.part' suffix keeps discovery globs from matching the temp.
@@ -40,7 +52,7 @@ def _write_csv(path: Path, detections: list[Detection], fieldnames: list[str]) -
         with open(tmp, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=full_fields, extrasaction="ignore")
             writer.writeheader()
-            writer.writerows(schema.detection_to_row(d) for d in detections)
+            writer.writerows(_row(d) for d in detections)
         os.replace(tmp, path)
     finally:
         # On success os.replace consumed tmp; on any failure discard the partial.
@@ -50,38 +62,41 @@ def _write_csv(path: Path, detections: list[Detection], fieldnames: list[str]) -
 class CsvDetectionRepository:
     """Reads and writes per-campaign detection CSVs.
 
-    Each model run lands in its own file (<campaign>-detections-<model_key>.csv)
+    Each model run lands in its own file (<campaign>/detections-<model_key>.csv)
     so multiple runs can coexist for a campaign. Load enumerates every model
     file and concatenates them in memory. Save routes each detection back to
     the file it was loaded from via Detection.source_path. Per-file
     fieldnames are remembered so column order survives a load/save round
     trip.
+
+    The on-disk File column is campaign-relative; load prepends the campaign
+    folder name so every in-memory consumer resolves against the project
+    folder, and _write_csv strips it again on save.
     """
 
     def __init__(self) -> None:
         self._fieldnames_by_path: dict[Path, list[str]] = {}
 
-    def load_for_campaign(self, output_base: Path, campaign_name: str) -> list[Detection]:
+    def load_for_campaign(self, campaign_folder: Path) -> list[Detection]:
         all_detections: list[Detection] = []
-        for path in paths.campaign_csvs(output_base, campaign_name):
+        for path in paths.campaign_csvs(campaign_folder):
             detections, fieldnames = _read_csv(path)
             self._fieldnames_by_path[path] = fieldnames
+            for d in detections:
+                if d.file and not Path(d.file).is_absolute():
+                    d.file = f"{campaign_folder.name}/{d.file}"
             all_detections.extend(detections)
         return all_detections
 
-    def load_combined(self, output_base: Path) -> list[Detection]:
+    def load_combined(self, project_folder: Path) -> list[Detection]:
         """Concatenate every campaign's detections into one in-memory list.
 
         Each campaign CSV carries its own annotations, so the concatenation
         is always current; there is no combined file to fall out of sync.
         """
         all_detections: list[Detection] = []
-        if not output_base.exists():
-            return all_detections
-        for sub in sorted(output_base.iterdir()):
-            if not sub.is_dir():
-                continue
-            all_detections.extend(self.load_for_campaign(output_base, sub.name))
+        for folder in paths.campaign_folders(project_folder):
+            all_detections.extend(self.load_for_campaign(folder))
         return all_detections
 
     def save(self, detections: list[Detection]) -> None:
