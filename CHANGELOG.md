@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.5.0] - 2026-07-17
 ### Added
 - File > Open Legacy Project File... migrates a legacy `.pamproj` directly from wherever it lives, without needing to move it into its audio root folder first.
 ### Changed
