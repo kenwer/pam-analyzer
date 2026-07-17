@@ -296,6 +296,13 @@ class AudioImporter:
         must not itself look like a single card just because audio exists
         somewhere underneath it.
 
+        Dot-prefixed directories (e.g. macOS's '.Spotlight-V100', '.fseventsd')
+        are skipped: the OS creates them on every mounted volume, they never
+        hold recordings, and '.Spotlight-V100' is SIP-protected, so listing it
+        raises PermissionError even for the volume's owning user. Any other
+        directory that raises OSError on listing (e.g. Windows' 'System Volume
+        Information') is skipped the same way rather than aborting the import.
+
         WAV is transcoded to FLAC on import; FLAC already on the card is copied
         through unchanged.
         """
@@ -306,8 +313,11 @@ class AudioImporter:
         if audio_root.is_dir():
             files.extend(_audio_files_in(audio_root))
             for entry in audio_root.iterdir():
-                if entry.is_dir():
-                    files.extend(_audio_files_in(entry))
+                if entry.is_dir() and not entry.name.startswith("."):
+                    try:
+                        files.extend(_audio_files_in(entry))
+                    except OSError:
+                        _log.debug("list_card_files: skipping unreadable subdirectory %s", entry, exc_info=True)
         files.extend(f for f in card_root.iterdir() if f.is_file() and _is_sidecar(f.name))
         # Sort by filename string, not by Path: Path comparison normcases the
         # name, so bare sorted() is case-insensitive on Windows but case-

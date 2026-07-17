@@ -21,6 +21,7 @@ to IDLE (folder, a one-shot batch), and so busy_label() reports correctly.
 
 from __future__ import annotations
 
+import logging
 from enum import Enum
 from pathlib import Path
 
@@ -36,6 +37,8 @@ from ..domain.audio_import import (
 )
 from ..infrastructure import AudioImporter, PsutilSdCardScanner
 from .audio_import_worker import AudioImportWorker
+
+_log = logging.getLogger(__name__)
 
 
 class _State(Enum):
@@ -84,6 +87,7 @@ class ImportOrchestrator(QObject):
         self._poll_timer.timeout.connect(self._on_poll)
 
     def start_watching(self, campaign: Campaign, pattern: str) -> None:
+        _log.debug("start_watching: campaign=%r pattern=%r", campaign.name, pattern)
         self._campaign = campaign
         self._pattern = pattern
         self._batch_source = ImportSource.SD_CARD
@@ -193,7 +197,13 @@ class ImportOrchestrator(QObject):
         if self._campaign is None or self._state != _State.WATCHING:
             return
         cards = self._scanner.scan(self._pattern)
+        before = len(self._queue.pending)
         self._queue.offer(cards)
+        # scan() already logs a per-poll summary; only log here when offer()
+        # actually grew the queue, since that (not "poll happened") is the
+        # event worth seeing without wading through one line every 2s.
+        if len(self._queue.pending) > before:
+            _log.debug("_on_poll: queue now %s", [c.name for c in self._queue.pending])
         self.queue_changed.emit(list(self._queue.pending))
         if self._queue.pending:
             self._start_next()
@@ -202,12 +212,14 @@ class ImportOrchestrator(QObject):
         card = self._queue.pop()
         if card is None or self._campaign is None:
             return
+        _log.debug("_start_next: card=%r mountpoint=%s", card.name, card.mountpoint)
         self._current_card = card
         self.queue_changed.emit(list(self._queue.pending))
 
         try:
             files = self._importer.list_card_files(card.mountpoint)
         except Exception as exc:  # noqa: BLE001
+            _log.debug("_start_next: list_card_files failed for %r", card.name, exc_info=True)
             self._current_card = None
             self.result_ready.emit(
                 CardImportResult(
@@ -226,6 +238,10 @@ class ImportOrchestrator(QObject):
 
         campaign_dir = self._campaign.folder / card.name
         conflict_report = self._importer.detect_conflicts(files, campaign_dir)
+        _log.debug(
+            "_start_next: %d file(s) found, %d conflict(s), overwrite=%s",
+            len(files), len(conflict_report.conflicts), self._overwrite,
+        )
 
         if conflict_report.conflicts and not self._overwrite:
             self._pending_files = files

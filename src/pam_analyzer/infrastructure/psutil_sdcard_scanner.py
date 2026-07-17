@@ -1,5 +1,6 @@
 """SD card scanner backed by psutil disk_partitions()."""
 
+import logging
 import re
 import subprocess
 import sys
@@ -8,6 +9,8 @@ from pathlib import Path
 import psutil
 
 from ..domain.audio_import import DetectedCard
+
+_log = logging.getLogger(__name__)
 
 
 def _get_volume_name(partition) -> str | None:
@@ -42,20 +45,26 @@ def _get_volume_name(partition) -> str | None:
 class PsutilSdCardScanner:
     def scan(self, name_pattern: str) -> list[DetectedCard]:
         """Return every currently-mounted card whose volume name matches name_pattern."""
+        dbg = _log.isEnabledFor(logging.DEBUG)
         try:
             pattern = re.compile(name_pattern, re.IGNORECASE)
         except re.error:
+            if dbg:
+                _log.debug("scan: invalid pattern %r", name_pattern)
             return []
 
         cards: list[DetectedCard] = []
-        for partition in psutil.disk_partitions():
+        partitions = psutil.disk_partitions()
+        for partition in partitions:
             try:
                 name = _get_volume_name(partition)
             except Exception:
+                # A lookup failure is unusual enough (unlike a routine
+                # non-match) to log even per-partition, every poll.
+                if dbg:
+                    _log.debug("scan: %s -> volume name lookup failed", partition.mountpoint, exc_info=True)
                 continue
-            if not name:
-                continue
-            if pattern.search(name):
+            if name and pattern.search(name):
                 cards.append(
                     DetectedCard(
                         name=name,
@@ -63,6 +72,14 @@ class PsutilSdCardScanner:
                         device=partition.device,
                     )
                 )
+        if dbg:
+            # One summary line per poll, not one line per mounted partition:
+            # this runs every 2s while watching, and most partitions never
+            # come close to matching.
+            _log.debug(
+                "scan: pattern=%r, %d partition(s), matched: %s",
+                name_pattern, len(partitions), [c.name for c in cards],
+            )
         return cards
 
     def eject(self, card: DetectedCard) -> None:

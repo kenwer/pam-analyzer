@@ -273,6 +273,46 @@ def test_list_card_files_does_not_recurse_past_one_level(tmp_path: Path):
     assert [p.name for p in AudioImporter().list_card_files(device)] == ["rec.WAV"]
 
 
+def test_list_card_files_skips_dot_prefixed_subdirectories(tmp_path: Path):
+    """macOS creates '.Spotlight-V100', '.fseventsd', etc. on every mounted
+    volume; '.Spotlight-V100' is SIP-protected and raises PermissionError on
+    listing even for the volume's owning user, so these must be skipped by
+    name before ever being opened."""
+    card = tmp_path / "card"
+    card.mkdir()
+    (card / "rec.WAV").touch()
+    hidden = card / ".Spotlight-V100"
+    hidden.mkdir()
+    (hidden / "store.WAV").touch()
+
+    names = [p.name for p in AudioImporter().list_card_files(card)]
+
+    assert names == ["rec.WAV"]
+
+
+def test_list_card_files_skips_subdirectory_that_raises_on_listing(tmp_path: Path, monkeypatch):
+    """A subdirectory that raises OSError on iterdir() (e.g. Windows' 'System
+    Volume Information') must not abort the rest of the scan."""
+    card = tmp_path / "card"
+    card.mkdir()
+    (card / "rec.WAV").touch()
+    locked = card / "System Volume Information"
+    locked.mkdir()
+
+    real_iterdir = Path.iterdir
+
+    def fake_iterdir(self: Path):
+        if self == locked:
+            raise PermissionError("Operation not permitted")
+        return real_iterdir(self)
+
+    monkeypatch.setattr(Path, "iterdir", fake_iterdir)
+
+    names = [p.name for p in AudioImporter().list_card_files(card)]
+
+    assert names == ["rec.WAV"]
+
+
 def test_discover_folder_cards_handles_device_with_date_subfolders(tmp_path: Path):
     """End-to-end regression for the site/device-id/date/*.WAV layout: the
     device-id folder holds only CONFIG.TXT directly, with recordings one level
