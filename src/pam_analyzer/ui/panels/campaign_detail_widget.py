@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ...domain import AudioInventory, Campaign, FilterMode, LatLon
+from ...domain import AudioInventory, Campaign, FilterMode, LatLon, campaign_name_error
 from ...domain.audio_import import (
     ConflictReport,
     DetectedCard,
@@ -673,12 +673,10 @@ class CampaignDetailWidget(QWidget):
 
     def _is_valid(self) -> bool:
         name = self.ui.name_edit.text().strip()
-        if not name or "/" in name or "\\" in name:
-            return False
         # In edit mode, the campaign's own name is allowed; in new mode it isn't.
         own_name = self._campaign.name if self._mode == "edit" and self._campaign is not None else None
-        others = {n for n in self._existing_names if n != own_name}
-        if name in others:
+        others = (n for n in self._existing_names if n != own_name)
+        if campaign_name_error(name, others) is not None:
             return False
         if self.ui.mode_location_radio.isChecked():
             return self._location_set

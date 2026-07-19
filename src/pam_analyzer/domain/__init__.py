@@ -28,6 +28,7 @@ from .entities import (
     Detection,
     Project,
     WeekInventory,
+    campaign_name_error,
 )
 from .enums import FilterMode, VerifiedState
 from .values import AnalysisSettings, LatLon
@@ -47,6 +48,7 @@ __all__ = [
     "CardImportResult",
     "CardInventory",
     "CardQueue",
+    "campaign_name_error",
     "ConflictChoice",
     "ConflictReport",
     "DetectedCard",

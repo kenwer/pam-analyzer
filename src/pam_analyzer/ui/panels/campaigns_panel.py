@@ -2,6 +2,7 @@
 
 import dataclasses
 import logging
+import unicodedata
 from enum import Enum
 
 from PySide6.QtCore import Qt, QUrl
@@ -20,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ...domain import Campaign, FilterMode, LatLon
+from ...domain import Campaign, FilterMode, LatLon, campaign_name_error
 from ...infrastructure import TomlCampaignRepository
 from ...workers import ImportOrchestrator
 from ..app_state import AppState
@@ -302,12 +303,27 @@ class CampaignsPanel(QWidget):
                 f'A folder named "{name}" already exists.',
             )
             return
-        if mode == FilterMode.LIST:
-            self._service.write_species_list(campaign, species_text)
-        elif mode == FilterMode.LOCATION:
-            self._service.write_must_have_species(campaign, must_have_text)
+        try:
+            if mode == FilterMode.LIST:
+                self._service.write_species_list(campaign, species_text)
+            elif mode == FilterMode.LOCATION:
+                self._service.write_must_have_species(campaign, must_have_text)
+        except OSError as exc:
+            # The folder already exists at this point, so the form must still
+            # close below; leaving it open would make the next Save fail with
+            # a confusing "already exists".
+            QMessageBox.warning(
+                self,
+                "Create campaign",
+                f"Campaign created, but writing the species file failed: {exc}",
+            )
         self._app_state.refresh_campaigns()
-        self._select_by_name(name)
+        if not self._select_by_name(name):
+            # The filesystem can hand back a differently spelled folder name
+            # (e.g. HFS+ drives store Unicode names in NFD form). The create
+            # succeeded, so close the form and fall back to the overview.
+            self.ui.campaign_list.clearSelection()
+            self._show_overview()
 
     def _on_update_requested(
         self,
@@ -332,7 +348,9 @@ class CampaignsPanel(QWidget):
         elif mode == FilterMode.LOCATION:
             self._service.write_must_have_species(updated, must_have_text)
         self._app_state.refresh_campaigns()
-        self._select_by_name(new_name)
+        if not self._select_by_name(new_name):
+            self.ui.campaign_list.clearSelection()
+            self._show_overview()
 
     def _on_delete_requested(self, campaign: Campaign) -> None:
         self._service.delete(campaign)
@@ -439,8 +457,10 @@ class CampaignsPanel(QWidget):
         new_name = new_name.strip()
         if not new_name or new_name == campaign.name:
             return
-        if new_name in self._existing_names():
-            QMessageBox.warning(self, "Rename", f'A campaign named "{new_name}" already exists.')
+        others = (n for n in self._existing_names() if n != campaign.name)
+        error = campaign_name_error(new_name, others)
+        if error is not None:
+            QMessageBox.warning(self, "Rename", error)
             return
         try:
             self._service.rename(campaign, new_name)
@@ -497,9 +517,14 @@ class CampaignsPanel(QWidget):
             return None
         return self._model.data(index, Qt.ItemDataRole.UserRole)
 
-    def _select_by_name(self, name: str) -> None:
+    def _select_by_name(self, name: str) -> bool:
+        # NFC-normalized comparison: HFS+ (and some network mounts) return
+        # folder names in NFD form, which renders identically to the typed
+        # NFC name but fails a plain string comparison.
+        target = unicodedata.normalize("NFC", name)
         for row in range(self._model.rowCount()):
             item = self._model.item(row)
-            if item and item.text() == name:
+            if item and unicodedata.normalize("NFC", item.text()) == target:
                 self.ui.campaign_list.setCurrentIndex(item.index())
-                return
+                return True
+        return False

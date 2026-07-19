@@ -1,7 +1,9 @@
 """pytest-qt smoke tests for the Campaigns panel."""
 
+import dataclasses
 import os
 import time
+import unicodedata
 from pathlib import Path
 
 import pytest
@@ -498,6 +500,101 @@ def test_create_campaign_appears_in_list(qtbot, panel: CampaignsPanel, project_w
     qtbot.waitUntil(lambda: panel._model.rowCount() == 2, timeout=2000)
     names = [panel._model.item(r).text() for r in range(panel._model.rowCount())]
     assert "beta" in names
+
+
+def test_create_campaign_with_nfd_folder_name_closes_form(
+    qtbot, panel: CampaignsPanel, monkeypatch
+):
+    """HFS+ style drives hand back NFD-normalized folder names; the typed NFC
+    name must still match so the form closes and the new campaign is shown."""
+    real_discover = TomlCampaignRepository.discover
+
+    def nfd_discover(self, folder):
+        return [
+            dataclasses.replace(c, name=unicodedata.normalize("NFD", c.name))
+            for c in real_discover(self, folder)
+        ]
+
+    monkeypatch.setattr(TomlCampaignRepository, "discover", nfd_discover)
+
+    panel.ui.new_button.click()
+    panel._detail.ui.name_edit.setText("S\u00fcd")  # NFC, single u-umlaut codepoint
+    panel._detail._location_set = True
+    panel._detail._validate()
+    assert panel._detail.ui.save_button.isEnabled()
+    panel._detail.ui.save_button.click()
+
+    assert panel._detail.ui.stack.currentWidget() is panel._detail.ui.view_page
+    shown = unicodedata.normalize("NFC", panel._detail.ui.view_name_label.text())
+    assert shown == "S\u00fcd"
+
+
+def test_create_campaign_falls_back_to_overview_when_name_mangled(
+    qtbot, panel: CampaignsPanel, monkeypatch
+):
+    """Even if the filesystem mangles the folder name beyond a normalization
+    difference, the form must close instead of trapping the user in a state
+    where the next Save reports "already exists"."""
+    real_discover = TomlCampaignRepository.discover
+
+    def mangling_discover(self, folder):
+        return [
+            dataclasses.replace(c, name="BETA-mangled") if c.name == "beta" else c
+            for c in real_discover(self, folder)
+        ]
+
+    monkeypatch.setattr(TomlCampaignRepository, "discover", mangling_discover)
+
+    panel.ui.new_button.click()
+    panel._detail.ui.name_edit.setText("beta")
+    panel._detail._location_set = True
+    panel._detail._validate()
+    panel._detail.ui.save_button.click()
+
+    assert panel._detail.ui.stack.currentWidget() is panel._detail.ui.empty_page
+    assert panel.ui.new_button.isEnabled()
+    assert panel.ui.campaign_list.isEnabled()
+
+
+def test_name_validation_rejects_windows_hostile_names(panel: CampaignsPanel):
+    """Trailing dots (silently stripped by Win32) and reserved device names
+    would create a folder whose name differs from the typed one, or fail."""
+    panel._detail.open_new([])
+    panel._detail._location_set = True
+    for bad in ("Site A.", "CON", "lpt3", "Nul.data"):
+        panel._detail.ui.name_edit.setText(bad)
+        assert panel._detail._is_valid() is False, bad
+    panel._detail.ui.name_edit.setText("Site A")
+    assert panel._detail._is_valid() is True
+
+
+def test_rename_rejects_windows_hostile_name(
+    panel: CampaignsPanel, project_with_campaign, monkeypatch
+):
+    """The rename dialog applies the same name policy as the creation form."""
+    from PySide6.QtWidgets import QInputDialog, QMessageBox
+
+    _, campaign = project_with_campaign
+    monkeypatch.setattr(
+        QInputDialog, "getText", staticmethod(lambda *a, **k: ("Site A.", True))
+    )
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", staticmethod(lambda *a, **k: warnings.append(a))
+    )
+
+    panel._rename_campaign(campaign)
+
+    assert len(warnings) == 1
+    assert campaign.folder.exists()  # folder untouched
+
+
+def test_duplicate_name_check_ignores_unicode_normalization(panel: CampaignsPanel):
+    """Typing the NFC spelling of an existing NFD-named campaign is a duplicate."""
+    nfd_name = unicodedata.normalize("NFD", "S\u00fcd")
+    panel._detail.open_new([nfd_name])
+    panel._detail.ui.name_edit.setText("S\u00fcd")
+    assert panel._detail._is_valid() is False
 
 
 def test_delete_confirm_page_shows_audio_count(qtbot, panel: CampaignsPanel, project_with_campaign):

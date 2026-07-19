@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+### Fixed
+- The campaign creation form no longer stays open after a successful save, which made the next save report that the campaign already exists.
+- Campaign names Windows cannot store (trailing dot, reserved device names like `CON`) are now rejected.
+
 ## [0.5.1] - 2026-07-19
 ### Added
 - Better date and time filters for the examine panel.

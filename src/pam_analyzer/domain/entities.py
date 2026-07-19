@@ -1,3 +1,5 @@
+import unicodedata
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -36,6 +38,39 @@ class Campaign:
     folder: Path
     species_filter_mode: FilterMode = FilterMode.LOCATION
     location: LatLon | None = None  # required when mode == LOCATION
+
+
+# Names Windows refuses or silently alters. Enforced on every platform so a
+# project folder stays portable between macOS and Windows machines.
+_WINDOWS_RESERVED_NAMES = frozenset(
+    {"CON", "PRN", "AUX", "NUL"}
+    | {f"COM{i}" for i in range(1, 10)}
+    | {f"LPT{i}" for i in range(1, 10)}
+)
+
+
+def campaign_name_error(name: str, taken_names: Iterable[str] = ()) -> str | None:
+    """Why the (already stripped) name cannot be used as a campaign folder
+    name, or None if it can. The message is suitable for showing to the user.
+
+    Duplicates are compared NFC-normalized because some filesystems (HFS+,
+    certain network mounts) store names in NFD form, which the OS treats as
+    the same folder even though the strings compare unequal.
+    """
+    if not name:
+        return "Campaign name must not be empty."
+    if "/" in name or "\\" in name:
+        return "Campaign name must not contain slashes."
+    # Win32 strips trailing dots when creating a folder, so the name on disk
+    # would differ from the typed one.
+    if name.endswith("."):
+        return "Campaign name must not end with a dot."
+    if name.split(".")[0].upper() in _WINDOWS_RESERVED_NAMES:
+        return f'"{name}" is a reserved name on Windows.'
+    taken = {unicodedata.normalize("NFC", n) for n in taken_names}
+    if unicodedata.normalize("NFC", name) in taken:
+        return f'A campaign named "{name}" already exists.'
+    return None
 
 
 @dataclass(slots=True)
