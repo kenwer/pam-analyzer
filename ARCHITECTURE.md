@@ -40,13 +40,14 @@ src/pam_analyzer/
 | `domain` | stdlib only | Qt, infrastructure, workers, ui |
 | `infrastructure` | domain, stdlib, third-party I/O | Qt, workers, ui |
 | `workers` | domain, infrastructure, Qt | ui |
-| `widgets` | Qt | domain, infrastructure, workers, ui/panels |
+| `widgets` | domain, Qt | infrastructure, workers, ui/panels |
 | `ui` | domain, infrastructure, workers, widgets, Qt | (composition root only) |
 | `app` | everything | (no restrictions; this is the composition root) |
 
-The `widgets/` layer is for generic, reusable Qt components that carry no domain
-knowledge. App-specific components that know about `Campaign`, `Detection`, etc.
-belong in `ui/`.
+The `widgets/` layer is for Qt components below the panel level. They may use
+domain vocabulary (enums, value objects, pure functions such as
+`domain.filter_ops`) but must not touch I/O, workers, or panels. Components
+that orchestrate models and panels belong in `ui/`.
 
 This table is enforced by `tests/test_architecture.py`, which walks every
 module's imports. Change the table and the test's rule map together.

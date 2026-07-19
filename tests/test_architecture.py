@@ -20,7 +20,7 @@ ALLOWED_INTERNAL: dict[str, set[str]] = {
     "domain": set(),
     "infrastructure": {"domain"},
     "workers": {"domain", "infrastructure"},
-    "widgets": set(),
+    "widgets": {"domain"},
     "ui": {"domain", "infrastructure", "workers", "widgets"},
 }
 

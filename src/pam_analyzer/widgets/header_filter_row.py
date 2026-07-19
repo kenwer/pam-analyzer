@@ -3,12 +3,13 @@
 Provides :class:`HeaderFilterRow`, a QObject controller that places one
 filter slot (text input + funnel/operator menu) per model
 column inside the header area, with debounced text-change signals.
-The set of operators per column depends on whether the column is marked
-``numeric`` at :meth:`rebuild` time.
+The set of operators per column depends on the ColumnKind passed for it
+at :meth:`rebuild` time.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -16,13 +17,16 @@ from PySide6.QtCore import QObject, QPoint, QPointF, Qt, QTimer, Signal
 from PySide6.QtGui import QActionGroup, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import QLineEdit, QMenu, QToolButton, QWidget
 
-from .filter_ops import (
+from ..domain.filter_ops import (
+    DATETIME_OPS,
+    ColumnKind,
     FilterOp,
     default_op,
     label_for,
     needs_value,
     operators_for,
 )
+from .filter_popups import POPUP_OPS, create_popup, show_filter_popup
 
 if TYPE_CHECKING:
     from .multi_column_sort_table import MultiColumnSortTable
@@ -102,7 +106,7 @@ class _Slot:
     edit: QLineEdit
     button: _FunnelButton
     timer: QTimer
-    numeric: bool
+    kind: ColumnKind
     op: FilterOp
     pending_text: str = ""
 
@@ -123,6 +127,9 @@ class HeaderFilterRow(QObject):
         self._header = table.horizontalHeader()
         self._slots: list[_Slot] = []
         self._suppressed: set[int] = set()
+        # Distinct-values source for the "is one of" popup, injected by the
+        # owning table so this controller stays decoupled from the model.
+        self._values_provider: Callable[[int], list[str]] | None = None
 
         # Drive height + button size from a sample QLineEdit's sizeHint, which
         # already accounts for the user's font, style, and high-DPI scaling.
@@ -140,13 +147,13 @@ class HeaderFilterRow(QObject):
         self._header.shown.connect(lambda: QTimer.singleShot(0, self._sync))
 
     # public API
-    def rebuild(self, col_count: int, numeric_cols: set[int] | None = None) -> None:
+    def rebuild(self, col_count: int, kinds: Mapping[int, ColumnKind] | None = None) -> None:
         """Recreate one filter slot per model column.
 
-        *numeric_cols* is the set of column indices that should expose the
-        number-filter operator menu. All others get the text-filter set.
+        *kinds* maps column index to its ColumnKind, which picks the
+        operator menu for that slot. Missing entries default to TEXT.
         """
-        numeric_cols = numeric_cols or set()
+        kinds = kinds or {}
         for s in self._slots:
             s.timer.stop()
             s.edit.deleteLater()
@@ -154,8 +161,12 @@ class HeaderFilterRow(QObject):
         self._slots = []
 
         for col in range(col_count):
-            self._slots.append(self._build_slot(col, col in numeric_cols))
+            self._slots.append(self._build_slot(col, kinds.get(col, ColumnKind.TEXT)))
         self._sync()
+
+    def set_values_provider(self, provider: Callable[[int], list[str]]) -> None:
+        """Set the source of distinct column values for the set popup."""
+        self._values_provider = provider
 
     def clear_column(self, col: int) -> None:
         if not (0 <= col < len(self._slots)):
@@ -189,7 +200,7 @@ class HeaderFilterRow(QObject):
         return None
 
     # slot construction
-    def _build_slot(self, col: int, numeric: bool) -> _Slot:
+    def _build_slot(self, col: int, kind: ColumnKind) -> _Slot:
         edit = QLineEdit(self._header)
         edit.setPlaceholderText("…")
         # Reserve room on the right for the funnel button.
@@ -202,14 +213,14 @@ class HeaderFilterRow(QObject):
         )
 
         button = _FunnelButton(edit)
-        op = default_op(numeric)
+        op = default_op(kind)
         button.setToolTip(label_for(op))
 
         timer = QTimer(self)
         timer.setSingleShot(True)
         timer.setInterval(300)
 
-        slot = _Slot(edit=edit, button=button, timer=timer, numeric=numeric, op=op)
+        slot = _Slot(edit=edit, button=button, timer=timer, kind=kind, op=op)
 
         def _on_text(text: str, c: int = col) -> None:
             self._slots[c].pending_text = text
@@ -232,7 +243,12 @@ class HeaderFilterRow(QObject):
         menu = QMenu(slot.edit)
         group = QActionGroup(menu)
         group.setExclusive(True)
-        for op in operators_for(slot.numeric):
+        ops = operators_for(slot.kind)
+        rich_ops = POPUP_OPS | DATETIME_OPS
+        for i, op in enumerate(ops):
+            # Separator between the popup-editor ops and the plain text ops.
+            if i > 0 and op not in rich_ops and ops[i - 1] in rich_ops:
+                menu.addSeparator()
             action = menu.addAction(label_for(op))
             action.setCheckable(True)
             action.setChecked(op is slot.op)
@@ -258,6 +274,37 @@ class HeaderFilterRow(QObject):
             slot.pending_text = ""
         # Re-apply immediately rather than waiting for the next keystroke.
         self._emit(col)
+        if op in POPUP_OPS:
+            # Re-selecting the checked op also lands here (triggered still
+            # fires in an exclusive QActionGroup), which is how users reopen
+            # the editor. Deferred so the op menu fully closes first; opening
+            # a second popup from inside a closing menu's handler is flaky.
+            QTimer.singleShot(0, lambda c=col: self._open_popup(c))
+
+    def _open_popup(self, col: int) -> None:
+        """Open the editor popup for the column's current op, prefilled from
+        its text. Apply writes canonical text back; dismiss changes nothing."""
+        if not (0 <= col < len(self._slots)):
+            return
+        slot = self._slots[col]
+        values_provider = None
+        if self._values_provider is not None:
+            provider = self._values_provider
+            values_provider = lambda c=col: provider(c)  # noqa: E731
+        widget = create_popup(slot.op, slot.edit.text(), values_provider)
+        if widget is None:
+            return
+
+        def _apply(text: str, c: int = col) -> None:
+            s = self._slots[c]
+            s.timer.stop()
+            s.edit.blockSignals(True)
+            s.edit.setText(text)
+            s.edit.blockSignals(False)
+            s.pending_text = text
+            self._emit(c)
+
+        show_filter_popup(widget, slot.button, _apply)
 
     # emit
     def _emit(self, col: int) -> None:

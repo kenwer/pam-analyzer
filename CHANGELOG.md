@@ -1,14 +1,19 @@
 # Changelog
 
+## [Unreleased]
+### Added
+- Better date and time filters for the examine panel.
+- New "Is one of" filter for Campaign, ARU, Species, Model, Verified, and Corrected_Species.
+
 ## [0.5.0] - 2026-07-17
 ### Added
-- File > Open Legacy Project File... migrates a legacy `.pamproj` directly from wherever it lives, without needing to move it into its audio root folder first.
+- File > Open Legacy Project File... migrates a legacy `.pamproj`.
 ### Changed
 - Projects are now self-contained folders. The `pam-analyzer.toml` file inside the project folder stores the settings. The audio root and detections output path settings are gone. New Project and Open Project pick a folder instead of a file.
-- Detection CSVs now live inside each campaign folder as `detections-{model}.csv`, with File paths relative to the campaign folder. Campaigns can be renamed, moved, or archived together with their results.
+- Detection CSVs now live inside each campaign folder as `detections-{model}.csv`, with File paths relative to the campaign folder.
 - Location-mode species lists are written as `applied-species-list.txt` inside the campaign folder.
 - Project settings save automatically on every change. The Save and Save As menu items have been removed.
-- Opening a legacy `.pamproj` project offers a one-time migration that moves the detection CSVs into their campaign folders and keeps the old file as `.bak`.
+- Opening a legacy `.pamproj` project offers a migration that moves the detection CSVs into their campaign folders and keeps the old file as `.bak`.
 ### Fixed
 - SD card import no longer aborts when the card contains an inaccessible OS-generated directory, such as macOS's `.Spotlight-V100`.
 

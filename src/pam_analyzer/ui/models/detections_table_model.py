@@ -19,7 +19,8 @@ from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from ...domain import Detection
 from ...domain.detection_schema import COLUMNS as _SCHEMA_COLUMNS
 from ...domain.detection_schema import ColumnSpec, is_locale_column
-from ...widgets.filter_ops import FilterOp, default_op, to_polars_expr
+from ...domain.filter_ops import ColumnKind, FilterOp, default_op
+from .filter_exprs import datetime_helper_exprs, to_polars_expr
 
 PLAY_COLUMN_INDEX = 0
 """The model column index reserved for the virtual play-button column."""
@@ -115,7 +116,10 @@ class DetectionsTableModel(QAbstractTableModel):
         )
         self._columns = [
             *_STATIC_COLUMNS[: species_pos + 1],
-            *(ColumnSpec(h, _extra_column_getter(h)) for h in extras),
+            *(
+                ColumnSpec(h, _extra_column_getter(h), kind=ColumnKind.CATEGORICAL)
+                for h in extras
+            ),
             *_STATIC_COLUMNS[species_pos + 1 :],
         ]
         self._sort_df = self._build_sort_df(self._all)
@@ -131,6 +135,27 @@ class DetectionsTableModel(QAbstractTableModel):
         shift the static columns.
         """
         return {i for i, c in enumerate(self._columns) if c.numeric}
+
+    def column_kinds(self) -> dict[int, ColumnKind]:
+        """Kind per current column index, driving each filter slot's op menu.
+
+        Computed from self._columns so the mapping stays correct after
+        dynamic Species_<locale> extras shift the static columns.
+        """
+        return {i: c.kind for i, c in enumerate(self._columns)}
+
+    def distinct_values(self, col: int) -> list[str]:
+        """Sorted distinct non-blank values of *col*, for the "is one of" popup.
+
+        Blank cells are served by the BLANK op instead of appearing here.
+        """
+        if not (0 <= col < len(self._columns)) or col == PLAY_COLUMN_INDEX:
+            return []
+        name = self._columns[col].name
+        if self._sort_df.is_empty() or name not in self._sort_df.columns:
+            return []
+        values = self._sort_df[name].cast(pl.String).drop_nulls().unique().sort().to_list()
+        return [v for v in values if v != ""]
 
     def index_of(self, name: str) -> int:
         """Return the current column index for *name*, or -1 if absent.
@@ -198,7 +223,7 @@ class DetectionsTableModel(QAbstractTableModel):
         if not (0 <= col < len(self._columns)) or col == PLAY_COLUMN_INDEX:
             return
         if op is None:
-            op = default_op(self._columns[col].numeric)
+            op = default_op(self._columns[col].kind)
 
         text = text.strip()
         active = (op in _BLANK_OPS) or bool(text)
@@ -316,7 +341,17 @@ class DetectionsTableModel(QAbstractTableModel):
             extra_keys.update(d.extra.keys())
         for key in sorted(extra_keys):
             data[key] = [d.extra.get(key) for d in detections]
-        return pl.DataFrame(data)
+        df = pl.DataFrame(data)
+        # Parsed date/time helper columns for DATETIME columns, so filtering
+        # never re-parses the ISO strings per keystroke. Recording_Time is
+        # read-only, so the setData sync path never needs to refresh these.
+        helper_exprs = [
+            e
+            for c in _SCHEMA_COLUMNS
+            if c.kind is ColumnKind.DATETIME
+            for e in datetime_helper_exprs(c.name)
+        ]
+        return df.with_columns(helper_exprs) if helper_exprs else df
 
     def _rebuild_visible(self) -> None:
         """Recompute _visible from _all and _col_filters. Called inside a model reset."""
@@ -331,7 +366,7 @@ class DetectionsTableModel(QAbstractTableModel):
             col_name = self._columns[col_idx].name
             if col_name not in self._sort_df.columns:
                 continue
-            mask = mask & to_polars_expr(col_name, text, op, self._columns[col_idx].numeric)
+            mask = mask & to_polars_expr(col_name, text, op, self._columns[col_idx].kind)
 
         self._visible = self._sort_df.with_row_index("__idx").filter(mask)["__idx"].to_list()
 

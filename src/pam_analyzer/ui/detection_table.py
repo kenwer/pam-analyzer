@@ -24,9 +24,9 @@ from PySide6.QtWidgets import (
 )
 
 from ..domain import VerifiedState
+from ..domain.filter_ops import FilterOp
 from ..widgets.audio_player import AudioPlayerPanel
 from ..widgets.combo_delegate import ComboDelegate, fixed
-from ..widgets.filter_ops import FilterOp
 from ..widgets.header_filter_row import HeaderFilterRow
 from ..widgets.multi_column_sort_table import MultiColumnSortTable
 from ..widgets.no_hover_style import disable_item_hover
@@ -184,6 +184,8 @@ class DetectionTable(QWidget):
         # filter row (embedded in the header)
         self._filter_row = HeaderFilterRow(self._table)
         self._filter_row.filterChanged.connect(self._on_filter_changed)
+        # Lazy so the "is one of" popup always sees the latest detections.
+        self._filter_row.set_values_provider(self._distinct_values)
 
         # (status is emitted via statusChanged signal to the host panel)
 
@@ -238,18 +240,16 @@ class DetectionTable(QWidget):
         """
         if self._model is None:
             return
+        kinds = self._model.column_kinds()
         signature = (
             self._model.columnCount(),
             tuple(self._model.column_names(include_play=True)),
-            frozenset(self._model.numeric_column_indices()),
+            tuple(kinds[i].value for i in range(self._model.columnCount())),
         )
         if signature == self._layout_signature:
             return
         self._layout_signature = signature
-        self._filter_row.rebuild(
-            self._model.columnCount(),
-            numeric_cols=self._model.numeric_column_indices(),
-        )
+        self._filter_row.rebuild(self._model.columnCount(), kinds=kinds)
         self._filter_row.set_column_visible(PLAY_COLUMN_INDEX, False)
         for name, delegate in (
             ("Verified", self._verified_delegate),
@@ -472,6 +472,9 @@ class DetectionTable(QWidget):
             return
         self._model.set_column_filter(col, text, op)
         self._refresh_status()
+
+    def _distinct_values(self, col: int) -> list[str]:
+        return self._model.distinct_values(col) if self._model is not None else []
 
     def _on_playback_started(self, file_path: str) -> None:
         self._playing_file = file_path

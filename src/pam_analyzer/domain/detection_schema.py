@@ -24,6 +24,7 @@ from typing import Any
 
 from .entities import Detection
 from .enums import VerifiedState
+from .filter_ops import ColumnKind
 
 
 @dataclass(frozen=True)
@@ -32,18 +33,23 @@ class ColumnSpec:
 
     set is None for read-only columns. annotation marks the user-editable
     review columns, which are appended on CSV writes even when the source
-    file lacked them.
+    file lacked them. kind drives the filter operator menu and matching
+    semantics (see filter_ops.ColumnKind).
     """
 
     name: str
     get: Callable[[Detection], Any]
     set: Callable[[Detection, str], None] | None = None
-    numeric: bool = False
+    kind: ColumnKind = ColumnKind.TEXT
     annotation: bool = False
 
     @property
     def editable(self) -> bool:
         return self.set is not None
+
+    @property
+    def numeric(self) -> bool:
+        return self.kind is ColumnKind.NUMERIC
 
 
 def _set_verified(d: Detection, value: str) -> None:
@@ -58,25 +64,28 @@ def _set_comment(d: Detection, value: str) -> None:
     d.comment = value
 
 
+_NUMERIC = ColumnKind.NUMERIC
+_CATEGORICAL = ColumnKind.CATEGORICAL
+
 COLUMNS: tuple[ColumnSpec, ...] = (
-    ColumnSpec("Campaign", lambda d: d.campaign),
-    ColumnSpec("ARU", lambda d: d.aru),
-    ColumnSpec("Start_Time", lambda d: d.start_time, numeric=True),
-    ColumnSpec("End_Time", lambda d: d.end_time, numeric=True),
+    ColumnSpec("Campaign", lambda d: d.campaign, kind=_CATEGORICAL),
+    ColumnSpec("ARU", lambda d: d.aru, kind=_CATEGORICAL),
+    ColumnSpec("Start_Time", lambda d: d.start_time, kind=_NUMERIC),
+    ColumnSpec("End_Time", lambda d: d.end_time, kind=_NUMERIC),
     ColumnSpec("Scientific_Name", lambda d: d.scientific_name),
-    ColumnSpec("Species", lambda d: d.species),
-    ColumnSpec("Confidence", lambda d: d.confidence, numeric=True),
-    ColumnSpec("Rank", lambda d: d.rank, numeric=True),
+    ColumnSpec("Species", lambda d: d.species, kind=_CATEGORICAL),
+    ColumnSpec("Confidence", lambda d: d.confidence, kind=_NUMERIC),
+    ColumnSpec("Rank", lambda d: d.rank, kind=_NUMERIC),
     ColumnSpec("File", lambda d: d.file),
-    ColumnSpec("Recording_Time", lambda d: d.recording_time),
-    ColumnSpec("Week", lambda d: d.week, numeric=True),
-    ColumnSpec("Lat", lambda d: d.lat, numeric=True),
-    ColumnSpec("Lon", lambda d: d.lon, numeric=True),
-    ColumnSpec("Species_List", lambda d: d.species_list),
-    ColumnSpec("Min_Conf", lambda d: d.min_conf, numeric=True),
-    ColumnSpec("Model", lambda d: d.model),
-    ColumnSpec("Verified", lambda d: d.verified.value, _set_verified, annotation=True),
-    ColumnSpec("Corrected_Species", lambda d: d.corrected_species, _set_corrected_species, annotation=True),
+    ColumnSpec("Recording_Time", lambda d: d.recording_time, kind=ColumnKind.DATETIME),
+    ColumnSpec("Week", lambda d: d.week, kind=_NUMERIC),
+    ColumnSpec("Lat", lambda d: d.lat, kind=_NUMERIC),
+    ColumnSpec("Lon", lambda d: d.lon, kind=_NUMERIC),
+    ColumnSpec("Species_List", lambda d: d.species_list, kind=_CATEGORICAL),
+    ColumnSpec("Min_Conf", lambda d: d.min_conf, kind=_NUMERIC),
+    ColumnSpec("Model", lambda d: d.model, kind=_CATEGORICAL),
+    ColumnSpec("Verified", lambda d: d.verified.value, _set_verified, kind=_CATEGORICAL, annotation=True),
+    ColumnSpec("Corrected_Species", lambda d: d.corrected_species, _set_corrected_species, kind=_CATEGORICAL, annotation=True),
     ColumnSpec("Comment", lambda d: d.comment, _set_comment, annotation=True),
 )
 

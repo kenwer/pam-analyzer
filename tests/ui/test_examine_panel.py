@@ -4,10 +4,11 @@ import csv
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QCoreApplication, QPoint
+from PySide6.QtCore import QCoreApplication, QPoint, Qt
 from PySide6.QtWidgets import QTabWidget, QWidget
 
 from pam_analyzer.domain import Campaign, FilterMode, LatLon, Project
+from pam_analyzer.domain.filter_ops import FilterOp
 from pam_analyzer.infrastructure import (
     CsvDetectionRepository,
     SoundfileAudioExtractor,
@@ -18,7 +19,6 @@ from pam_analyzer.ui.app_state import AppState
 from pam_analyzer.ui.models.detections_table_model import COLUMNS_BY_NAME
 from pam_analyzer.ui.panels.examine_panel import ExaminePanel
 from pam_analyzer.ui.settings import AppSettings
-from pam_analyzer.widgets.filter_ops import FilterOp
 
 _HEADERS = [
     "Campaign",
@@ -72,7 +72,9 @@ def project(tmp_path: Path) -> Project:
                         f"{i * 3.0 + 3.0}",
                         str(i + 1),
                         "f.wav",
-                        "2026-04-25T08:00:00",
+                        # Distinct date and time-of-day per row so the
+                        # date/time filter tests can slice the rows.
+                        f"2026-04-{25 + i:02d}T{4 + i:02d}:00:00",
                         "",
                         "",
                         "",
@@ -456,6 +458,102 @@ def test_clear_filter_via_empty_text_with_default_op(panel: ExaminePanel) -> Non
     assert panel._model.rowCount() == 3
     panel._model.set_column_filter(COLUMNS_BY_NAME["ARU"], "", FilterOp.CONTAINS)
     assert panel._model.rowCount() == 6
+
+
+def test_date_range_filter(panel: ExaminePanel) -> None:
+    # Fixture dates are 2026-04-25/26/27 (one per row, both campaigns).
+    col = panel._model.index_of("Recording_Time")
+    panel._model.set_column_filter(col, "2026-04-25 .. 2026-04-26", FilterOp.DATE_RANGE)
+    rows = panel._model.detections()
+    assert len(rows) == 4
+    assert all(r.recording_time[:10] in ("2026-04-25", "2026-04-26") for r in rows)
+
+
+def test_on_date_filter(panel: ExaminePanel) -> None:
+    col = panel._model.index_of("Recording_Time")
+    panel._model.set_column_filter(col, "2026-04-26", FilterOp.ON_DATE)
+    rows = panel._model.detections()
+    assert len(rows) == 2
+    assert all(r.recording_time.startswith("2026-04-26") for r in rows)
+
+
+def test_time_of_day_filter(panel: ExaminePanel) -> None:
+    # Fixture times of day are 04:00/05:00/06:00 (one per row, both campaigns).
+    col = panel._model.index_of("Recording_Time")
+    panel._model.set_column_filter(col, "04:30 - 06:30", FilterOp.TIME_OF_DAY_RANGE)
+    assert panel._model.rowCount() == 4
+
+
+def test_time_of_day_filter_wraps_midnight(panel: ExaminePanel) -> None:
+    col = panel._model.index_of("Recording_Time")
+    panel._model.set_column_filter(col, "22:00 - 04:30", FilterOp.TIME_OF_DAY_RANGE)
+    rows = panel._model.detections()
+    assert len(rows) == 2
+    assert all("T04:00" in r.recording_time for r in rows)
+
+
+def test_is_any_of_filter(panel: ExaminePanel) -> None:
+    col = panel._model.index_of("ARU")
+    panel._model.set_column_filter(col, "MSD-1; MSD-2", FilterOp.IS_ANY_OF)
+    assert panel._model.rowCount() == 6
+    panel._model.set_column_filter(col, "MSD-1", FilterOp.IS_ANY_OF)
+    rows = panel._model.detections()
+    assert rows and all(r.aru == "MSD-1" for r in rows)
+
+
+def test_distinct_values_for_set_popup(panel: ExaminePanel) -> None:
+    assert panel._model.distinct_values(panel._model.index_of("ARU")) == ["MSD-1", "MSD-2"]
+    # The play column never offers values.
+    assert panel._model.distinct_values(0) == []
+
+
+def test_funnel_menu_is_one_of_flow(panel: ExaminePanel) -> None:
+    """End-to-end: pick "Is one of..." in the funnel menu, check a value in
+    the set popup, apply, and see the canonical text and filtered rows.
+
+    QMenu.exec blocks, so both popups are driven from single-shot timers
+    (monkeypatching QMenu.exec on the class does not intercept in PySide6).
+    The set popup opens via its own deferred single-shot after the op menu
+    closes, so the second handler retries until it appears.
+    """
+    from PySide6.QtCore import QTimer
+    from PySide6.QtWidgets import QApplication, QMenu, QPushButton
+
+    from pam_analyzer.widgets.filter_popups import SetPopup
+
+    detection_table = panel.ui.detections_table
+    filter_row = detection_table._filter_row
+    col = panel._model.index_of("ARU")
+
+    def _handle_set_popup(attempts: int = 0) -> None:
+        popup_menu = QApplication.activePopupWidget()
+        set_popup = popup_menu.findChild(SetPopup) if popup_menu else None
+        if set_popup is None:
+            assert attempts < 50, "set popup never appeared"
+            QTimer.singleShot(20, lambda: _handle_set_popup(attempts + 1))
+            return
+        set_popup._list.item(0).setCheckState(Qt.CheckState.Checked)
+        apply_button = next(
+            b for b in set_popup.findChildren(QPushButton) if b.text() == "Apply"
+        )
+        apply_button.click()
+
+    def _pick_is_one_of() -> None:
+        menu = QApplication.activePopupWidget()
+        assert isinstance(menu, QMenu)
+        action = next(a for a in menu.actions() if a.text() == "Is one of...")
+        QTimer.singleShot(20, _handle_set_popup)
+        action.trigger()
+        menu.close()
+
+    QTimer.singleShot(0, _pick_is_one_of)
+    filter_row._show_op_menu(col)
+    QCoreApplication.processEvents()
+
+    assert filter_row._slots[col].edit.text() == "MSD-1"
+    assert filter_row.column_op(col) is FilterOp.IS_ANY_OF
+    rows = panel._model.detections()
+    assert rows and all(r.aru == "MSD-1" for r in rows)
 
 
 def test_column_menu_no_qaction_error(panel: ExaminePanel) -> None:
