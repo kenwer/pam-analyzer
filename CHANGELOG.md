@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.5.1] - 2026-07-19
 ### Added
 - Better date and time filters for the examine panel.
 - New "Is one of" filter for Campaign, ARU, Species, Model, Verified, and Corrected_Species.

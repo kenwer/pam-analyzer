@@ -1,6 +1,6 @@
 [project]
 name = "pam-analyzer"
-version = "0.5.0"
+version = "0.5.1"
 description = "Automated bird species detection from acoustic recordings."
 readme = "README.md"
 requires-python = ">=3.13,<3.14"  # 3.14 blocked by tensorflow (no cp314 wheels yet) and birdnet (requires-python <3.14)
