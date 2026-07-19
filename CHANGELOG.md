@@ -4,6 +4,9 @@
 ### Added
 - Better date and time filters for the examine panel.
 - New "Is one of" filter for Campaign, ARU, Species, Model, Verified, and Corrected_Species.
+- Pressing Enter in a filter input applies the filter immediately and moves focus to the table.
+### Fixed
+- Typing in a filter input no longer loses focus when the selected row is filtered out.
 
 ## [0.5.0] - 2026-07-17
 ### Added

@@ -232,8 +232,18 @@ class HeaderFilterRow(QObject):
         def _on_button() -> None:
             self._show_op_menu(col)
 
+        def _on_return(c: int = col) -> None:
+            # Enter means "done filtering": apply the pending text without
+            # waiting out the debounce, then hand focus to the results table.
+            s = self._slots[c]
+            if s.timer.isActive():
+                s.timer.stop()
+                self._emit(c)
+            self._table.setFocus()
+
         timer.timeout.connect(_on_timer)
         edit.textChanged.connect(_on_text)
+        edit.returnPressed.connect(_on_return)
         button.clicked.connect(_on_button)
         return slot
 

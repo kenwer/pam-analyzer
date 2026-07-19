@@ -556,6 +556,49 @@ def test_funnel_menu_is_one_of_flow(panel: ExaminePanel) -> None:
     assert rows and all(r.aru == "MSD-1" for r in rows)
 
 
+def test_typing_a_filter_keeps_focus_in_the_filter_input(qtbot, panel: ExaminePanel) -> None:
+    """Filtering out the selected row must not move focus to the table,
+    where the armed shortcuts would swallow the rest of the typing."""
+    from PySide6.QtWidgets import QApplication
+
+    panel.show()
+    qtbot.waitExposed(panel)
+    filter_row = panel.ui.detections_table._filter_row
+    edit = filter_row._slots[panel._model.index_of("ARU")].edit
+    edit.setFocus()
+    qtbot.waitUntil(lambda: QApplication.focusWidget() is edit)
+
+    qtbot.keyClicks(edit, "MSD-2")
+    # Wait out the debounce until the filter has applied (row selection and
+    # player sync included).
+    qtbot.waitUntil(lambda: panel._model.rowCount() == 3)
+    QCoreApplication.processEvents()
+
+    assert QApplication.focusWidget() is edit
+
+
+def test_enter_in_filter_input_applies_and_focuses_table(qtbot, panel: ExaminePanel) -> None:
+    from PySide6.QtWidgets import QApplication
+
+    panel.show()
+    qtbot.waitExposed(panel)
+    detection_table = panel.ui.detections_table
+    edit = detection_table._filter_row._slots[panel._model.index_of("ARU")].edit
+    edit.setFocus()
+    qtbot.waitUntil(lambda: QApplication.focusWidget() is edit)
+
+    qtbot.keyClicks(edit, "MSD-2")
+    qtbot.keyClick(edit, Qt.Key.Key_Return)
+
+    # Applied immediately, without waiting out the 300 ms debounce.
+    assert panel._model.rowCount() == 3
+    focused = QApplication.focusWidget()
+    assert focused in (detection_table._table, detection_table._table.viewport())
+    # Drain the deferred player prepare (armed by the row auto-select) inside
+    # the test; firing during teardown would touch half-destroyed widgets.
+    QCoreApplication.processEvents()
+
+
 def test_column_menu_no_qaction_error(panel: ExaminePanel) -> None:
     """Column header context menu must not raise NameError (B1 regression: QAction removed from imports)."""
     from PySide6.QtCore import QTimer

@@ -462,10 +462,13 @@ class DetectionTable(QWidget):
                     return
 
         # Selection was filtered out (or none): select the first visible row.
+        # Deliberately no setFocus here: this runs on every model reset, and
+        # grabbing focus mid-typing would tear the user out of a filter input
+        # and arm the table shortcuts. Focus moves only on explicit gestures
+        # (Enter in a filter input, clicking the table).
         index = proxy.index(0, 0)
         self._table.selectionModel().setCurrentIndex(index, select_flags)
         self._table.scrollTo(index)
-        self._table.setFocus()
 
     def _on_filter_changed(self, col: int, text: str, op: FilterOp) -> None:
         if self._model is None:
