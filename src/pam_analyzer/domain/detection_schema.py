@@ -20,6 +20,7 @@ tools and simply means "unknown".
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from operator import attrgetter
 from typing import Any
 
 from .entities import Detection
@@ -29,12 +30,20 @@ from .filter_ops import ColumnKind
 
 @dataclass(frozen=True)
 class ColumnSpec:
-    """One Detection column: identity plus typed access.
+    """One Detection column: identity, typed access, and CSV conversion.
 
     set is None for read-only columns. annotation marks the user-editable
     review columns, which are appended on CSV writes even when the source
     file lacked them. kind drives the filter operator menu and matching
-    semantics (see filter_ops.ColumnKind).
+    semantics (see filter_ops.ColumnKind), plus numeric cell formatting
+    on CSV writes.
+
+    attr and parse only matter for the schema columns in COLUMNS: attr
+    names the Detection attribute behind the column, and parse turns a
+    CSV cell into that attribute's value. Build schema columns through
+    _column, which derives get and set from them so each fact is stated
+    once. Display-only columns (the play column, locale extras) are
+    constructed directly and leave both at their defaults.
     """
 
     name: str
@@ -42,6 +51,8 @@ class ColumnSpec:
     set: Callable[[Detection, str], None] | None = None
     kind: ColumnKind = ColumnKind.TEXT
     annotation: bool = False
+    attr: str = ""
+    parse: Callable[[str], Any] = str
 
     @property
     def editable(self) -> bool:
@@ -52,41 +63,72 @@ class ColumnSpec:
         return self.kind is ColumnKind.NUMERIC
 
 
-def _set_verified(d: Detection, value: str) -> None:
-    d.verified = VerifiedState(value or "")
+def _to_float(value: str) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
 
 
-def _set_corrected_species(d: Detection, value: str) -> None:
-    d.corrected_species = value
+def _to_optional_float(value: str) -> float | None:
+    try:
+        return float(value) if value not in ("", None) else None
+    except (TypeError, ValueError):
+        return None
 
 
-def _set_comment(d: Detection, value: str) -> None:
-    d.comment = value
+def _parse_verified(value: str) -> VerifiedState:
+    return VerifiedState(value or "")
+
+
+def _column(
+    name: str,
+    attr: str,
+    *,
+    parse: Callable[[str], Any] = str,
+    kind: ColumnKind = ColumnKind.TEXT,
+    annotation: bool = False,
+    get: Callable[[Detection], Any] | None = None,
+) -> ColumnSpec:
+    """Build a schema column, deriving get and set from attr and parse.
+
+    get is overridable for columns whose serialized value is not the raw
+    attribute (Verified exposes the enum's CSV string).
+    """
+    if get is None:
+        get = attrgetter(attr)
+    if annotation:
+        def set_(d: Detection, value: str) -> None:
+            setattr(d, attr, parse(value))
+    else:
+        set_ = None
+    return ColumnSpec(name, get, set_, kind, annotation, attr, parse)
 
 
 _NUMERIC = ColumnKind.NUMERIC
 _CATEGORICAL = ColumnKind.CATEGORICAL
 
 COLUMNS: tuple[ColumnSpec, ...] = (
-    ColumnSpec("Campaign", lambda d: d.campaign, kind=_CATEGORICAL),
-    ColumnSpec("ARU", lambda d: d.aru, kind=_CATEGORICAL),
-    ColumnSpec("Start_Time", lambda d: d.start_time, kind=_NUMERIC),
-    ColumnSpec("End_Time", lambda d: d.end_time, kind=_NUMERIC),
-    ColumnSpec("Scientific_Name", lambda d: d.scientific_name),
-    ColumnSpec("Species", lambda d: d.species, kind=_CATEGORICAL),
-    ColumnSpec("Confidence", lambda d: d.confidence, kind=_NUMERIC),
-    ColumnSpec("Rank", lambda d: d.rank, kind=_NUMERIC),
-    ColumnSpec("File", lambda d: d.file),
-    ColumnSpec("Recording_Time", lambda d: d.recording_time, kind=ColumnKind.DATETIME),
-    ColumnSpec("Week", lambda d: d.week, kind=_NUMERIC),
-    ColumnSpec("Lat", lambda d: d.lat, kind=_NUMERIC),
-    ColumnSpec("Lon", lambda d: d.lon, kind=_NUMERIC),
-    ColumnSpec("Species_List", lambda d: d.species_list, kind=_CATEGORICAL),
-    ColumnSpec("Min_Conf", lambda d: d.min_conf, kind=_NUMERIC),
-    ColumnSpec("Model", lambda d: d.model, kind=_CATEGORICAL),
-    ColumnSpec("Verified", lambda d: d.verified.value, _set_verified, kind=_CATEGORICAL, annotation=True),
-    ColumnSpec("Corrected_Species", lambda d: d.corrected_species, _set_corrected_species, kind=_CATEGORICAL, annotation=True),
-    ColumnSpec("Comment", lambda d: d.comment, _set_comment, annotation=True),
+    _column("Campaign", "campaign", kind=_CATEGORICAL),
+    _column("ARU", "aru", kind=_CATEGORICAL),
+    _column("Start_Time", "start_time", parse=_to_float, kind=_NUMERIC),
+    _column("End_Time", "end_time", parse=_to_float, kind=_NUMERIC),
+    _column("Scientific_Name", "scientific_name"),
+    _column("Species", "species", kind=_CATEGORICAL),
+    _column("Confidence", "confidence", parse=_to_float, kind=_NUMERIC),
+    _column("Rank", "rank", parse=_to_optional_float, kind=_NUMERIC),
+    _column("File", "file"),
+    _column("Recording_Time", "recording_time", kind=ColumnKind.DATETIME),
+    _column("Week", "week", parse=_to_optional_float, kind=_NUMERIC),
+    _column("Lat", "lat", parse=_to_optional_float, kind=_NUMERIC),
+    _column("Lon", "lon", parse=_to_optional_float, kind=_NUMERIC),
+    _column("Species_List", "species_list", kind=_CATEGORICAL),
+    _column("Min_Conf", "min_conf", parse=_to_optional_float, kind=_NUMERIC),
+    _column("Model", "model", kind=_CATEGORICAL),
+    _column("Verified", "verified", parse=_parse_verified, kind=_CATEGORICAL,
+            annotation=True, get=lambda d: d.verified.value),
+    _column("Corrected_Species", "corrected_species", kind=_CATEGORICAL, annotation=True),
+    _column("Comment", "comment", annotation=True),
 )
 
 COLUMN_NAMES: tuple[str, ...] = tuple(c.name for c in COLUMNS)
@@ -119,20 +161,6 @@ def write_fieldnames(locales: Iterable[str] = ()) -> list[str]:
     return [*names[:species_pos], *(locale_column(loc) for loc in locales), *names[species_pos:]]
 
 
-def _to_float(value: str) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return 0.0
-
-
-def _to_optional_float(value: str) -> float | None:
-    try:
-        return float(value) if value not in ("", None) else None
-    except (TypeError, ValueError):
-        return None
-
-
 def _format_number(value: float) -> str:
     """Render integers without a trailing .0; floats stay as float reprs."""
     if value == int(value):
@@ -140,54 +168,24 @@ def _format_number(value: float) -> str:
     return repr(value)
 
 
+def _format_cell(column: ColumnSpec, d: Detection) -> str:
+    value = column.get(d)
+    if column.numeric:
+        return "" if value is None else _format_number(value)
+    return str(value)
+
+
 def detection_from_row(row: dict[str, str]) -> Detection:
     """Build a Detection from one CSV row; unknown columns land in extra."""
-    return Detection(
-        campaign=row.get("Campaign", ""),
-        aru=row.get("ARU", ""),
-        week=_to_optional_float(row.get("Week", "")),
-        species=row.get("Species", ""),
-        scientific_name=row.get("Scientific_Name", ""),
-        confidence=_to_float(row.get("Confidence", "")),
-        start_time=_to_float(row.get("Start_Time", "")),
-        end_time=_to_float(row.get("End_Time", "")),
-        rank=_to_optional_float(row.get("Rank", "")),
-        file=row.get("File", ""),
-        recording_time=row.get("Recording_Time", ""),
-        lat=_to_optional_float(row.get("Lat", "")),
-        lon=_to_optional_float(row.get("Lon", "")),
-        species_list=row.get("Species_List", ""),
-        min_conf=_to_optional_float(row.get("Min_Conf", "")),
-        model=row.get("Model", ""),
-        verified=VerifiedState(row.get("Verified", "") or ""),
-        corrected_species=row.get("Corrected_Species", ""),
-        comment=row.get("Comment", ""),
-        extra={k: v for k, v in row.items() if k not in CORE_FIELDS},
-    )
+    kwargs: dict[str, Any] = {c.attr: c.parse(row.get(c.name, "")) for c in COLUMNS}
+    kwargs["extra"] = {k: v for k, v in row.items() if k not in CORE_FIELDS}
+    return Detection(**kwargs)
 
 
 def detection_to_row(d: Detection) -> dict[str, str]:
     """Serialize a Detection to CSV string values, extra columns included."""
     row: dict[str, str] = dict(d.extra)
-    row["Campaign"] = d.campaign
-    row["ARU"] = d.aru
-    row["Week"] = "" if d.week is None else _format_number(d.week)
-    row["Species"] = d.species
-    row["Scientific_Name"] = d.scientific_name
-    row["Confidence"] = _format_number(d.confidence)
-    row["Start_Time"] = _format_number(d.start_time)
-    row["End_Time"] = _format_number(d.end_time)
-    row["Rank"] = "" if d.rank is None else _format_number(d.rank)
-    row["File"] = d.file
-    row["Recording_Time"] = d.recording_time
-    row["Lat"] = "" if d.lat is None else _format_number(d.lat)
-    row["Lon"] = "" if d.lon is None else _format_number(d.lon)
-    row["Species_List"] = d.species_list
-    row["Min_Conf"] = "" if d.min_conf is None else _format_number(d.min_conf)
-    row["Model"] = d.model
-    row["Verified"] = d.verified.value
-    row["Corrected_Species"] = d.corrected_species
-    row["Comment"] = d.comment
+    row.update({c.name: _format_cell(c, d) for c in COLUMNS})
     return row
 
 

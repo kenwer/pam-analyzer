@@ -1,6 +1,8 @@
 """Tests for the detection schema: the single definition of the Detection
 record's columns, serialization, and filename pattern."""
 
+from dataclasses import fields
+
 from pam_analyzer.domain import Detection, VerifiedState
 from pam_analyzer.domain import detection_schema as schema
 
@@ -48,6 +50,15 @@ class TestColumns:
         editable = {c.name for c in schema.COLUMNS if c.editable}
         assert editable == set(schema.ANNOTATION_COLUMNS)
 
+    def test_columns_cover_every_detection_field(self):
+        """Serialization derives from COLUMNS, so a Detection field without a
+        column would silently vanish from the CSV. Only the two fields that
+        deliberately never serialize may be missing."""
+        attrs = {c.attr for c in schema.COLUMNS}
+        field_names = {f.name for f in fields(Detection)}
+        assert field_names - attrs == {"source_path", "extra"}
+        assert attrs <= field_names
+
     def test_setters_mutate_detection(self):
         d = _sample_detection()
         by_name = {c.name: c for c in schema.COLUMNS}
@@ -83,6 +94,10 @@ class TestRowRoundTrip:
         assert back.verified is VerifiedState.TRUE
         assert back.comment == "clear song"
         assert back.extra == {"Species_de": "Amsel"}
+        # Every column, not just the spot checks above.
+        assert {c.name: c.get(back) for c in schema.COLUMNS} == {
+            c.name: c.get(d) for c in schema.COLUMNS
+        }
 
     def test_integers_written_without_trailing_zero(self):
         row = schema.detection_to_row(_sample_detection())
