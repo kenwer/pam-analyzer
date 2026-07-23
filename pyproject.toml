@@ -84,6 +84,7 @@ select = [
 [tool.poe.tasks]
 compile-ui = { cmd = "python scripts/compile_ui.py", help = "Compile Qt Designer .ui files to ui_*.py modules" }
 compile-qrc = { cmd = "python scripts/compile_qrc.py", help = "Compile Qt resource files to *_rc.py modules" }
+designer = { shell = "open -a $VIRTUAL_ENV/lib/python*/site-packages/PySide6/Designer.app \"$ui\"", interpreter = "bash", args = [{ name = "ui", positional = true, help = "Path to the .ui file" }], help = "Open Qt Designer.app on a given .ui file" }
 run-app = "python -m pam_analyzer"
 run = { ref = "run-app", deps = ["compile-ui", "compile-qrc"], help = "Compile UI/resources, then run the app" }
 run-dbg = { cmd = "python -m pam_analyzer", env = {PAM_LOG_LEVEL = "DEBUG"}, help = "Run the app with DEBUG logging (skips UI recompile)" }
