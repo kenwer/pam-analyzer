@@ -70,7 +70,10 @@ def test_layer_import_rules() -> None:
             top = module.split(".")[0]
             if top == PACKAGE:
                 target = module.split(".")[1] if "." in module else ""
-                if target and target not in allowed:
+                # Only real layer subpackages are subject to the layer rules;
+                # a name like "__version__" imported from __init__.py is
+                # package metadata, not a dependency on another layer.
+                if target and (SRC / target).is_dir() and target not in allowed:
                     violations.append(f"{rel_name}: {layer} imports {module}")
             elif top in QT_MODULES and layer in QT_FORBIDDEN_LAYERS:
                 violations.append(f"{rel_name}: {layer} imports Qt ({module})")
