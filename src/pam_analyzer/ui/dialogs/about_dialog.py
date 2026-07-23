@@ -3,12 +3,11 @@
 Stateless wrapper applied to a plain QDialog (mirrors the detectorist pattern).
 """
 
-from importlib.metadata import PackageNotFoundError, version
-
 from PySide6.QtCore import QFile, QIODeviceBase, QSize
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QDialog, QWidget
 
+from ... import __version__
 from .. import resources_rc  # noqa: F401  registers :/icons/* and :/docs/* resources
 from .ui_about_dialog import Ui_AboutDialog
 
@@ -34,20 +33,13 @@ def show_about_dialog(parent: QWidget | None = None) -> None:
     ui = Ui_AboutDialog()
     ui.setupUi(dialog)
 
-    ui.version_label.setText(f"Version: {_resolve_version()}")
+    ui.version_label.setText(f"Version: {__version__}")
     ui.icon_label.setPixmap(QIcon(":/icons/icon.svg").pixmap(QSize(128, 128)))
 
     ui.changelog_text_browser.setMarkdown(_read_qresource(":/docs/CHANGELOG.md"))
     ui.acknowledgements_text_browser.setMarkdown(_ACKNOWLEDGEMENTS_MARKDOWN)
 
     dialog.exec()
-
-
-def _resolve_version() -> str:
-    try:
-        return version("pam-analyzer")
-    except PackageNotFoundError:
-        return "unknown"
 
 
 def _read_qresource(path: str) -> str:

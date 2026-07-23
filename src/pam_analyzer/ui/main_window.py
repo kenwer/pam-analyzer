@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .. import __version__
 from ..domain import AnalysisRunner
 from ..domain.audio_import import ImportSource
 from ..infrastructure import (
@@ -110,6 +111,7 @@ class MainWindow(QMainWindow):
         self._restore_geometry()
         self._refresh_action_state(None)
         self._rebuild_recent_menu()
+        self.setWindowTitle(f"PAM Analyzer {__version__}")
         self._show_welcome()
         self._splash_closed = False  # track whether we've already closed the splash
 
@@ -492,11 +494,11 @@ class MainWindow(QMainWindow):
     def _on_project_changed(self, project: object) -> None:
         self._refresh_action_state(project)
         if project is None:
-            self.setWindowTitle("PAM Analyzer")
+            self.setWindowTitle(f"PAM Analyzer {__version__}")
             self._show_welcome()
         else:
             name = project.name  # type: ignore[attr-defined]
-            self.setWindowTitle(f"PAM Analyzer - {name}")
+            self.setWindowTitle(f"PAM Analyzer {__version__} - {name}")
             self._show_tabs()
 
     def _show_welcome(self) -> None:
