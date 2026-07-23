@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## [0.5.2] - 2026-07-23
 ### Added
 - The Campaigns panel overview now shows a project-wide summary (total campaigns, ARUs, recordings, disk usage, and date range).
 ### Changed
