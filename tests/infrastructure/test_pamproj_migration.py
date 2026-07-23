@@ -88,7 +88,7 @@ def test_migrate_happy_path(tmp_path: Path) -> None:
     # Settings carried over into pam-analyzer.toml. Legacy file kept as .bak.
     project = TomlProjectRepository().load(audio_root)
     assert project.sdcard_name_pattern == "^FIELD-"
-    assert project.birdnet_min_conf == 0.4
+    assert project.min_conf == 0.4
     assert not pamproj.exists()
     assert pamproj.with_name("demo.pamproj.bak").exists()
 
@@ -194,7 +194,7 @@ def test_load_legacy_audio_root_override_recovers_from_stale_path(tmp_path: Path
     legacy = load_legacy(pamproj, audio_root=real_audio_root)
 
     assert legacy.audio_root == real_audio_root
-    assert legacy.project.birdnet_min_conf == 0.4
+    assert legacy.project.min_conf == 0.4
 
 
 def test_load_legacy_audio_root_override_still_validated(tmp_path: Path) -> None:

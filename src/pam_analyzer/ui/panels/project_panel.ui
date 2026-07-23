@@ -7,10 +7,13 @@
     <x>0</x>
     <y>0</y>
     <width>900</width>
-    <height>600</height>
+    <height>659</height>
    </rect>
   </property>
   <layout class="QVBoxLayout" name="root_layout">
+   <property name="spacing">
+    <number>16</number>
+   </property>
    <property name="leftMargin">
     <number>16</number>
    </property>
@@ -23,21 +26,16 @@
    <property name="bottomMargin">
     <number>16</number>
    </property>
-   <property name="spacing">
-    <number>16</number>
-   </property>
    <item>
     <widget class="QLabel" name="title_label">
-     <property name="text">
-      <string>Project Settings</string>
-     </property>
      <property name="styleSheet">
       <string>font-size: 18px; font-weight: 600;</string>
      </property>
+     <property name="text">
+      <string>Project Settings</string>
+     </property>
     </widget>
    </item>
-
-   <!-- Project folder (read-only) -->
    <item>
     <widget class="QGroupBox" name="folder_group">
      <property name="title">
@@ -46,41 +44,39 @@
      <layout class="QVBoxLayout" name="folder_layout">
       <item>
        <widget class="QLabel" name="folder_label">
-        <property name="text">
-         <string/>
-        </property>
-        <property name="textInteractionFlags">
-         <set>Qt::TextSelectableByMouse|Qt::LinksAccessibleByMouse</set>
-        </property>
         <property name="cursor">
          <cursorShape>PointingHandCursor</cursorShape>
         </property>
         <property name="styleSheet">
          <string>color: #1a73e8; text-decoration: underline;</string>
         </property>
+        <property name="text">
+         <string/>
+        </property>
         <property name="openExternalLinks">
          <bool>false</bool>
+        </property>
+        <property name="textInteractionFlags">
+         <set>Qt::TextInteractionFlag::LinksAccessibleByMouse|Qt::TextInteractionFlag::TextSelectableByMouse</set>
         </property>
        </widget>
       </item>
       <item>
        <widget class="QLabel" name="folder_caption_label">
+        <property name="styleSheet">
+         <string>color: gray;</string>
+        </property>
         <property name="text">
          <string>Path of the current project folder that holds the campaigns and settings.</string>
         </property>
         <property name="wordWrap">
          <bool>true</bool>
         </property>
-        <property name="styleSheet">
-         <string>color: gray;</string>
-        </property>
        </widget>
       </item>
      </layout>
     </widget>
    </item>
-
-   <!-- SD card name pattern -->
    <item>
     <widget class="QGroupBox" name="sdcard_group">
      <property name="title">
@@ -98,14 +94,11 @@
         </item>
         <item>
          <widget class="QLabel" name="regex_indicator_label">
-          <property name="text">
-           <string>● valid</string>
-          </property>
           <property name="styleSheet">
            <string>color: #2e7d32;</string>
           </property>
-          <property name="minimumWidth">
-           <number>80</number>
+          <property name="text">
+           <string>● valid</string>
           </property>
          </widget>
         </item>
@@ -113,59 +106,249 @@
       </item>
       <item>
        <widget class="QLabel" name="sdcard_caption_label">
+        <property name="styleSheet">
+         <string>color: gray;</string>
+        </property>
         <property name="text">
          <string>Regex matched against SD card volume names. The default ^(MSD-|2MM) matches AudioMoth (MSD-) and Song Meter (2MM) cards.</string>
         </property>
         <property name="wordWrap">
          <bool>true</bool>
         </property>
-        <property name="styleSheet">
-         <string>color: gray;</string>
-        </property>
        </widget>
       </item>
      </layout>
     </widget>
    </item>
-
-   <!-- Preferred species language -->
    <item>
-    <widget class="QGroupBox" name="lang_group">
+    <widget class="QGroupBox" name="thresholds_group">
      <property name="title">
-      <string>Preferred species language</string>
+      <string>Model settings</string>
      </property>
-     <layout class="QVBoxLayout" name="lang_layout">
+     <layout class="QVBoxLayout" name="thresholds_layout">
       <item>
-       <widget class="QComboBox" name="species_lang_combo">
-        <property name="editable">
-         <bool>true</bool>
-        </property>
-        <property name="maximumWidth">
-         <number>240</number>
-        </property>
-       </widget>
+       <layout class="QHBoxLayout" name="thresholds_row">
+        <item>
+         <widget class="QLabel" name="min_conf_label">
+          <property name="text">
+           <string>Min confidence</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QSlider" name="min_conf_slider">
+          <property name="minimum">
+           <number>10</number>
+          </property>
+          <property name="maximum">
+           <number>100</number>
+          </property>
+          <property name="value">
+           <number>25</number>
+          </property>
+          <property name="orientation">
+           <enum>Qt::Orientation::Horizontal</enum>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="min_conf_value">
+          <property name="minimumSize">
+           <size>
+            <width>36</width>
+            <height>0</height>
+           </size>
+          </property>
+          <property name="text">
+           <string>0.25</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="thresholds_mid_spacer">
+          <property name="orientation">
+           <enum>Qt::Orientation::Horizontal</enum>
+          </property>
+          <property name="sizeType">
+           <enum>QSizePolicy::Policy::Fixed</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>24</width>
+            <height>20</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+        <item>
+         <widget class="QLabel" name="overlap_label">
+          <property name="text">
+           <string>Overlap (s)</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QSlider" name="overlap_slider">
+          <property name="minimum">
+           <number>0</number>
+          </property>
+          <property name="maximum">
+           <number>29</number>
+          </property>
+          <property name="value">
+           <number>0</number>
+          </property>
+          <property name="orientation">
+           <enum>Qt::Orientation::Horizontal</enum>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="overlap_value">
+          <property name="minimumSize">
+           <size>
+            <width>36</width>
+            <height>0</height>
+           </size>
+          </property>
+          <property name="text">
+           <string>0.0</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
       </item>
       <item>
-       <widget class="QLabel" name="lang_caption_label">
+       <widget class="QLabel" name="thresholds_caption_label">
+        <property name="styleSheet">
+         <string>color: gray;</string>
+        </property>
         <property name="text">
-         <string>Language used for the Species column in all outputs. ISO 639-1 code (e.g. en, de, es).</string>
+         <string>Detections below the confidence are discarded. Overlap is the seconds shared between consecutive analysis windows.</string>
         </property>
         <property name="wordWrap">
          <bool>true</bool>
         </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="lang_group">
+     <property name="title">
+      <string>Species languages</string>
+     </property>
+     <layout class="QVBoxLayout" name="lang_layout">
+      <item>
+       <layout class="QGridLayout" name="lang_grid">
+        <property name="horizontalSpacing">
+         <number>16</number>
+        </property>
+        <property name="verticalSpacing">
+         <number>6</number>
+        </property>
+        <item row="0" column="0">
+         <widget class="QLabel" name="preferred_lang_label">
+          <property name="text">
+           <string>Main</string>
+          </property>
+         </widget>
+        </item>
+        <item row="0" column="1">
+         <widget class="QComboBox" name="species_lang_combo">
+          <property name="maximumSize">
+           <size>
+            <width>200</width>
+            <height>16777215</height>
+           </size>
+          </property>
+          <property name="editable">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item row="0" column="2">
+         <spacer name="lang_mid_spacer">
+          <property name="orientation">
+           <enum>Qt::Orientation::Horizontal</enum>
+          </property>
+          <property name="sizeType">
+           <enum>QSizePolicy::Policy::Fixed</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>50</width>
+            <height>20</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+        <item row="0" column="3">
+         <widget class="QLabel" name="additional_lang_label">
+          <property name="text">
+           <string>Extra</string>
+          </property>
+         </widget>
+        </item>
+        <item row="1" column="3">
+         <layout class="QGridLayout" name="locales_grid">
+          <property name="horizontalSpacing">
+           <number>16</number>
+          </property>
+          <property name="verticalSpacing">
+           <number>4</number>
+          </property>
+         </layout>
+        </item>
+        <item row="0" column="4" rowspan="2">
+         <spacer name="lang_right_spacer">
+          <property name="orientation">
+           <enum>Qt::Orientation::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>40</width>
+            <height>20</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+        <item row="2" column="0">
+         <spacer name="lang_bottom_spacer">
+          <property name="orientation">
+           <enum>Qt::Orientation::Vertical</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>20</width>
+            <height>0</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <widget class="QLabel" name="lang_caption_label">
         <property name="styleSheet">
          <string>color: gray;</string>
+        </property>
+        <property name="text">
+         <string>Main sets the preferred language for the Species column in all CSV outputs. Extra adds one common-name column per checked language.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
         </property>
        </widget>
       </item>
      </layout>
     </widget>
    </item>
-
    <item>
     <spacer name="bottom_spacer">
      <property name="orientation">
-      <enum>Qt::Vertical</enum>
+      <enum>Qt::Orientation::Vertical</enum>
      </property>
      <property name="sizeHint" stdset="0">
       <size>

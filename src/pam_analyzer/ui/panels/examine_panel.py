@@ -263,7 +263,9 @@ class ExaminePanel(QWidget):
         before = float(self.pad_before_spin.value())
         after = float(self.pad_after_spin.value())
         self.ui.detections_table.setPlaybackPadding(before, after)
-        self._app_state.update_padding(before, after)
+        self._app_state.save_project_fields(
+            snippet_padding_before=before, snippet_padding_after=after
+        )
 
     def _on_column_visibility_changed(self, _col: int, _visible: bool) -> None:
         self._settings.examine_hidden_columns = self.ui.detections_table.hiddenColumnNames()
@@ -373,7 +375,7 @@ class ExaminePanel(QWidget):
             w.setEnabled(enabled)
 
     def _set_padding_widgets(self, before: float, after: float) -> None:
-        """Push values into the spinboxes without triggering update_padding back."""
+        """Push values into the spinboxes without triggering a save back."""
         for spin, value in (
             (self.pad_before_spin, before),
             (self.pad_after_spin, after),

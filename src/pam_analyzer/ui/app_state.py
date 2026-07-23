@@ -160,27 +160,15 @@ class AppState(QObject):
         self._apply_project(None)
         self.refresh_campaigns()
 
-    def update_birdnet_settings(
-        self,
-        *,
-        analysis_model: str | None = None,
-        min_conf: float | None = None,
-        overlap: float | None = None,
-        locales: tuple[str, ...] | None = None,
-    ) -> None:
-        """Persist BirdNET settings immediately without a full projectChanged broadcast."""
+    def save_project_fields(self, **fields: object) -> None:
+        """Persist partial Project edits immediately, without a projectChanged broadcast.
+
+        Used by settings editors (analysis model, min confidence, overlap,
+        locales, playback padding) that update their own widgets, so no other
+        panel needs to react. Broadcasting on every slider tick would make
+        every panel re-render mid-drag.
+        """
         if self._project is None:
-            return
-        fields: dict = {}
-        if analysis_model is not None:
-            fields["analysis_model"] = str(analysis_model)
-        if min_conf is not None:
-            fields["birdnet_min_conf"] = float(min_conf)
-        if overlap is not None:
-            fields["birdnet_overlap"] = float(overlap)
-        if locales is not None:
-            fields["birdnet_locales"] = tuple(locales)
-        if not fields:
             return
         updated = replace(self._project, **fields)
         if updated == self._project:
@@ -189,28 +177,7 @@ class AppState(QObject):
         try:
             self._project_repo.save(updated)
         except Exception as exc:
-            self.errorOccurred.emit(f"Failed to save BirdNET settings: {exc}")
-
-    def update_padding(self, before: float, after: float) -> None:
-        """Persist playback-padding values immediately.
-
-        Skips the projectChanged broadcast because only the audio player cares
-        about padding and the panel updates its own spinboxes directly.
-        """
-        if self._project is None:
-            return
-        updated = replace(
-            self._project,
-            snippet_padding_before=float(before),
-            snippet_padding_after=float(after),
-        )
-        if updated == self._project:
-            return
-        self._set_project_silent(updated)
-        try:
-            self._project_repo.save(updated)
-        except Exception as exc:
-            self.errorOccurred.emit(f"Failed to save padding: {exc}")
+            self.errorOccurred.emit(f"Failed to save settings: {exc}")
 
     def set_last_analysis_result(self, result: AnalysisRunResult | None) -> None:
         if result is self._last_analysis_result:

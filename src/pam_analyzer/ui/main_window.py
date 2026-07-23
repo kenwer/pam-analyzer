@@ -83,7 +83,11 @@ class MainWindow(QMainWindow):
         )
         self._mount_tab(self.ui.campaigns_tab, self._campaigns_panel, "Campaigns")
 
-        self._project_panel = ProjectPanel(app_state, self.ui.project_tab)
+        # The output-language list is model-independent (both runners return
+        # the same set), so read it once here from any runner and hand it to
+        # the Project panel rather than injecting the whole runners dict.
+        available_locales = tuple(next(iter(analysis_runners.values())).available_locales())
+        self._project_panel = ProjectPanel(app_state, available_locales, self.ui.project_tab)
         self._mount_tab(self.ui.project_tab, self._project_panel, "Project")
 
         # The Import Audio tab is gone in step 3: imports now live inside the

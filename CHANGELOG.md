@@ -4,6 +4,8 @@
 ### Added
 - The Campaigns panel overview now shows a project-wide summary (total campaigns, ARUs, recordings, disk usage, and date range).
 ### Changed
+- Min confidence, Overlap, and Languages moved from the BirdNET panel to project-wide settings in the Project panel.
+- Overlap is now capped at 2.5 s for every model.
 - Opening a project now loads on a background thread and shows an "Opening..." indicator.
 - The window title now shows the app version.
 - Show project folder link in the Project panel instead of the BirdNET panel.

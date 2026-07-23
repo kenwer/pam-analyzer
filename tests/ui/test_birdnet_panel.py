@@ -103,7 +103,7 @@ def test_panel_loads_disabled_without_project(qtbot):
     qtbot.addWidget(p)
 
     assert not p.ui.run_button.isEnabled()
-    assert not p.ui.min_conf_slider.isEnabled()
+    assert not p.ui.campaign_combo.isEnabled()
 
 
 def test_combo_populates_on_project_load(panel: BirdNetPanel, project_and_campaigns):
@@ -127,21 +127,6 @@ def test_filter_info_shows_species_list_for_list_campaign(panel: BirdNetPanel):
     beta_idx = next(i for i in range(combo.count()) if combo.itemData(i) == "beta")
     combo.setCurrentIndex(beta_idx)
     assert "Species list" in panel.ui.filter_info_label.text()
-
-
-def test_slider_autosave_calls_update_birdnet_settings(panel: BirdNetPanel, state: AppState):
-    saved_args: list[dict] = []
-    original = state.update_birdnet_settings
-
-    def spy(**kwargs):
-        saved_args.append(kwargs)
-        original(**kwargs)
-
-    state.update_birdnet_settings = spy  # type: ignore[method-assign]
-    panel.ui.min_conf_slider.setValue(60)
-
-    assert any("min_conf" in a for a in saved_args)
-    assert abs(saved_args[-1]["min_conf"] - 0.60) < 1e-9
 
 
 def _make_result_on_disk(state: AppState, count: int = 42) -> AnalysisRunResult:

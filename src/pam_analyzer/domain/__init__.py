@@ -32,7 +32,7 @@ from .entities import (
     campaign_name_error,
 )
 from .enums import FilterMode, VerifiedState
-from .values import AnalysisSettings, LatLon
+from .values import MAX_OVERLAP_S, AnalysisSettings, LatLon
 
 __all__ = [
     "AnalysisProgress",
@@ -57,6 +57,7 @@ __all__ = [
     "FileConflict",
     "FilterMode",
     "ImportProgress",
+    "MAX_OVERLAP_S",
     "LatLon",
     "filter_top_per_aru_species",
     "Project",

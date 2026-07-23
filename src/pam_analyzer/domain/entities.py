@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .enums import FilterMode, VerifiedState
-from .values import LatLon
+from .values import MAX_OVERLAP_S, AnalysisSettings, LatLon
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,9 +19,9 @@ class Project:
     folder: Path
     sdcard_name_pattern: str = "^(MSD-|2MM)"  # AudioMoth (MSD-) and Song Meter (2MM serials)
     analysis_model: str = "BirdNET-2.4"
-    birdnet_min_conf: float = 0.25
-    birdnet_overlap: float = 0.0
-    birdnet_locales: tuple[str, ...] = ()
+    min_conf: float = 0.25
+    overlap: float = 0.0
+    locales: tuple[str, ...] = ()
     preferred_species_lang: str = "en"
     snippet_padding_before: float = 0.0
     snippet_padding_after: float = 0.0
@@ -29,6 +29,20 @@ class Project:
     @property
     def name(self) -> str:
         return self.folder.name
+
+    @property
+    def analysis_settings(self) -> AnalysisSettings:
+        """The project's run parameters as an AnalysisSettings.
+
+        Overlap is clamped to MAX_OVERLAP_S so a value written by an older
+        build (which let Perch go higher) cannot exceed what the BirdNET
+        model accepts on the next run.
+        """
+        return AnalysisSettings(
+            min_conf=self.min_conf,
+            overlap=min(self.overlap, MAX_OVERLAP_S),
+            locales=self.locales,
+        )
 
 
 @dataclass(frozen=True, slots=True)

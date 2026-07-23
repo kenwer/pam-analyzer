@@ -1,26 +1,22 @@
 """BirdNET panel: configure analysis settings, run, and review results."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
 
 from PySide6.QtCore import QCoreApplication, Qt, QThread, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QCheckBox,
     QHBoxLayout,
-    QMenu,
     QMessageBox,
     QToolButton,
     QWidget,
-    QWidgetAction,
 )
 
 from ...domain import (
     AnalysisProgressSnapshot,
     AnalysisRunner,
     AnalysisRunResult,
-    AnalysisSettings,
     Campaign,
     FilterMode,
     Project,
@@ -44,7 +40,6 @@ class _StatusPage(IntEnum):
 
 @dataclass
 class _PanelState:
-    available_locales: list[str] = field(default_factory=list)
     running: bool = False
 
 
@@ -76,11 +71,8 @@ class BirdNetPanel(QWidget):
         self.ui.results_tree.header().setStretchLastSection(True)
         disable_item_hover(self.ui.results_tree)
 
-        self._locale_checks: dict[str, QCheckBox] = {}
-        self._state.available_locales = self._runner.available_locales()
         self._populate_model_combo()
-        self._build_locales_menu()
-        self._apply_model_capabilities()
+        self._update_run_label()
         self._wire_signals()
         self._set_status_page(_StatusPage.IDLE)
         self._render_project(app_state.project)
@@ -95,21 +87,11 @@ class BirdNetPanel(QWidget):
         combo.setCurrentIndex(0)
         combo.blockSignals(False)
 
-    def _apply_model_capabilities(self) -> None:
-        """Adjust per-model widget ranges and labels.
+    def _update_run_label(self) -> None:
+        """Show the selected model on the Run button (idle state only).
 
-        Both backends support locale-translated labels (via the BirdNET
-        sci-to-common tables) and an overlap parameter, but their overlap
-        caps differ: BirdNET's analyze.core enforces <= 2.9 s on the 3 s
-        window and Perch <= 4.9 s on the 5 s window. The slider max moves
-        with the model so a Perch-only overlap value gets clamped back
-        before a BirdNET run sees it.
+        During a run the button shows Stop, so leave it alone.
         """
-        max_overlap_dec = 49 if self._runner_key == "Perch-2.0" else 29
-        self.ui.overlap_slider.setMaximum(max_overlap_dec)
-        if self.ui.overlap_slider.value() > max_overlap_dec:
-            self.ui.overlap_slider.setValue(max_overlap_dec)
-        # Only update the button when we're idle; during a run the button shows Stop.
         if not self._state.running:
             self.ui.run_button.setText(self._idle_run_label())
 
@@ -126,8 +108,6 @@ class BirdNetPanel(QWidget):
 
         self.ui.model_combo.currentIndexChanged.connect(self._on_model_changed)
         self.ui.campaign_combo.currentIndexChanged.connect(self._on_campaign_changed)
-        self.ui.min_conf_slider.valueChanged.connect(self._on_min_conf_changed)
-        self.ui.overlap_slider.valueChanged.connect(self._on_overlap_changed)
         self.ui.run_button.clicked.connect(self._on_run_clicked)
 
     def _on_model_changed(self, index: int) -> None:
@@ -138,35 +118,8 @@ class BirdNetPanel(QWidget):
             return
         self._runner_key = key
         self._runner = self._runners[key]
-        # available_locales differs across runners, so rebuild the menu and
-        # restore the project's saved locale picks where they still apply.
-        self._state.available_locales = self._runner.available_locales()
-        self._rebuild_locales_menu()
-        self._apply_model_capabilities()
-        self._app_state.update_birdnet_settings(analysis_model=key)
-
-    def _rebuild_locales_menu(self) -> None:
-        """Tear down and recreate the locales popup after a model switch."""
-        old_menu = self.ui.locales_button.menu()
-        self.ui.locales_button.setMenu(None)
-        if old_menu is not None:
-            old_menu.deleteLater()
-        self._build_locales_menu()
-        project = self._app_state.project
-        if project is not None:
-            self._set_locale_checks(project.birdnet_locales)
-
-    def _build_locales_menu(self) -> None:
-        menu = QMenu(self.ui.locales_button)
-        self._locale_checks = {}
-        for loc in sorted({"en", *self._state.available_locales}):
-            chk = QCheckBox(loc, menu)
-            chk.toggled.connect(self._on_locales_changed)
-            self._locale_checks[loc] = chk
-            action = QWidgetAction(menu)
-            action.setDefaultWidget(chk)
-            menu.addAction(action)
-        self.ui.locales_button.setMenu(menu)
+        self._update_run_label()
+        self._app_state.save_project_fields(analysis_model=key)
 
     def _render_project(self, project: Project | None) -> None:
         loaded = project is not None
@@ -178,8 +131,6 @@ class BirdNetPanel(QWidget):
             return
         assert project is not None
         self._restore_model_from_project(project)
-        self._set_slider_values(project)
-        self._set_locale_checks(project.birdnet_locales)
         self._rebuild_campaign_combo(self._app_state.campaigns)
 
     def _restore_model_from_project(self, project: Project) -> None:
@@ -204,54 +155,15 @@ class BirdNetPanel(QWidget):
             self.ui.model_combo.blockSignals(False)
         self._runner_key = target
         self._runner = self._runners[target]
-        self._state.available_locales = self._runner.available_locales()
-        self._rebuild_locales_menu()
-        self._apply_model_capabilities()
+        self._update_run_label()
 
     def _set_settings_enabled(self, enabled: bool) -> None:
         for w in (
             self.ui.model_combo,
             self.ui.campaign_combo,
-            self.ui.min_conf_slider,
-            self.ui.overlap_slider,
-            self.ui.locales_button,
             self.ui.run_button,
         ):
             w.setEnabled(enabled)
-        # Re-apply per-model gating so widgets the current model can't use
-        # stay greyed out even after a generic "enable everything" pass.
-        if enabled:
-            self._apply_model_capabilities()
-
-    def _set_slider_values(self, project: Project) -> None:
-        for slider, value in (
-            (self.ui.min_conf_slider, int(round(project.birdnet_min_conf * 100))),
-            (self.ui.overlap_slider, int(round(project.birdnet_overlap * 10))),
-        ):
-            slider.blockSignals(True)
-            try:
-                slider.setValue(value)
-            finally:
-                slider.blockSignals(False)
-        self._refresh_slider_labels()
-
-    def _refresh_slider_labels(self) -> None:
-        self.ui.min_conf_value.setText(f"{self.ui.min_conf_slider.value() / 100:.2f}")
-        self.ui.overlap_value.setText(f"{self.ui.overlap_slider.value() / 10:.1f}")
-
-    def _set_locale_checks(self, selected: tuple[str, ...]) -> None:
-        chosen = set(selected)
-        for loc, chk in self._locale_checks.items():
-            chk.blockSignals(True)
-            try:
-                chk.setChecked(loc in chosen)
-            finally:
-                chk.blockSignals(False)
-        self._refresh_locales_button_label()
-
-    def _refresh_locales_button_label(self) -> None:
-        n = sum(1 for c in self._locale_checks.values() if c.isChecked())
-        self.ui.locales_button.setText("Languages" if n == 0 else f"Languages ({n})")
 
     def _rebuild_campaign_combo(self, campaigns: list[Campaign]) -> None:
         combo = self.ui.campaign_combo
@@ -305,19 +217,6 @@ class BirdNetPanel(QWidget):
             return False
         return self.ui.campaign_combo.count() > 0
 
-    def _on_min_conf_changed(self, value: int) -> None:
-        self._refresh_slider_labels()
-        self._app_state.update_birdnet_settings(min_conf=value / 100.0)
-
-    def _on_overlap_changed(self, value: int) -> None:
-        self._refresh_slider_labels()
-        self._app_state.update_birdnet_settings(overlap=value / 10.0)
-
-    def _on_locales_changed(self, _checked: bool) -> None:
-        self._refresh_locales_button_label()
-        locales = tuple(loc for loc, chk in self._locale_checks.items() if chk.isChecked())
-        self._app_state.update_birdnet_settings(locales=locales)
-
     def _on_run_clicked(self) -> None:
         if self._state.running:
             self._request_cancel()
@@ -340,11 +239,7 @@ class BirdNetPanel(QWidget):
             QMessageBox.information(self, self._runner_key, "No campaigns to run.")
             return
 
-        settings = AnalysisSettings(
-            min_conf=project.birdnet_min_conf,
-            overlap=project.birdnet_overlap,
-            locales=project.birdnet_locales,
-        )
+        settings = project.analysis_settings
 
         self._thread = QThread(self)
         self._worker = AnalysisWorker(self._runner, self._campaign_repo, project, campaigns, settings)

@@ -18,7 +18,14 @@ from . import paths
 
 @dataclass
 class _ProjectToml:
-    """Mirrors the on-disk [project] table exactly."""
+    """Mirrors the on-disk [project] table exactly.
+
+    The min-confidence, overlap, and locale keys keep their historical
+    birdnet_ prefix even though every model now uses them. Matching the key
+    names older builds (and the legacy .pamproj format) already wrote means
+    no on-disk migration is needed. The domain Project drops the prefix; the
+    translation happens in project_from_table and save.
+    """
 
     sdcard_name_pattern: str = "^(MSD-|2MM)"
     analysis_model: str = "BirdNET-2.4"
@@ -43,9 +50,9 @@ def project_from_table(folder: Path, table: dict) -> Project:
         folder=folder,
         sdcard_name_pattern=raw.sdcard_name_pattern,
         analysis_model=raw.analysis_model,
-        birdnet_min_conf=raw.birdnet_min_conf,
-        birdnet_overlap=raw.birdnet_overlap,
-        birdnet_locales=tuple(raw.birdnet_locales),
+        min_conf=raw.birdnet_min_conf,
+        overlap=raw.birdnet_overlap,
+        locales=tuple(raw.birdnet_locales),
         preferred_species_lang=raw.preferred_species_lang,
         snippet_padding_before=raw.snippet_padding_before,
         snippet_padding_after=raw.snippet_padding_after,
@@ -62,9 +69,9 @@ class TomlProjectRepository:
         raw = _ProjectToml(
             sdcard_name_pattern=project.sdcard_name_pattern,
             analysis_model=project.analysis_model,
-            birdnet_min_conf=project.birdnet_min_conf,
-            birdnet_overlap=project.birdnet_overlap,
-            birdnet_locales=list(project.birdnet_locales),
+            birdnet_min_conf=project.min_conf,
+            birdnet_overlap=project.overlap,
+            birdnet_locales=list(project.locales),
             preferred_species_lang=project.preferred_species_lang,
             snippet_padding_before=project.snippet_padding_before,
             snippet_padding_after=project.snippet_padding_after,
