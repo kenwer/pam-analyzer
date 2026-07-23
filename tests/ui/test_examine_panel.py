@@ -123,6 +123,9 @@ def panel(qtbot, project: Project) -> ExaminePanel:
     panel = ExaminePanel(state, CsvDetectionRepository(), AppSettings(), SoundfileAudioExtractor())
     qtbot.addWidget(panel)
     state.load_project(project.folder)
+    # ExaminePanel coalesces its campaign reload onto a single-shot timer, so pump
+    # the event loop once to let the detections load before the test inspects them.
+    QCoreApplication.processEvents()
     return panel
 
 

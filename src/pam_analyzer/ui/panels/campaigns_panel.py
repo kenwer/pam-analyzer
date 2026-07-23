@@ -5,7 +5,7 @@ import logging
 import unicodedata
 from enum import Enum
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import (
     QActionGroup,
     QDesktopServices,
@@ -80,6 +80,8 @@ class CampaignsPanel(QWidget):
         # Set true while the edit or new form is open; disables the list and
         # new button so the user cannot switch campaigns mid-edit.
         self._list_locked = False
+        # Guards a pending debounced overview refresh; see _refresh_overview_if_visible.
+        self._overview_refresh_pending = False
 
         self._detail = CampaignDetailWidget(
             app_state,
@@ -151,15 +153,24 @@ class CampaignsPanel(QWidget):
     def _refresh_overview_if_visible(self, *_args) -> None:
         # Connected to campaignsChanged (list) and audioInventoryChanged (object);
         # the payloads are unused, we just re-derive the overview from AppState.
-        showing = self._detail.is_showing_overview()
-        _log.debug("_refresh_overview_if_visible: is_showing_overview=%s", showing)
-        if showing:
-            entries = self._overview_entries()
-            _log.debug(
-                "_refresh_overview_if_visible: entries=%s",
-                [(e.name, e.inventory.file_count if e.inventory else None) for e in entries],
-            )
-            self._detail.set_overview(entries)
+        # A project load fires both in the same tick, and each rebuild does a
+        # filesystem check per campaign, so debounce to one rebuild per tick
+        # instead of doing that work twice back to back.
+        if not self._detail.is_showing_overview():
+            return
+        if self._overview_refresh_pending:
+            return
+        self._overview_refresh_pending = True
+        QTimer.singleShot(0, self._do_refresh_overview)
+
+    def _do_refresh_overview(self) -> None:
+        self._overview_refresh_pending = False
+        entries = self._overview_entries()
+        _log.debug(
+            "_do_refresh_overview: entries=%s",
+            [(e.name, e.inventory.file_count if e.inventory else None) for e in entries],
+        )
+        self._detail.set_overview(entries)
 
     def _overview_entries(self) -> list[CampaignOverviewEntry]:
         inventory = self._app_state.audio_inventory

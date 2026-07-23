@@ -13,6 +13,7 @@ from .pamproj_migration import (
     migrate,
 )
 from .perch_runner import PerchRunner
+from .project_loader import ProjectLoadResult, load_project_bundle
 from .psutil_sdcard_scanner import PsutilSdCardScanner
 from .toml_campaign_repo import TomlCampaignRepository
 from .toml_project_repo import TomlProjectRepository
@@ -25,6 +26,7 @@ __all__ = [
     "LegacyProject",
     "MigrationReport",
     "PerchRunner",
+    "ProjectLoadResult",
     "PsutilSdCardScanner",
     "SoundfileAudioExtractor",
     "TomlCampaignRepository",
@@ -33,5 +35,6 @@ __all__ = [
     "discover_audio_inventory",
     "find_legacy_pamproj",
     "load_legacy",
+    "load_project_bundle",
     "migrate",
 ]

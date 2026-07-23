@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+### Changed
+- Opening a project now loads on a background thread and shows an "Opening..." indicator.
 ### Fixed
 - The campaign creation form no longer stays open after a successful save, which made the next save report that the campaign already exists.
 - Campaign names Windows cannot store (trailing dot, reserved device names like `CON`) are now rejected.

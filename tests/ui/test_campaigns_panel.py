@@ -638,7 +638,7 @@ def test_map_widget_clear_calls_qml(panel: CampaignsPanel, monkeypatch):
 
 
 def test_overview_lists_campaign_and_its_arus(
-    panel: CampaignsPanel, state: AppState, project_with_campaign
+    qtbot, panel: CampaignsPanel, state: AppState, project_with_campaign
 ):
     """With nothing selected, the overview text lists each campaign and its ARUs."""
     _proj, campaign = project_with_campaign
@@ -647,6 +647,11 @@ def test_overview_lists_campaign_and_its_arus(
     (card / "week_01" / "20240101_120000.WAV").write_bytes(b"\x00" * 2048)
     (card / "week_01" / "20240103_120000.WAV").write_bytes(b"\x00" * 1024)
     state.refresh_audio_inventory()
+    # The overview rebuild is debounced by one event-loop tick (see
+    # CampaignsPanel._refresh_overview_if_visible) so a project load that
+    # fires campaignsChanged and audioInventoryChanged together only rebuilds
+    # once instead of twice.
+    qtbot.waitUntil(lambda: "ARU-7" in panel._detail.ui.overview_label.text(), timeout=1000)
 
     assert panel._detail.ui.stack.currentWidget() is panel._detail.ui.empty_page
     assert panel._detail.ui.overview_scroll.isVisibleTo(panel._detail)

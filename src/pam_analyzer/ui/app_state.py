@@ -5,7 +5,6 @@ Replaces the module-level globals from the original NiceGUI app.
 """
 
 import logging
-import time
 from dataclasses import replace
 from pathlib import Path
 
@@ -23,6 +22,7 @@ from ..infrastructure import (
     TomlProjectRepository,
     discover_analysis_result,
     discover_audio_inventory,
+    load_project_bundle,
 )
 
 _log = logging.getLogger(__name__)
@@ -83,36 +83,47 @@ class AppState(QObject):
     def audio_inventory(self) -> AudioInventory:
         return self._audio_inventory
 
+    @property
+    def project_repo(self) -> TomlProjectRepository:
+        """Exposed so a background worker (e.g. ProjectLoadWorker) can read a
+        project folder off the UI thread without AppState itself crossing
+        threads."""
+        return self._project_repo
+
     def load_project(self, folder: Path) -> None:
-        dbg = _log.isEnabledFor(logging.DEBUG)
-        t0 = time.perf_counter() if dbg else 0.0
+        """Load a project folder synchronously on the calling thread.
+
+        For the UI, prefer routing folder opens through a ProjectLoadWorker
+        and apply_loaded_project() instead: this blocks the caller for as
+        long as the filesystem takes, which is a problem on slow or
+        network-mounted (e.g. CIFS) folders.
+        """
         try:
-            project = self._project_repo.load(folder)
+            result = load_project_bundle(self._project_repo, self._campaign_repo, folder)
         except Exception as exc:
             self.errorOccurred.emit(f"Failed to open {folder.name}: {exc}")
             return
-        if dbg:
-            _log.debug("load_project: repo.load %.2fs", time.perf_counter() - t0)
+        self.apply_loaded_project(
+            result.project, result.campaigns, result.audio_inventory, result.analysis_result
+        )
 
+    def apply_loaded_project(
+        self,
+        project: Project,
+        campaigns: list[Campaign],
+        audio_inventory: AudioInventory,
+        analysis_result: AnalysisRunResult | None,
+    ) -> None:
+        """Apply an already-loaded project bundle.
+
+        Split out of load_project so a ProjectLoadWorker can do the
+        filesystem work on a background thread and hand the results here to
+        be applied on the UI thread.
+        """
         self._apply_project(project)
-
-        t = time.perf_counter() if dbg else 0.0
-        self.refresh_campaigns()
-        if dbg:
-            _log.debug("load_project: refresh_campaigns %.2fs", time.perf_counter() - t)
-
-        t = time.perf_counter() if dbg else 0.0
-        self.refresh_audio_inventory()
-        if dbg:
-            _log.debug("load_project: refresh_audio_inventory %.2fs", time.perf_counter() - t)
-
-        t = time.perf_counter() if dbg else 0.0
-        discovered = discover_analysis_result(project.folder)
-        if dbg:
-            _log.debug("load_project: discover_analysis_result %.2fs", time.perf_counter() - t)
-            _log.debug("load_project: total %.2fs", time.perf_counter() - t0)
-
-        self.set_last_analysis_result(discovered)
+        self._apply_campaigns(campaigns)
+        self._set_audio_inventory(audio_inventory)
+        self.set_last_analysis_result(analysis_result)
         self.statusMessage.emit(f"Opened {project.name}")
 
     def create_project(self, folder: Path) -> None:

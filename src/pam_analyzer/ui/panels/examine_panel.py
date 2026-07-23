@@ -66,6 +66,8 @@ class ExaminePanel(QWidget):
         self._audio_extractor = audio_extractor
         self._model = DetectionsTableModel(self)
         self._raw_detections: list[Detection] = []  # full unfiltered list for current campaign
+        # Guards a pending debounced reload of the current campaign (see _schedule_reload).
+        self._reload_pending = False
 
         self.ui.detections_table.setModel(self._model)
         # Initial default sort. Re-resolved by name on every _apply_filter
@@ -105,7 +107,7 @@ class ExaminePanel(QWidget):
         # Reload the currently-selected campaign whenever a fresh analysis
         # finishes (or a discovery rebuilds the on-disk result), so the user
         # doesn't have to bounce the campaign combo to see new rows.
-        self._app_state.lastAnalysisResultChanged.connect(self._on_last_analysis_changed)
+        self._app_state.lastAnalysisResultChanged.connect(self._schedule_reload)
 
         self.ui.campaign_combo.currentIndexChanged.connect(self._on_campaign_selected)
         self.ui.max_per_spin.valueChanged.connect(self._apply_filter)
@@ -183,17 +185,6 @@ class ExaminePanel(QWidget):
         self._set_padding_widgets(before, after)
         self.ui.detections_table.setPlaybackPadding(before, after)
 
-    def _on_last_analysis_changed(self, _result: object) -> None:
-        """Re-read the current campaign after a run finishes or discovery completes.
-
-        Reuses _on_campaign_selected so the combo's current index drives the
-        load; on the All-Campaigns view this picks up new rows from every
-        campaign that just ran.
-        """
-        idx = self.ui.campaign_combo.currentIndex()
-        if idx >= 0:
-            self._on_campaign_selected(idx)
-
     def _on_campaigns_changed(self, campaigns: list[Campaign]) -> None:
         combo = self.ui.campaign_combo
         combo.blockSignals(True)
@@ -203,8 +194,32 @@ class ExaminePanel(QWidget):
             for c in campaigns:
                 combo.addItem(c.name, c.name)
         combo.blockSignals(False)
-        if campaigns:
-            self._on_campaign_selected(0)
+        # Rebuilding the combo resets the selection to index 0 (All campaigns),
+        # which _reload_current_campaign then reads back.
+        self._schedule_reload()
+
+    def _schedule_reload(self, *_args) -> None:
+        """Coalesce a re-read of the current campaign to one pass per event-loop turn.
+
+        apply_loaded_project() emits campaignsChanged and lastAnalysisResultChanged
+        (plus a spurious mid-batch lastAnalysisResultChanged(None) while it clears
+        the previous session) in one synchronous burst, and each would otherwise
+        re-read every campaign's CSV from disk. Deferring to a single-shot timer
+        collapses the burst into one read against the final combo state. A genuine
+        analysis-finished event later triggers its own single reload the same way.
+        Interactive combo changes stay synchronous: currentIndexChanged goes
+        straight to _on_campaign_selected, not through here.
+        """
+        if self._reload_pending:
+            return
+        self._reload_pending = True
+        QTimer.singleShot(0, self._reload_current_campaign)
+
+    def _reload_current_campaign(self) -> None:
+        self._reload_pending = False
+        idx = self.ui.campaign_combo.currentIndex()
+        if idx >= 0:
+            self._on_campaign_selected(idx)
 
     # handlers
 

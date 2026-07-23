@@ -34,11 +34,26 @@ class WelcomePanel(QWidget):
 
         self.ui.icon_label.setPixmap(QIcon(":/icons/icon.svg").pixmap(QSize(112, 112)))
         self.ui.recent_list.setItemDelegate(_RecentProjectDelegate(self.ui.recent_list))
+        self._default_tagline = self.ui.tagline_label.text()
 
         self.ui.new_button.clicked.connect(self.newRequested.emit)
         self.ui.open_project_folder_button.clicked.connect(self.openProjectFolderRequested.emit)
         self.ui.recent_list.itemActivated.connect(self._on_recent_activated)
         self.ui.recent_list.itemClicked.connect(self._on_recent_activated)
+
+    def set_loading(self, project_name: str) -> None:
+        """Show a loading state in place of the usual tagline while a folder
+        opens, and block further open/create/recent actions until it clears."""
+        self.ui.tagline_label.setText(f"Opening {project_name}...")
+        self.ui.new_button.setEnabled(False)
+        self.ui.open_project_folder_button.setEnabled(False)
+        self.ui.recent_list.setEnabled(False)
+
+    def clear_loading(self) -> None:
+        self.ui.tagline_label.setText(self._default_tagline)
+        self.ui.new_button.setEnabled(True)
+        self.ui.open_project_folder_button.setEnabled(True)
+        self.ui.recent_list.setEnabled(True)
 
     def set_recent_projects(self, paths: list[str]) -> None:
         self.ui.recent_list.clear()
