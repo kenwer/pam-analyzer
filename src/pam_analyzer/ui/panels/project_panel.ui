@@ -50,7 +50,16 @@
          <string/>
         </property>
         <property name="textInteractionFlags">
-         <set>Qt::TextSelectableByMouse</set>
+         <set>Qt::TextSelectableByMouse|Qt::LinksAccessibleByMouse</set>
+        </property>
+        <property name="cursor">
+         <cursorShape>PointingHandCursor</cursorShape>
+        </property>
+        <property name="styleSheet">
+         <string>color: #1a73e8; text-decoration: underline;</string>
+        </property>
+        <property name="openExternalLinks">
+         <bool>false</bool>
         </property>
        </widget>
       </item>

@@ -341,22 +341,6 @@ QPushButton:disabled { background-color: #c0c0c0; color: #f5f5f5; }</string>
         </widget>
        </item>
        <item>
-        <widget class="QLabel" name="output_path_label">
-         <property name="cursor">
-          <cursorShape>PointingHandCursor</cursorShape>
-         </property>
-         <property name="styleSheet">
-          <string>color: #1a73e8; text-decoration: underline;</string>
-         </property>
-         <property name="text">
-          <string/>
-         </property>
-         <property name="openExternalLinks">
-          <bool>false</bool>
-         </property>
-        </widget>
-       </item>
-       <item>
         <widget class="QTreeView" name="results_tree">
          <property name="alternatingRowColors">
           <bool>true</bool>

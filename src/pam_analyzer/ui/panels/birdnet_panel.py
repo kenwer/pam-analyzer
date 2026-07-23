@@ -156,8 +156,6 @@ class BirdNetPanel(QWidget):
         if project is not None:
             self._set_locale_checks(project.birdnet_locales)
 
-        self.ui.output_path_label.linkActivated.connect(lambda _link: self._open_path(self._current_output_dir()))
-
     def _build_locales_menu(self) -> None:
         menu = QMenu(self.ui.locales_button)
         self._locale_checks = {}
@@ -430,7 +428,6 @@ class BirdNetPanel(QWidget):
             self._results_model.clear()
             self._results_model.setHorizontalHeaderLabels(["Name", "Files"])
             self.ui.summary_label.clear()
-            self.ui.output_path_label.clear()
             self._set_status_page(_StatusPage.IDLE)
         else:
             self._render_results(result)
@@ -476,11 +473,6 @@ class BirdNetPanel(QWidget):
         self.ui.results_tree.expandAll()
         self._populate_row_widgets()
         self.ui.summary_label.setText(self._build_summary(result))
-        out_dir = self._current_output_dir()
-        if out_dir is not None:
-            self.ui.output_path_label.setText(f'Output: <a href="open">{out_dir}</a>')
-        else:
-            self.ui.output_path_label.clear()
 
     def _populate_row_widgets(self) -> None:
         """Attach file-button rows to column 1 of each tree row."""
@@ -518,11 +510,6 @@ class BirdNetPanel(QWidget):
         if len(result.campaigns) > 1:
             parts.append(f"{len(result.campaigns)} CSVs")
         return "  ·  ".join(parts)
-
-    def _current_output_dir(self) -> Path | None:
-        if self._app_state.project is None:
-            return None
-        return self._app_state.project.folder
 
     def _open_path(self, path: Path | None) -> None:
         if path is None:

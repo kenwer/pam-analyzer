@@ -4,6 +4,8 @@ SD-card regex and preferred species language."""
 import re
 from dataclasses import replace
 
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QWidget
 
 from ...domain import Project
@@ -56,6 +58,7 @@ class ProjectPanel(QWidget):
         self.ui.sdcard_pattern_edit.textChanged.connect(self._refresh_regex_indicator)
         self.ui.sdcard_pattern_edit.editingFinished.connect(self._on_sdcard_pattern_changed)
         self.ui.species_lang_combo.editTextChanged.connect(self._on_species_lang_changed)
+        self.ui.folder_label.linkActivated.connect(self._open_folder)
 
     def _populate_locale_combo(self) -> None:
         self.ui.species_lang_combo.addItems(_DEFAULT_LOCALES)
@@ -79,7 +82,8 @@ class ProjectPanel(QWidget):
                 self._refresh_regex_indicator("")
                 return
 
-            self.ui.folder_label.setText(paths.contract_user_path(str(project.folder)))
+            folder_text = paths.contract_user_path(str(project.folder))
+            self.ui.folder_label.setText(f'<a href="open">{folder_text}</a>')
             self.ui.sdcard_pattern_edit.setText(project.sdcard_name_pattern)
             self._set_combo_value(project.preferred_species_lang)
 
@@ -105,6 +109,11 @@ class ProjectPanel(QWidget):
         if self._loading:
             return
         self._apply(preferred_species_lang=value.strip() or "en")
+
+    def _open_folder(self, _link: str) -> None:
+        project = self._app_state.project
+        if project is not None:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(project.folder)))
 
     # side-effects
 
