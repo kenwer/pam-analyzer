@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+### Added
+- The Campaigns panel overview now shows a project-wide summary (total campaigns, ARUs, recordings, disk usage, and date range).
 ### Changed
 - Opening a project now loads on a background thread and shows an "Opening..." indicator.
 - The window title now shows the app version.

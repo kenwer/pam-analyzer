@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..domain import AudioInventory, CampaignInventory, CardInventory, WeekInventory
-from ..domain.audio_import import WEEK_YEAR_ROUND
+from ..domain.audio_import import WEEK_YEAR_ROUND, date_range_from_stems, merge_date_ranges
 from . import paths
 
 _log = logging.getLogger(__name__)
@@ -189,6 +189,7 @@ def _build_campaign_inventory(
         cards=tuple(built),
         file_count=sum(c.file_count for c in built),
         total_bytes=sum(c.total_bytes for c in built),
+        date_range=merge_date_ranges(c.date_range for c in built),
     )
 
 
@@ -197,13 +198,23 @@ def _build_card_inventory(card: _CardStructure, sizes: dict[Path, int]) -> CardI
     for week_num in sorted(card.by_week):
         files = tuple(card.by_week[week_num])
         file_sizes = tuple(sizes[p] for p in files)
-        weeks.append(WeekInventory(week=week_num, files=files, file_sizes=file_sizes, total_bytes=sum(file_sizes)))
+        date_range = date_range_from_stems(p.stem for p in files)
+        weeks.append(
+            WeekInventory(
+                week=week_num,
+                files=files,
+                file_sizes=file_sizes,
+                total_bytes=sum(file_sizes),
+                date_range=date_range,
+            )
+        )
     return CardInventory(
         name=card.name,
         folder=card.folder,
         weeks=tuple(weeks),
         file_count=sum(len(w.files) for w in weeks),
         total_bytes=sum(w.total_bytes for w in weeks),
+        date_range=merge_date_ranges(w.date_range for w in weeks),
     )
 
 

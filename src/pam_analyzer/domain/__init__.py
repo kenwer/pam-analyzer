@@ -15,6 +15,7 @@ from .audio_import import (
     ImportProgress,
     birdnet_week,
     date_range_from_stems,
+    merge_date_ranges,
     parse_recording_time,
 )
 from .detections import filter_top_per_aru_species
@@ -63,5 +64,6 @@ __all__ = [
     "WeekInventory",
     "birdnet_week",
     "date_range_from_stems",
+    "merge_date_ranges",
     "parse_recording_time",
 ]

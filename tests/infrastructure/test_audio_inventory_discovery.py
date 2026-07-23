@@ -1,5 +1,6 @@
 """Tests for discover_audio_inventory: layout walk + size aggregation."""
 
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -95,3 +96,23 @@ def test_campaign_totals_sum_card_totals(project_dir: Path):
     assert alpha is not None
     assert alpha.file_count == sum(c.file_count for c in alpha.cards)
     assert alpha.total_bytes == sum(c.total_bytes for c in alpha.cards)
+
+
+def test_date_range_merges_bottom_up_from_filenames(project_dir: Path):
+    """MSD-X's three files span 2024-01-01 to 2024-01-08; the campaign-level
+    range should be merged from its cards without re-parsing any filenames
+    at render time (see ui/models/campaign_overview.py)."""
+    inv = discover_audio_inventory(project_dir)
+    alpha = inv.for_campaign("alpha")
+    assert alpha is not None
+
+    msd_x = alpha.cards[0]
+    assert msd_x.weeks[0].date_range == (datetime(2024, 1, 1, 12), datetime(2024, 1, 2, 12))
+    assert msd_x.weeks[1].date_range == (datetime(2024, 1, 8, 12), datetime(2024, 1, 8, 12))
+    assert msd_x.date_range == (datetime(2024, 1, 1, 12), datetime(2024, 1, 8, 12))
+
+    # MSD-Y's loose file has no parseable timestamp.
+    msd_y = alpha.cards[1]
+    assert msd_y.date_range is None
+
+    assert alpha.date_range == msd_x.date_range

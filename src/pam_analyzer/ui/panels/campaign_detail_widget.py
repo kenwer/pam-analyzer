@@ -44,7 +44,7 @@ from ..app_state import AppState
 from ..dialogs.folder_import_dialog import FolderImportDialog
 from ..dialogs.import_conflict_dialog import ImportConflictDialog
 from ..models.audio_inventory_tree_model import AudioInventoryTreeModel, format_bytes
-from ..models.campaign_overview import CampaignOverviewEntry, format_overview_html
+from ..models.campaign_overview import CampaignOverviewEntry, render_overview
 from .ui_campaign_detail_widget import Ui_CampaignDetailWidget
 
 _Mode = Literal["empty", "view", "new", "edit", "confirm"]
@@ -204,9 +204,12 @@ class CampaignDetailWidget(QWidget):
         """Render the empty-state overview text and toggle its empty fallback."""
         has_entries = bool(entries)
         self.ui.overview_title_label.setVisible(has_entries)
+        self.ui.overview_summary_label.setVisible(has_entries)
         self.ui.overview_scroll.setVisible(has_entries)
         self.ui.no_campaigns_label.setVisible(not has_entries)
-        self.ui.overview_label.setText(format_overview_html(entries) if has_entries else "")
+        summary_html, campaigns_html = render_overview(entries) if has_entries else ("", "")
+        self.ui.overview_summary_label.setText(summary_html)
+        self.ui.overview_label.setText(campaigns_html)
 
     def open_view(
         self,

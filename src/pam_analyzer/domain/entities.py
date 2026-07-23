@@ -1,6 +1,7 @@
 import unicodedata
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 
 from .enums import FilterMode, VerifiedState
@@ -134,6 +135,8 @@ class WeekInventory:
     week: int  # BirdNET week number; audio_import.WEEK_YEAR_ROUND for files outside week_NN folders
     files: tuple[Path, ...]
     total_bytes: int
+    # Earliest/latest recording time parsed from filenames; None when none parse.
+    date_range: tuple[datetime, datetime] | None
     file_sizes: tuple[int, ...] = ()  # parallel to files; populated by audio_inventory_discovery
 
 
@@ -144,6 +147,7 @@ class CardInventory:
     weeks: tuple[WeekInventory, ...]
     file_count: int
     total_bytes: int
+    date_range: tuple[datetime, datetime] | None  # merged from this card's weeks
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,6 +157,7 @@ class CampaignInventory:
     cards: tuple[CardInventory, ...]
     file_count: int
     total_bytes: int
+    date_range: tuple[datetime, datetime] | None  # merged from this campaign's cards
 
 
 @dataclass(frozen=True, slots=True)

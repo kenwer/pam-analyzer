@@ -100,6 +100,16 @@ def date_range_from_stems(stems: Iterable[str]) -> tuple[datetime, datetime] | N
     return min(times), max(times)
 
 
+def merge_date_ranges(
+    ranges: Iterable[tuple[datetime, datetime] | None],
+) -> tuple[datetime, datetime] | None:
+    """Combine several date ranges (e.g. per week/card/campaign) into their overall span."""
+    valid = [r for r in ranges if r is not None]
+    if not valid:
+        return None
+    return min(r[0] for r in valid), max(r[1] for r in valid)
+
+
 def discover_folder_cards(
     root: Path, has_direct_audio: Callable[[Path], bool]
 ) -> list[DetectedCard]:
