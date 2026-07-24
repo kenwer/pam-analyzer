@@ -67,15 +67,20 @@ Upon first launch, use `New Project` and pick (or create) the folder that will h
 The application is organized into four panels that map to the steps of a typical PAM analysis workflow.
 
 ### Project Settings
-Configure a study in the project settings:
+Configure a study in the project settings.
 
 - If needed adjust the **SD card volume name pattern**: A regular expression to match SD card volume names for your ARUs. The default matches both AudioMoth (`MSD-`) and Song Meter (`2MM`) cards; widen or narrow it to suit your devices.
-- You can also set the **preferred species language** that is used when exporting audio snippets and for the species column in the examine data table.
+- Model settings:
+  - **Min confidence**: the minimum detection score (0 to 1) a species prediction must reach to appear in the output CSV. Lower values result in more detections but increasingly more false positives.
+  - **Overlap**: how much consecutive analysis windows overlap, in seconds (0 to 2.5 s). Overlap might help to catch vocalizations that would otherwise be split across a window boundary, at the cost of longer analysis time and/or duplicate detections.
+- Species languages:
+  - **Main** sets the preferred language for the Species column in all CSV outputs and for exported audio snippets
+  - **Extra** adds one additional common-name column per checked language to the examine data table.
 
 All settings are saved automatically to the `pam-analyzer.toml` file inside the project folder.
 
 ### Campaigns
-Create and manage the campaigns that belong to this project. The panel shows all discovered campaigns in a scrollable list. Clicking a campaign opens its settings in an inline form on the right. From here you can:
+Create and manage the campaigns that belong to this project. The panel on the left shows a list of all discovered campaigns. If no campaign is selected a project-wide summary is shown on the right. Clicking a campaign opens its settings where you can:
 
 - **Create** a new campaign using the `+` button. Each campaign must be configured with a species filter:
   - **Location mode**: specify a lat/lon on a map or enter coordinates manually; BirdNET derives the species list from this location. Here you can also add species you want to have always included when feeding the detection models.
@@ -101,9 +106,9 @@ Create and manage the campaigns that belong to this project. The panel shows all
 Campaigns are discovered automatically from the project folder: any subdirectory containing a `campaign.toml` sidecar is treated as a campaign.
 
 ### Run bird species detection using BirdNET-2.4 or Perch-2.0
-Pick a model from the dropdown and configure its parameters in the panel. See [Models](#models) for a side-by-side comparison of BirdNET-2.4 and Perch-2.0 and guidance on when to use each.
+Pick a model from the dropdown and choose which campaign(s) to run it against. The min confidence, overlap, and species language settings come from [Project Settings](#project-settings) and apply to both models. See [Models](#models) for a side-by-side comparison of BirdNET-2.4 and Perch-2.0 and guidance on when to use each.
 
-Common parameters include minimum confidence threshold and additional language columns for species names. Each detection is assigned a within-segment `Rank` (1 = highest-confidence species in that window), useful for deprioritising detections that are consistently outcompeted by other species in the same clip. Analyses can be run per-campaign or across all campaigns. See [Output files](#output-files) for what is written to disk.
+Each detection is assigned a within-segment `Rank` (1 = highest-confidence species in that window), useful for deprioritising detections that are consistently outcompeted by other species in the same clip. Analyses can be run per-campaign or across all campaigns. See [Output files](#output-files) for what is written to disk.
 
 ### Output files
 Analysis results are written directly into each campaign folder, next to the audio, with one detections CSV **per model run**:
@@ -230,7 +235,7 @@ PAM Analyzer ships two bird-detection models. Both run locally on CPU, write to 
 | Backend | TFLite via the [`birdnet`](https://github.com/birdnet-team/birdnet) library | TensorFlow SavedModel via the same library |
 | Audio window | 3 s | 5 s |
 | Sample rate | 48 kHz | 32 kHz |
-| Segment overlap | Configurable (0 to 2.9 s) | Configurable (0 to 4.9 s) |
+| Segment overlap | Configurable (0 to 2.5 s) | Configurable (0 to 2.5 s) |
 | Classes | ~6500 species | 14,795 classes |
 | Speed (Apple M4 Pro, CPU, ~4 h audio) | ~1050x real-time | ~77x real-time |
 | Confidence units in CSV | Sigmoid probability (0-1) | Calibrated probability (0-1), see [Logit calibration](#logit-calibration) |
