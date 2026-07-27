@@ -6,6 +6,7 @@
 - [Dev] Split the domain `entities.py` into per-concept modules: `campaign.py`, `project.py`, `detection.py`, `inventory.py`, `analysis_result.py`.
 - [Dev] Refactor the filter operators into per-operator classes.
 - [Dev] Give the species filter its own domain module (`SpeciesFilter`) that owns sidecar persistence and allow-list resolution.
+- [Dev] Upgrade dependencies.
 ### Fixed
 - Deleting a campaign and creating (or renaming to) the same name no longer shows the old campaign's imported file count.
 - Renaming a campaign now updates its imported file count instead of leaving it stranded under the old name.
