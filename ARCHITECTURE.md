@@ -43,18 +43,27 @@ import-boundary test). Keep them in mind when deciding where code belongs:
 - `domain` owns the entities and their persistence. `Campaign`, `Project`, and
   the `DetectionSet` aggregate read and write their own files (TOML sidecars,
   detection CSVs) through `domain.paths`. Also holds pure logic (species
-  filtering, audio-import discovery, the Detection schema). It stays Qt-free so
-  it can be exercised in plain pytest, but it is no longer stdlib-only: it
-  depends on `tomli_w`/`tomllib` and `platformdirs` for that persistence.
+  filtering, audio-import discovery, the Detection schema). It stays Qt-free by
+  design, and the rule earns its place here rather than being decorative. Domain
+  tests need no `QApplication`, which keeps them clear of the Qt-teardown
+  flakiness the UI suite carries, and Qt-free entities run on worker threads
+  without QObject thread-affinity hazards. It is not stdlib-only either.
 - `infrastructure` holds the remaining I/O adapters that are not entity
   persistence: the BirdNET/Perch analysis runners, audio extraction, on-disk
-  discovery, the sd-card scanner, and the one-time .pamproj migration. Qt-free.
+  discovery, the sd-card scanner, and the one-time .pamproj migration. Qt-free
+  for the same reasons, and because these adapters run on `QThread` workers: a
+  plain-callable progress protocol, bridged to Qt by `_SignalProgress`, keeps
+  them off the event loop and free of cross-thread signal coupling.
 - `workers` are the Qt-aware background tasks (QThread workers, the import
   orchestrator). They may call domain and infrastructure.
 - `widgets` are reusable Qt components below the panel level. They may use
   domain vocabulary (enums, value objects, pure functions such as
   `domain.filter_ops`) but should not touch I/O or panels.
-- `ui` holds the app-specific panels, dialogs, and Qt models, plus `AppState`.
+- `ui` holds the app-specific panels, dialogs, and Qt models, plus `AppState`,
+  the application/use-case layer. `AppState` is a `QObject` and is meant to be
+  Qt-coupled: it is where domain orchestration meets the event loop. The Qt-free
+  rule stops at the domain and infrastructure edge and does not imply the app
+  aspires to be Qt-free anywhere else.
 - `app` is the composition root: it constructs the adapters and wires them in.
 
 Entities persist themselves, so a mutation now happens by calling a method on

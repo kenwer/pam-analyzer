@@ -19,8 +19,13 @@ from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from ...domain import Detection
 from ...domain.detection_schema import COLUMNS as _SCHEMA_COLUMNS
 from ...domain.detection_schema import ColumnSpec, is_locale_column
-from ...domain.filter_ops import ColumnKind, FilterOp, default_op
-from .filter_exprs import datetime_helper_exprs, to_polars_expr
+from ...domain.filter_ops import (
+    OPERATORS,
+    ColumnKind,
+    FilterOp,
+    datetime_helper_exprs,
+    default_op,
+)
 
 PLAY_COLUMN_INDEX = 0
 """The model column index reserved for the virtual play-button column."""
@@ -366,7 +371,7 @@ class DetectionsTableModel(QAbstractTableModel):
             col_name = self._columns[col_idx].name
             if col_name not in self._sort_df.columns:
                 continue
-            mask = mask & to_polars_expr(col_name, text, op, self._columns[col_idx].kind)
+            mask = mask & OPERATORS[op].to_polars(col_name, text, self._columns[col_idx].kind)
 
         self._visible = self._sort_df.with_row_index("__idx").filter(mask)["__idx"].to_list()
 

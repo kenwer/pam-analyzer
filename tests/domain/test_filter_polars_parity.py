@@ -1,15 +1,20 @@
-"""Parity tests pinning to_polars_expr to the pure-Python matches().
+"""Parity tests pinning each operator's polars form to its scalar form.
 
-The table model filters through polars, the unit tests reason through
-matches(); these tests assert both implementations keep the same rows
-for every operator, including null and unparseable cells.
+The table model filters through polars via FilterOperator.to_polars. The unit
+tests reason through the scalar FilterOperator.matches. These tests assert both
+forms keep the same rows for every operator, including null and unparseable cells.
 """
 
 import polars as pl
 import pytest
 
-from pam_analyzer.domain.filter_ops import ColumnKind, FilterOp, matches
-from pam_analyzer.ui.models.filter_exprs import datetime_helper_exprs, to_polars_expr
+from pam_analyzer.domain.filter_ops import (
+    OPERATORS,
+    ColumnKind,
+    FilterOp,
+    datetime_helper_exprs,
+    matches,
+)
 
 TEXT_VALUES = ["Turdus merula", "Erithacus rubecula", "MSD-109", "", None]
 
@@ -42,7 +47,7 @@ CASES = [
     (ColumnKind.NUMERIC, NUMERIC_VALUES, "0.5", FilterOp.GREATER_THAN),
     (ColumnKind.NUMERIC, NUMERIC_VALUES, "0.9", FilterOp.LESS_THAN_OR_EQUAL),
     (ColumnKind.NUMERIC, NUMERIC_VALUES, "0.2 - 1", FilterOp.IN_RANGE),
-    # Unparseable filter text is inactive; null cells must survive too.
+    # Unparseable filter text is inactive. Null cells must survive too.
     (ColumnKind.NUMERIC, NUMERIC_VALUES, "abc", FilterOp.EQUALS),
     # Text-style op on a numeric column compares the stringified value.
     (ColumnKind.NUMERIC, NUMERIC_VALUES, "0.8", FilterOp.CONTAINS),
@@ -52,9 +57,9 @@ CASES = [
     (ColumnKind.DATETIME, DATETIME_VALUES, "2026-04-25", FilterOp.AFTER_DATE),
     (ColumnKind.DATETIME, DATETIME_VALUES, "2026-04-25 .. 2026-04-26", FilterOp.DATE_RANGE),
     (ColumnKind.DATETIME, DATETIME_VALUES, "03:00 - 09:00", FilterOp.TIME_OF_DAY_RANGE),
-    # Overnight window wrapping midnight; null cells must stay excluded.
+    # Overnight window wrapping midnight. Null cells must stay excluded.
     (ColumnKind.DATETIME, DATETIME_VALUES, "22:00 - 04:00", FilterOp.TIME_OF_DAY_RANGE),
-    # Mid-typing filter text is inactive; garbage cells must survive.
+    # Mid-typing filter text is inactive. Garbage cells must survive.
     (ColumnKind.DATETIME, DATETIME_VALUES, "2026-0", FilterOp.ON_DATE),
     (ColumnKind.DATETIME, DATETIME_VALUES, "04:0", FilterOp.TIME_OF_DAY_RANGE),
     # Plain text ops still work on the raw datetime string.
@@ -72,10 +77,10 @@ CASES = [
     CASES,
     ids=[f"{kind.value}-{op.value}-{text!r}" for kind, values, text, op in CASES],
 )
-def test_polars_expr_matches_python_matcher(kind, values, text, op):
+def test_polars_form_matches_scalar_form(kind, values, text, op):
     df = pl.DataFrame({"col": values}, strict=False)
     if kind is ColumnKind.DATETIME:
         df = df.with_columns(datetime_helper_exprs("col"))
-    kept = df.with_row_index("idx").filter(to_polars_expr("col", text, op, kind))["idx"].to_list()
+    kept = df.with_row_index("idx").filter(OPERATORS[op].to_polars("col", text, kind))["idx"].to_list()
     expected = [i for i, v in enumerate(values) if matches(v, text, op, kind)]
     assert kept == expected
