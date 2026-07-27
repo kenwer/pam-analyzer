@@ -44,11 +44,11 @@ from ..domain import (
     CampaignRunInput,
     CancelledError,
     Detection,
+    paths,
 )
 from ..domain import detection_schema as schema
+from ..domain.analysis_result import CampaignRunResult
 from ..domain.audio_import import WEEK_YEAR_ROUND, parse_recording_time
-from ..domain.entities import CampaignRunResult
-from . import paths
 from ._analysis_helpers import (
     RunGlobalProgress,
     build_allowed_lookup,
@@ -187,7 +187,7 @@ class BaseAnalysisRunner(ABC):
         wav_files = list_audio_files(ci.folder)
         wav_count = len(wav_files)
 
-        detections_csv = paths.campaign_csv_for_model(ci.folder, self.model_key)
+        detections_csv = schema.campaign_csv_for_model(ci.folder, self.model_key)
 
         # Resolve the species filter before opening the inference session:
         # in LOCATION mode this pre-warms the geo model and computes per-

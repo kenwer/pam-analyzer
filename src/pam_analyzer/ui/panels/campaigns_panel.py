@@ -3,7 +3,6 @@
 import logging
 import unicodedata
 from enum import Enum
-from typing import Protocol
 
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import (
@@ -32,24 +31,6 @@ from .ui_campaigns_panel import Ui_CampaignsPanel
 _log = logging.getLogger(__name__)
 
 
-class CampaignReader(Protocol):
-    """The read-only slice of campaign persistence the panel depends on.
-
-    A consumer-defined view onto TomlCampaignRepository. The panel reads a
-    single campaign's on-disk files (its species lists, its audio count) but is
-    typed so it cannot reach the repository's write methods. Those writes must
-    go through AppState, which rebuilds derived state on every mutation. A stray
-    repo.rename() or repo.write_*() from the view would bypass that rebuild.
-    Structural typing means TomlCampaignRepository satisfies this without
-    naming it.
-    """
-
-    def read_species_list(self, campaign: Campaign) -> str: ...
-    def read_must_have_species(self, campaign: Campaign) -> str: ...
-    def has_must_have_species(self, campaign: Campaign) -> bool: ...
-    def count_audio_files(self, campaign: Campaign) -> int: ...
-
-
 class CampaignSortOrder(Enum):
     DATE_MODIFIED_DESC = "date_modified_desc"
     DATE_MODIFIED_ASC = "date_modified_asc"
@@ -69,7 +50,6 @@ class CampaignsPanel(QWidget):
     def __init__(
         self,
         app_state: AppState,
-        campaign_reader: CampaignReader,
         orchestrator: ImportOrchestrator,
         settings: AppSettings,
         parent: QWidget | None = None,
@@ -80,9 +60,10 @@ class CampaignsPanel(QWidget):
         self.ui.splitter.setSizes([220, 780])
 
         self._app_state = app_state
-        # Read-only view of campaign files (species lists, audio counts).
-        # Mutations go through app_state so derived state stays consistent.
-        self._reads = campaign_reader
+        # The panel only READS a campaign's files (species lists, audio counts)
+        # directly on the Campaign. Every MUTATION must go through app_state so
+        # derived state (campaign list, audio inventory) is rebuilt; never call
+        # campaign.save()/rename()/write_*() from here.
         self._settings = settings
         self._model = QStandardItemModel(self)
         # Raw campaign list as last received from AppState, in repository
@@ -211,7 +192,7 @@ class CampaignsPanel(QWidget):
         ns = "N" if loc.latitude >= 0 else "S"
         ew = "E" if loc.longitude >= 0 else "W"
         text = f"{abs(loc.latitude):.4f}°{ns}, {abs(loc.longitude):.4f}°{ew}"
-        if self._reads.has_must_have_species(campaign):
+        if campaign.has_must_have_species():
             text += " · +must-have"
         return text
 
@@ -300,12 +281,12 @@ class CampaignsPanel(QWidget):
     def _species_text_for(self, campaign: Campaign) -> str:
         if campaign.species_filter_mode != FilterMode.LIST:
             return ""
-        return self._reads.read_species_list(campaign)
+        return campaign.read_species_list()
 
     def _must_have_text_for(self, campaign: Campaign) -> str:
         if campaign.species_filter_mode != FilterMode.LOCATION:
             return ""
-        return self._reads.read_must_have_species(campaign)
+        return campaign.read_must_have_species()
 
     def _on_create_requested(
         self,
@@ -457,7 +438,7 @@ class CampaignsPanel(QWidget):
             self.ui.campaign_list.clearSelection()
 
     def _show_delete_confirm(self, campaign: Campaign) -> None:
-        audio_count = self._reads.count_audio_files(campaign)
+        audio_count = campaign.count_audio_files()
         self._detail.show_delete_confirm(
             campaign,
             audio_count,

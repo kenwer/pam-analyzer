@@ -1,7 +1,9 @@
 # Architecture
-PAM Analyzer is a PySide6 desktop application. The codebase is organised in layers
-with explicit dependency rules. All concrete dependencies are wired together in a
-single composition root.
+PAM Analyzer is a PySide6 desktop application. The codebase is organised into
+packages by responsibility, with a rich domain model at its core: the entities
+carry their own behaviour and persistence. Qt is confined to the UI-facing
+packages, and the concrete adapters (analysis runners, audio I/O, sd-card
+scanner) are wired together in a single composition root.
 
 For domain concepts (Project, Campaign, ARU, Detection) see the [README](README.md).
 
@@ -20,8 +22,8 @@ Sub-commands:
 ## Package layout
 ```
 src/pam_analyzer/
-├── domain/          # Pure Python: entities, protocols, pure functions. No Qt, no I/O.
-├── infrastructure/  # I/O adapters: TOML/CSV repos, in-process BirdNET + Perch runners (via the birdnet lib), audio I/O.
+├── domain/          # Rich entities that persist themselves (Campaign, Project, DetectionSet), protocols, pure functions, path conventions.
+├── infrastructure/  # I/O adapters that are not entity persistence: in-process BirdNET + Perch runners (via the birdnet lib), audio I/O, discovery, sd-card scanning, .pamproj migration.
 ├── workers/         # Qt-aware background tasks: QThread workers + ImportOrchestrator.
 ├── widgets/         # Reusable Qt widgets with no domain knowledge.
 ├── ui/              # App-specific panels, dialogs, Qt models, generated .ui wrappers.
@@ -34,41 +36,54 @@ src/pam_analyzer/
 ```
 
 
-## Layer rules
-| Layer | May import | Must not import |
-|---|---|---|
-| `domain` | stdlib only | Qt, infrastructure, workers, ui |
-| `infrastructure` | domain, stdlib, third-party I/O | Qt, workers, ui |
-| `workers` | domain, infrastructure, Qt | ui |
-| `widgets` | domain, Qt | infrastructure, workers, ui/panels |
-| `ui` | domain, infrastructure, workers, widgets, Qt | (composition root only) |
-| `app` | everything | (no restrictions; this is the composition root) |
+## Package responsibilities
+These are conventions, not a mechanically enforced contract (there is no
+import-boundary test). Keep them in mind when deciding where code belongs:
 
-The `widgets/` layer is for Qt components below the panel level. They may use
-domain vocabulary (enums, value objects, pure functions such as
-`domain.filter_ops`) but must not touch I/O, workers, or panels. Components
-that orchestrate models and panels belong in `ui/`.
+- `domain` owns the entities and their persistence. `Campaign`, `Project`, and
+  the `DetectionSet` aggregate read and write their own files (TOML sidecars,
+  detection CSVs) through `domain.paths`. Also holds pure logic (species
+  filtering, audio-import discovery, the Detection schema). It stays Qt-free so
+  it can be exercised in plain pytest, but it is no longer stdlib-only: it
+  depends on `tomli_w`/`tomllib` and `platformdirs` for that persistence.
+- `infrastructure` holds the remaining I/O adapters that are not entity
+  persistence: the BirdNET/Perch analysis runners, audio extraction, on-disk
+  discovery, the sd-card scanner, and the one-time .pamproj migration. Qt-free.
+- `workers` are the Qt-aware background tasks (QThread workers, the import
+  orchestrator). They may call domain and infrastructure.
+- `widgets` are reusable Qt components below the panel level. They may use
+  domain vocabulary (enums, value objects, pure functions such as
+  `domain.filter_ops`) but should not touch I/O or panels.
+- `ui` holds the app-specific panels, dialogs, and Qt models, plus `AppState`.
+- `app` is the composition root: it constructs the adapters and wires them in.
 
-This table is enforced by `tests/test_architecture.py`, which walks every
-module's imports. Change the table and the test's rule map together.
+Entities persist themselves, so a mutation now happens by calling a method on
+the entity (e.g. `campaign.save()`). Panels must not do this directly: every
+mutation goes through `AppState`, which rebuilds derived state (the campaign
+list, the audio inventory) after each write. Panels may call an entity's
+read-only methods (`campaign.read_species_list()`, `count_audio_files()`).
 
 
 ## Key patterns
 ### Composition root
-`app/__main__.py:build_main_window()` constructs every concrete dependency and passes
-them into the window and panel constructors. No panel creates its own dependencies.
-Swapping a real repo or adapter for a test fake only requires a change in one place.
+`app/__main__.py:build_main_window()` constructs every concrete adapter (analysis
+runners, audio extractor, sd-card scanner, import orchestrator) and passes them
+into the window and panel constructors. No panel creates its own dependencies.
+Swapping a real adapter for a test fake only requires a change in one place.
+Entity persistence needs no injection: `AppState` calls `Campaign`/`Project`
+methods directly.
 
 ### Intent signals
 Child panels emit typed intent signals (`createRequested`, `updateRequested`,
-`deleteRequested`) rather than calling repositories or updating AppState directly.
-The parent panel handles those signals by calling the appropriate repository or
-AppState method. This keeps child panels free of repository knowledge and makes
-them testable in isolation.
+`deleteRequested`) rather than mutating entities or updating AppState directly.
+The parent panel handles those signals by calling the appropriate AppState
+method, which persists the entity and rebuilds derived state. This keeps child
+panels free of persistence knowledge and makes them testable in isolation.
 
 Example: `CampaignDetailWidget` emits
 `createRequested(name, mode, location, species_text, must_have_text)`;
-`CampaignsPanel` receives it and calls `campaign_repo.create(...)`.
+`CampaignsPanel` receives it and calls `app_state.create_campaign(...)`, which
+calls `campaign.create()` and rewrites the species file.
 
 ### AppState
 `ui/app_state.py:AppState` is a `QObject` that holds the live project, campaigns,
@@ -100,8 +115,9 @@ knowledge of `AppState`; the panel relays relevant signals (`watching_started`,
 `domain/detection_schema.py` is the single definition of the Detection record's
 shape: column names and canonical order, per-column access and CSV conversion
 (`ColumnSpec`), CSV row serialization derived from the column table, and the
-`detections-{model_key}.csv` filename pattern.
-`CsvDetectionRepository`, `BaseAnalysisRunner`, `paths`, `analysis_discovery`, and
+`detections-{model_key}.csv` filename pattern (plus the `campaign_csvs` and
+`campaign_csv_for_model` path helpers that depend on it).
+The `DetectionSet` aggregate, `BaseAnalysisRunner`, `analysis_discovery`, and
 `DetectionsTableModel` all derive from it, so a schema change (new column, renamed
 column, filename convention) lands in one file. The Examine panel's compound table
 widget lives in `ui/detection_table.py`: it is Detection-specific, so it belongs in
@@ -134,6 +150,10 @@ edited by hand. `resources_rc.py` is produced by `uv run poe compile-qrc`.
 
 ## Tests
 Tests mirror the source layout under `tests/`. Domain and infrastructure tests are
-plain pytest with no Qt dependency. UI and widget tests use pytest-qt; a shared
-`QApplication` is set up in `tests/conftest.py`. Workers are tested with fake
-implementations of domain protocols (see `tests/workers/test_analysis_worker.py`).
+plain pytest with no Qt dependency. Because entities persist themselves, their
+tests exercise real files under `tmp_path` (see
+`tests/domain/test_campaign_persistence.py`, `test_project_persistence.py`,
+`test_detection_set.py`) rather than a fake repository. UI and widget tests use
+pytest-qt; a shared `QApplication` is set up in `tests/conftest.py`. The analysis
+runner is still substituted with a `FakeRunner` at the worker seam (see
+`tests/workers/test_analysis_worker.py`).

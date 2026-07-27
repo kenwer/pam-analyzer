@@ -2,11 +2,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal, Slot
 
-from ..infrastructure import (
-    TomlCampaignRepository,
-    TomlProjectRepository,
-    load_project_bundle,
-)
+from ..infrastructure import load_project_bundle
 
 
 class ProjectLoadWorker(QObject):
@@ -21,21 +17,14 @@ class ProjectLoadWorker(QObject):
     succeeded = Signal(object)  # ProjectLoadResult
     failed = Signal(str)        # human-readable error message
 
-    def __init__(
-        self,
-        project_repo: TomlProjectRepository,
-        campaign_repo: TomlCampaignRepository,
-        folder: Path,
-    ) -> None:
+    def __init__(self, folder: Path) -> None:
         super().__init__()
-        self._project_repo = project_repo
-        self._campaign_repo = campaign_repo
         self._folder = folder
 
     @Slot()
     def run(self) -> None:
         try:
-            result = load_project_bundle(self._project_repo, self._campaign_repo, self._folder)
+            result = load_project_bundle(self._folder)
         except Exception as exc:  # noqa: BLE001
             self.failed.emit(f"Failed to open {self._folder.name}: {exc}")
             return

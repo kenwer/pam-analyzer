@@ -1,11 +1,14 @@
-"""Conventions for where things live on disk. Centralized so paths aren't hardcoded across repos."""
+"""Conventions for where things live on disk. Centralized so paths aren't hardcoded across the codebase.
+
+Kept free of any other domain import so entities can persist themselves
+through it without forming an import cycle. The detection-CSV filename
+helpers that need the Detection schema live in detection_schema instead.
+"""
 
 import sys
 from pathlib import Path
 
 from platformdirs import user_log_dir
-
-from ..domain import detection_schema
 
 AUDIO_EXTENSIONS: frozenset[str] = frozenset({
     ".wav", ".flac", ".mp3", ".ogg", ".m4a", ".wma", ".aiff", ".aif"
@@ -63,24 +66,3 @@ def must_have_species_file(campaign_folder: Path) -> Path:
 def applied_species_list_file(campaign_folder: Path) -> Path:
     """Species list the last analysis run actually applied (location mode)."""
     return campaign_folder / "applied-species-list.txt"
-
-
-def campaign_csv_for_model(campaign_folder: Path, model_key: str) -> Path:
-    """CSV path for a specific model run within a campaign.
-
-    Different model runs (BirdNET, Perch v2, ...) write into the same
-    campaign folder under different filenames so the panel can load
-    them all and aggregate via the Model column.
-    """
-    return campaign_folder / detection_schema.detections_csv_name(model_key)
-
-
-def campaign_csvs(campaign_folder: Path) -> list[Path]:
-    """All detection CSVs for a campaign, sorted by name."""
-    if not campaign_folder.is_dir():
-        return []
-    return sorted(
-        p
-        for p in campaign_folder.iterdir()
-        if p.is_file() and detection_schema.model_key_from_csv_name(p.name) is not None
-    )

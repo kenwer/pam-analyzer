@@ -20,8 +20,6 @@ from ..domain import (
     Project,
 )
 from ..infrastructure import (
-    TomlCampaignRepository,
-    TomlProjectRepository,
     discover_analysis_result,
     discover_audio_inventory,
     load_project_bundle,
@@ -45,15 +43,8 @@ class AppState(QObject):
     importResultsChanged = Signal(list)  # list[CardImportResult]
     audioInventoryChanged = Signal(object)  # AudioInventory
 
-    def __init__(
-        self,
-        project_repo: TomlProjectRepository,
-        campaign_repo: TomlCampaignRepository,
-        parent: QObject | None = None,
-    ) -> None:
+    def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        self._project_repo = project_repo
-        self._campaign_repo = campaign_repo
         self._project: Project | None = None
         self._campaigns: list[Campaign] = []
         self._current_campaign: Campaign | None = None
@@ -85,13 +76,6 @@ class AppState(QObject):
     def audio_inventory(self) -> AudioInventory:
         return self._audio_inventory
 
-    @property
-    def project_repo(self) -> TomlProjectRepository:
-        """Exposed so a background worker (e.g. ProjectLoadWorker) can read a
-        project folder off the UI thread without AppState itself crossing
-        threads."""
-        return self._project_repo
-
     def load_project(self, folder: Path) -> None:
         """Load a project folder synchronously on the calling thread.
 
@@ -101,7 +85,7 @@ class AppState(QObject):
         network-mounted (e.g. CIFS) folders.
         """
         try:
-            result = load_project_bundle(self._project_repo, self._campaign_repo, folder)
+            result = load_project_bundle(folder)
         except Exception as exc:
             self.errorOccurred.emit(f"Failed to open {folder.name}: {exc}")
             return
@@ -130,7 +114,7 @@ class AppState(QObject):
 
     def create_project(self, folder: Path) -> None:
         try:
-            project = self._project_repo.create(folder)
+            project = Project.create(folder)
         except Exception as exc:
             self.errorOccurred.emit(f"Failed to create {folder.name}: {exc}")
             return
@@ -150,7 +134,7 @@ class AppState(QObject):
             return
         self._project = project
         try:
-            self._project_repo.save(project)
+            project.save()
         except Exception as exc:
             self.errorOccurred.emit(f"Save failed: {exc}")
         self.projectChanged.emit(project)
@@ -177,7 +161,7 @@ class AppState(QObject):
             return
         self._set_project_silent(updated)
         try:
-            self._project_repo.save(updated)
+            updated.save()
         except Exception as exc:
             self.errorOccurred.emit(f"Failed to save settings: {exc}")
 
@@ -232,9 +216,9 @@ class AppState(QObject):
         re-raised so the caller can warn the user while treating the campaign as
         created.
         """
-        self._campaign_repo.create(campaign)
+        campaign.create()
         try:
-            self._write_species_file(campaign, species_text, must_have_text)
+            campaign.write_species_filter(species_text, must_have_text)
         finally:
             self._reload_campaign_derived_state()
 
@@ -255,10 +239,10 @@ class AppState(QObject):
         """
         campaign = existing
         if new_name != existing.name:
-            campaign = self._campaign_repo.rename(existing, new_name)
+            campaign = existing.rename(new_name)
         updated = replace(campaign, species_filter_mode=mode, location=location)
-        self._campaign_repo.save(updated)
-        self._write_species_file(updated, species_text, must_have_text)
+        updated.save()
+        updated.write_species_filter(species_text, must_have_text)
         self._reload_campaign_derived_state()
 
     def rename_campaign(self, campaign: Campaign, new_name: str) -> None:
@@ -271,21 +255,13 @@ class AppState(QObject):
         under its old name (the same stale-count bug as a delete or create).
         Propagates OSError on a failed rename before anything is refreshed.
         """
-        self._campaign_repo.rename(campaign, new_name)
+        campaign.rename(new_name)
         self._reload_campaign_derived_state()
 
     def delete_campaign(self, campaign: Campaign) -> None:
         """Delete a campaign folder and rebuild derived state."""
-        self._campaign_repo.delete(campaign)
+        campaign.delete()
         self._reload_campaign_derived_state()
-
-    def _write_species_file(
-        self, campaign: Campaign, species_text: str, must_have_text: str
-    ) -> None:
-        if campaign.species_filter_mode == FilterMode.LIST:
-            self._campaign_repo.write_species_list(campaign, species_text)
-        elif campaign.species_filter_mode == FilterMode.LOCATION:
-            self._campaign_repo.write_must_have_species(campaign, must_have_text)
 
     def _reload_campaign_derived_state(self) -> None:
         """Rebuild everything derived from the set of campaign folders after a
@@ -310,7 +286,7 @@ class AppState(QObject):
 
     def refresh_campaigns(self) -> None:
         campaigns = (
-            self._campaign_repo.discover(self._project.folder)
+            Campaign.discover(self._project.folder)
             if self._project is not None
             else []
         )

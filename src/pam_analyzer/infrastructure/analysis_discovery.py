@@ -7,9 +7,8 @@ a fresh on-disk snapshot, so anything the user has accumulated under
 
 from pathlib import Path
 
-from ..domain import AnalysisRunResult, CampaignRunResult
+from ..domain import AnalysisRunResult, CampaignRunResult, paths
 from ..domain import detection_schema as schema
-from . import paths
 
 
 def discover_analysis_result(project_folder: Path) -> AnalysisRunResult | None:
@@ -25,7 +24,7 @@ def discover_analysis_result(project_folder: Path) -> AnalysisRunResult | None:
     """
     campaigns: list[CampaignRunResult] = []
     for folder in paths.campaign_folders(project_folder):
-        for csv_path in paths.campaign_csvs(folder):
+        for csv_path in schema.campaign_csvs(folder):
             campaigns.append(_synthesize_campaign(folder, csv_path))
 
     if not campaigns:

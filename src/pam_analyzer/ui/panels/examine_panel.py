@@ -20,8 +20,8 @@ from PySide6.QtWidgets import (
     QWidgetAction,
 )
 
-from ...domain import Campaign, Detection, filter_top_per_aru_species
-from ...infrastructure import CsvDetectionRepository, SoundfileAudioExtractor
+from ...domain import Campaign, Detection, DetectionSet, filter_top_per_aru_species
+from ...infrastructure import SoundfileAudioExtractor
 from ..app_state import AppState
 from ..models.detections_table_model import DetectionsTableModel
 from ..settings import AppSettings
@@ -51,7 +51,6 @@ class ExaminePanel(QWidget):
     def __init__(
         self,
         app_state: AppState,
-        detections_repo: CsvDetectionRepository,
         settings: AppSettings,
         audio_extractor: SoundfileAudioExtractor,
         parent: QWidget | None = None,
@@ -61,11 +60,14 @@ class ExaminePanel(QWidget):
         self.ui.setupUi(self)
 
         self._app_state = app_state
-        self._service = detections_repo
         self._settings = settings
         self._audio_extractor = audio_extractor
         self._model = DetectionsTableModel(self)
-        self._raw_detections: list[Detection] = []  # full unfiltered list for current campaign
+        # The loaded aggregate for the current campaign; it owns the per-file
+        # column order needed to save edits back. _raw_detections aliases its
+        # list so the display/filter code keeps working unchanged.
+        self._detections = DetectionSet([])
+        self._raw_detections: list[Detection] = self._detections.detections
         # Guards a pending debounced reload of the current campaign (see _schedule_reload).
         self._reload_pending = False
 
@@ -230,12 +232,13 @@ class ExaminePanel(QWidget):
         data = self.ui.campaign_combo.itemData(index)
         try:
             if data == _ALL_CAMPAIGNS_DATA:
-                self._raw_detections = self._service.load_combined(project.folder)
+                self._detections = DetectionSet.load_combined(project.folder)
             else:
-                self._raw_detections = self._service.load_for_campaign(project.folder / str(data))
+                self._detections = DetectionSet.load_for_campaign(project.folder / str(data))
         except Exception as exc:
             self._app_state.errorOccurred.emit(f"Failed to load detections: {exc}")
-            self._raw_detections = []
+            self._detections = DetectionSet([])
+        self._raw_detections = self._detections.detections
         self._apply_filter()
 
     def _apply_filter(self) -> None:
@@ -285,12 +288,12 @@ class ExaminePanel(QWidget):
         dirty = self._model.take_dirty()
         if not dirty:
             return
-        # The repo overwrites each campaign's CSV with whatever it's handed,
-        # so we must pass the FULL set (rows the user filtered out via
-        # max-per or header filters live in self._raw_detections, and edits
-        # propagate there because Detection objects are shared by reference).
+        # DetectionSet.save overwrites each campaign's CSV with its full list,
+        # which is exactly self._raw_detections (rows the user filtered out via
+        # max-per or header filters still live in it, and edits propagate there
+        # because Detection objects are shared by reference).
         try:
-            self._service.save(self._raw_detections)
+            self._detections.save()
         except Exception as exc:
             self._app_state.errorOccurred.emit(f"Auto-save failed: {exc}")
             return

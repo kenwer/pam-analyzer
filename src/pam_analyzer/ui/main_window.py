@@ -14,19 +14,16 @@ from PySide6.QtWidgets import (
 )
 
 from .. import __version__
-from ..domain import AnalysisRunner
+from ..domain import AnalysisRunner, paths
 from ..domain.audio_import import ImportSource
 from ..infrastructure import (
     AudioRootNotFound,
-    CsvDetectionRepository,
     LegacyProject,
     ProjectLoadResult,
     SoundfileAudioExtractor,
-    TomlCampaignRepository,
     find_legacy_pamproj,
     load_legacy,
     migrate,
-    paths,
 )
 from ..workers import ImportOrchestrator, ProjectLoadWorker
 from .app_state import AppState
@@ -46,8 +43,6 @@ class MainWindow(QMainWindow):
     def __init__(
         self,
         app_state: AppState,
-        campaign_repo: TomlCampaignRepository,
-        detections_repo: CsvDetectionRepository,
         analysis_runners: dict[str, AnalysisRunner],
         import_orchestrator: ImportOrchestrator,
         settings: AppSettings,
@@ -59,7 +54,6 @@ class MainWindow(QMainWindow):
         self.ui.setupUi(self)
 
         self._app_state = app_state
-        self._campaign_repo = campaign_repo
         self._settings = settings
         self._analysis_running = False
         self._import_running = False
@@ -76,7 +70,6 @@ class MainWindow(QMainWindow):
 
         self._campaigns_panel = CampaignsPanel(
             app_state,
-            campaign_repo,
             import_orchestrator,
             settings,
             self.ui.campaigns_tab,
@@ -96,12 +89,11 @@ class MainWindow(QMainWindow):
         if import_idx != -1:
             self.ui.tab_widget.removeTab(import_idx)
 
-        self._birdnet_panel = BirdNetPanel(app_state, analysis_runners, campaign_repo, self.ui.birdnet_tab)
+        self._birdnet_panel = BirdNetPanel(app_state, analysis_runners, self.ui.birdnet_tab)
         self._mount_tab(self.ui.birdnet_tab, self._birdnet_panel, "BirdNET")
 
         self._examine_panel = ExaminePanel(
             app_state,
-            detections_repo,
             settings,
             audio_extractor,
             self.ui.examine_tab,
@@ -296,9 +288,7 @@ class MainWindow(QMainWindow):
         """
         self._pending_project_folder = folder
         self._project_load_thread = QThread(self)
-        self._project_load_worker = ProjectLoadWorker(
-            self._app_state.project_repo, self._campaign_repo, folder
-        )
+        self._project_load_worker = ProjectLoadWorker(folder)
         self._project_load_worker.moveToThread(self._project_load_thread)
         self._project_load_thread.started.connect(self._project_load_worker.run)
         self._project_load_worker.succeeded.connect(self._on_project_load_succeeded)

@@ -1,6 +1,6 @@
 """Pure functions over Detection rows."""
 
-from .entities import Detection
+from .detection import Detection
 
 
 def filter_top_per_aru_species(detections: list[Detection], max_per_pair: int) -> list[Detection]:

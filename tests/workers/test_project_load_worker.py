@@ -20,7 +20,7 @@ def test_run_emits_succeeded_with_bundle_result(monkeypatch, tmp_path: Path, qtb
     monkeypatch.setattr(
         project_load_worker_module, "load_project_bundle", lambda *_args, **_kwargs: sentinel
     )
-    worker = ProjectLoadWorker(project_repo=object(), campaign_repo=object(), folder=tmp_path)
+    worker = ProjectLoadWorker(tmp_path)
 
     received: list[ProjectLoadResult] = []
     worker.succeeded.connect(received.append)
@@ -34,7 +34,7 @@ def test_run_emits_failed_with_message_on_exception(monkeypatch, tmp_path: Path,
         raise OSError("share unavailable")
 
     monkeypatch.setattr(project_load_worker_module, "load_project_bundle", _raise)
-    worker = ProjectLoadWorker(project_repo=object(), campaign_repo=object(), folder=tmp_path)
+    worker = ProjectLoadWorker(tmp_path)
 
     received: list[str] = []
     worker.failed.connect(received.append)

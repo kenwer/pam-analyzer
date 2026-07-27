@@ -38,16 +38,13 @@ _configure_frozen_model_paths()
 from PySide6.QtGui import QIcon  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
+from ..domain import paths  # noqa: E402
 from ..infrastructure import (  # noqa: E402
     AudioImporter,
     BirdnetRunner,
-    CsvDetectionRepository,
     PerchRunner,
     PsutilSdCardScanner,
     SoundfileAudioExtractor,
-    TomlCampaignRepository,
-    TomlProjectRepository,
-    paths,
 )
 from ..ui import resources_rc  # noqa: F401, E402  registers :/icons/* resources
 from ..ui.app_state import AppState  # noqa: E402
@@ -57,9 +54,6 @@ from ..workers import ImportOrchestrator  # noqa: E402
 
 
 def build_main_window() -> MainWindow:
-    project_repo = TomlProjectRepository()
-    campaign_repo = TomlCampaignRepository()
-    detection_repo = CsvDetectionRepository()
     audio_extractor = SoundfileAudioExtractor()
     # Ordered: first key is the default model in the panel's dropdown.
     # Keying by model_key keeps a single source of truth for model identity.
@@ -68,12 +62,10 @@ def build_main_window() -> MainWindow:
     audio_importer = AudioImporter()
     import_orchestrator = ImportOrchestrator(audio_importer, sdcard_scanner)
 
-    app_state = AppState(project_repo, campaign_repo)
+    app_state = AppState()
     settings = AppSettings()
     return MainWindow(
         app_state,
-        campaign_repo,
-        detection_repo,
         analysis_runners,
         import_orchestrator,
         settings,

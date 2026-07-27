@@ -1,6 +1,9 @@
 # Changelog
 
 ## [Unreleased]
+### Changed
+- [Dev] Refactor the codebase to use a richer domain model. Campaign, Project, and detections now persist themselves and the repository classes were removed.
+- [Dev] Split the domain `entities.py` into per-concept modules: `campaign.py`, `project.py`, `detection.py`, `inventory.py`, `analysis_result.py`.
 ### Fixed
 - Deleting a campaign and creating (or renaming to) the same name no longer shows the old campaign's imported file count.
 - Renaming a campaign now updates its imported file count instead of leaving it stranded under the old name.

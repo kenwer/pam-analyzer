@@ -2,8 +2,8 @@
 
 Owns the column names and their canonical order, per-column access, CSV
 row serialization, and the detections CSV filename pattern. Every reader
-and writer (CSV repository, analysis runners, Qt table model) derives
-from this module, so a schema change lands in one place.
+and writer (the DetectionSet aggregate, analysis runners, Qt table model)
+derives from this module, so a schema change lands in one place.
 
 The canonical column order matches what the analysis runners write, so
 an on-screen table built from COLUMNS is a direct visual analog of the
@@ -21,9 +21,10 @@ tools and simply means "unknown".
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from operator import attrgetter
+from pathlib import Path
 from typing import Any
 
-from .entities import Detection
+from .detection import Detection
 from .enums import VerifiedState
 from .filter_ops import ColumnKind
 
@@ -207,3 +208,24 @@ def model_key_from_csv_name(filename: str) -> str | None:
     if not (filename.startswith(_DETECTIONS_PREFIX) and filename.endswith(_CSV_SUFFIX)):
         return None
     return filename[len(_DETECTIONS_PREFIX) : -len(_CSV_SUFFIX)]
+
+
+def campaign_csv_for_model(campaign_folder: Path, model_key: str) -> Path:
+    """CSV path for a specific model run within a campaign.
+
+    Different model runs (BirdNET, Perch v2, ...) write into the same
+    campaign folder under different filenames so the panel can load
+    them all and aggregate via the Model column.
+    """
+    return campaign_folder / detections_csv_name(model_key)
+
+
+def campaign_csvs(campaign_folder: Path) -> list[Path]:
+    """All detection CSVs for a campaign, sorted by name."""
+    if not campaign_folder.is_dir():
+        return []
+    return sorted(
+        p
+        for p in campaign_folder.iterdir()
+        if p.is_file() and model_key_from_csv_name(p.name) is not None
+    )

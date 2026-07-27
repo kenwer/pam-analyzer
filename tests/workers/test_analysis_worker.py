@@ -29,62 +29,32 @@ class FakeRunner:
         return AnalysisRunResult(campaigns=(), elapsed=0.0)
 
 
-class FakeCampaignRepo:
-    def read_species_list(self, c: Campaign) -> str:
-        return f"species_list_for_{c.name}"
-
-    def read_must_have_species(self, c: Campaign) -> str:
-        return f"must_have_for_{c.name}"
-
-    def discover(self, audio_root: Path) -> list[Campaign]:
-        return []
-
-    def load(self, name: str, folder: Path) -> Campaign:
-        raise NotImplementedError
-
-    def save(self, campaign: Campaign) -> None:
-        pass
-
-    def delete(self, campaign: Campaign) -> None:
-        pass
-
-    def create(self, campaign: Campaign) -> None:
-        pass
-
-    def rename(self, campaign: Campaign, new_name: str) -> Campaign:
-        raise NotImplementedError
-
-    def write_species_list(self, campaign: Campaign, content: str) -> None:
-        pass
-
-    def write_must_have_species(self, campaign: Campaign, content: str) -> None:
-        pass
-
-    def count_audio_files(self, campaign: Campaign) -> int:
-        return 0
-
-
 def _project(tmp_path: Path) -> Project:
     return Project(folder=tmp_path)
 
 
 def test_run_passes_species_list_text_only_for_list_mode(tmp_path: Path, qtbot) -> None:
     runner = FakeRunner()
-    campaigns = [
-        Campaign(
-            name="A",
-            folder=tmp_path / "A",
-            species_filter_mode=FilterMode.LOCATION,
-            location=LatLon(48.0, 11.0),
-        ),
-        Campaign(
-            name="B",
-            folder=tmp_path / "B",
-            species_filter_mode=FilterMode.LIST,
-        ),
-    ]
+    # The worker now reads each campaign's species files directly off the
+    # Campaign, so seed real sidecar files rather than injecting a fake repo.
+    campaign_a = Campaign(
+        name="A",
+        folder=tmp_path / "A",
+        species_filter_mode=FilterMode.LOCATION,
+        location=LatLon(48.0, 11.0),
+    )
+    campaign_b = Campaign(
+        name="B",
+        folder=tmp_path / "B",
+        species_filter_mode=FilterMode.LIST,
+    )
+    campaign_a.create()
+    campaign_b.create()
+    campaign_a.write_must_have_species("must_have_for_A")
+    campaign_b.write_species_list("species_list_for_B")
+
     settings = AnalysisSettings(min_conf=0.3)
-    worker = AnalysisWorker(runner, FakeCampaignRepo(), _project(tmp_path), campaigns, settings)
+    worker = AnalysisWorker(runner, _project(tmp_path), [campaign_a, campaign_b], settings)
 
     worker.run()
 
@@ -100,7 +70,7 @@ def test_run_forwards_project_fields(tmp_path: Path, qtbot) -> None:
     runner = FakeRunner()
     proj = Project(folder=tmp_path, preferred_species_lang="de")
     campaigns = [Campaign(name="X", folder=tmp_path / "X", species_filter_mode=FilterMode.LOCATION)]
-    worker = AnalysisWorker(runner, FakeCampaignRepo(), proj, campaigns, AnalysisSettings())
+    worker = AnalysisWorker(runner, proj, campaigns, AnalysisSettings())
 
     worker.run()
 

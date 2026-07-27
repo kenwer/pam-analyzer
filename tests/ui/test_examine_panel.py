@@ -9,12 +9,7 @@ from PySide6.QtWidgets import QTabWidget, QWidget
 
 from pam_analyzer.domain import Campaign, FilterMode, LatLon, Project
 from pam_analyzer.domain.filter_ops import FilterOp
-from pam_analyzer.infrastructure import (
-    CsvDetectionRepository,
-    SoundfileAudioExtractor,
-    TomlCampaignRepository,
-    TomlProjectRepository,
-)
+from pam_analyzer.infrastructure import SoundfileAudioExtractor
 from pam_analyzer.ui.app_state import AppState
 from pam_analyzer.ui.models.detections_table_model import COLUMNS_BY_NAME
 from pam_analyzer.ui.panels.examine_panel import ExaminePanel
@@ -43,18 +38,15 @@ def project(tmp_path: Path) -> Project:
     project_folder = tmp_path / "proj"
     project_folder.mkdir()
 
-    cam_repo = TomlCampaignRepository()
     for name, aru in (("alpha", "MSD-1"), ("beta", "MSD-2")):
         folder = project_folder / name
         folder.mkdir()
-        cam_repo.save(
-            Campaign(
-                name=name,
-                folder=folder,
-                species_filter_mode=FilterMode.LOCATION,
-                location=LatLon(48.0, 11.0),
-            )
-        )
+        Campaign(
+            name=name,
+            folder=folder,
+            species_filter_mode=FilterMode.LOCATION,
+            location=LatLon(48.0, 11.0),
+        ).save()
         csv_path = folder / "detections-BirdNET-2.4.csv"
         with open(csv_path, "w", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
@@ -82,7 +74,7 @@ def project(tmp_path: Path) -> Project:
                 )
 
     proj = Project(folder=project_folder)
-    TomlProjectRepository().save(proj)
+    proj.save()
     return proj
 
 
@@ -119,8 +111,8 @@ def _isolated_qsettings(tmp_path, monkeypatch):
 
 @pytest.fixture
 def panel(qtbot, project: Project) -> ExaminePanel:
-    state = AppState(TomlProjectRepository(), TomlCampaignRepository())
-    panel = ExaminePanel(state, CsvDetectionRepository(), AppSettings(), SoundfileAudioExtractor())
+    state = AppState()
+    panel = ExaminePanel(state, AppSettings(), SoundfileAudioExtractor())
     qtbot.addWidget(panel)
     state.load_project(project.folder)
     # ExaminePanel coalesces its campaign reload onto a single-shot timer, so pump
@@ -216,13 +208,12 @@ def test_padding_spinboxes_init_from_project(qtbot, project: Project) -> None:
     # Bake non-zero padding into the project file.
     from dataclasses import replace
 
-    from pam_analyzer.infrastructure import TomlProjectRepository
 
     p = replace(project, snippet_padding_before=1.5, snippet_padding_after=2.0)
-    TomlProjectRepository().save(p)
+    p.save()
 
-    state = AppState(TomlProjectRepository(), TomlCampaignRepository())
-    panel = ExaminePanel(state, CsvDetectionRepository(), AppSettings(), SoundfileAudioExtractor())
+    state = AppState()
+    panel = ExaminePanel(state, AppSettings(), SoundfileAudioExtractor())
     qtbot.addWidget(panel)
     state.load_project(p.folder)
 
@@ -235,24 +226,23 @@ def test_changing_padding_persists_to_project_toml(panel: ExaminePanel, project:
     panel.pad_before_spin.setValue(3.5)
     panel.pad_after_spin.setValue(0.5)
 
-    from pam_analyzer.infrastructure import TomlProjectRepository
 
-    reloaded = TomlProjectRepository().load(project.folder)
+    reloaded = Project.load(project.folder)
     assert reloaded.snippet_padding_before == pytest.approx(3.5)
     assert reloaded.snippet_padding_after == pytest.approx(0.5)
 
 
 def test_project_toml_without_padding_loads_with_zero(qtbot, tmp_path: Path) -> None:
     """A pam-analyzer.toml written before snippet_padding_* existed must still load."""
-    from pam_analyzer.infrastructure import paths
+    from pam_analyzer.domain import paths
 
     paths.project_toml(tmp_path).write_text(
         '[project]\nsdcard_name_pattern = "^X-"\n',
         encoding="utf-8",
     )
 
-    state = AppState(TomlProjectRepository(), TomlCampaignRepository())
-    panel = ExaminePanel(state, CsvDetectionRepository(), AppSettings(), SoundfileAudioExtractor())
+    state = AppState()
+    panel = ExaminePanel(state, AppSettings(), SoundfileAudioExtractor())
     qtbot.addWidget(panel)
     state.load_project(tmp_path)
 
@@ -262,9 +252,9 @@ def test_project_toml_without_padding_loads_with_zero(qtbot, tmp_path: Path) -> 
 
 def test_hidden_columns_persist_across_panel_instances(qtbot, project: Project) -> None:
     """Toggling a column off and rebuilding the panel restores the hidden state."""
-    state = AppState(TomlProjectRepository(), TomlCampaignRepository())
+    state = AppState()
     settings = AppSettings()
-    panel = ExaminePanel(state, CsvDetectionRepository(), settings, SoundfileAudioExtractor())
+    panel = ExaminePanel(state, settings, SoundfileAudioExtractor())
     qtbot.addWidget(panel)
     state.load_project(project.folder)
 
@@ -273,8 +263,8 @@ def test_hidden_columns_persist_across_panel_instances(qtbot, project: Project) 
     assert "Rank" in settings.examine_hidden_columns
 
     # Build a fresh panel against the same QSettings store.
-    state2 = AppState(TomlProjectRepository(), TomlCampaignRepository())
-    panel2 = ExaminePanel(state2, CsvDetectionRepository(), AppSettings(), SoundfileAudioExtractor())
+    state2 = AppState()
+    panel2 = ExaminePanel(state2, AppSettings(), SoundfileAudioExtractor())
     qtbot.addWidget(panel2)
     state2.load_project(project.folder)
     assert panel2.ui.detections_table._table.isColumnHidden(rank_col)
@@ -383,13 +373,13 @@ def test_combo_delegate_species_choices_reflect_data(panel: ExaminePanel) -> Non
 
 def test_filter_inputs_visible_when_mounted_in_hidden_tab(qtbot, project: Project) -> None:
     """All filter inputs must be visible after switching to a tab that was hidden at setModel time."""
-    state = AppState(TomlProjectRepository(), TomlCampaignRepository())
+    state = AppState()
 
     # Mount ExaminePanel in a QTabWidget but keep a different tab active first.
     tabs = QTabWidget()
     dummy = QWidget()
     tabs.addTab(dummy, "Other")
-    panel = ExaminePanel(state, CsvDetectionRepository(), AppSettings(), SoundfileAudioExtractor())
+    panel = ExaminePanel(state, AppSettings(), SoundfileAudioExtractor())
     tabs.addTab(panel, "Examine")
     qtbot.addWidget(tabs)
     tabs.show()

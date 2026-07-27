@@ -3,7 +3,6 @@ from .audio_extractor import SoundfileAudioExtractor
 from .audio_import import AudioImporter
 from .audio_inventory_discovery import discover_audio_inventory
 from .birdnet_runner import BirdnetRunner
-from .csv_detection_repo import CsvDetectionRepository
 from .pamproj_migration import (
     AudioRootNotFound,
     LegacyProject,
@@ -15,22 +14,17 @@ from .pamproj_migration import (
 from .perch_runner import PerchRunner
 from .project_loader import ProjectLoadResult, load_project_bundle
 from .psutil_sdcard_scanner import PsutilSdCardScanner
-from .toml_campaign_repo import TomlCampaignRepository
-from .toml_project_repo import TomlProjectRepository
 
 __all__ = [
     "AudioImporter",
     "AudioRootNotFound",
     "BirdnetRunner",
-    "CsvDetectionRepository",
     "LegacyProject",
     "MigrationReport",
     "PerchRunner",
     "ProjectLoadResult",
     "PsutilSdCardScanner",
     "SoundfileAudioExtractor",
-    "TomlCampaignRepository",
-    "TomlProjectRepository",
     "discover_analysis_result",
     "discover_audio_inventory",
     "find_legacy_pamproj",

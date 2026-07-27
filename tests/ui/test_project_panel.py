@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from pam_analyzer.domain import Project
-from pam_analyzer.infrastructure import TomlCampaignRepository, TomlProjectRepository
 from pam_analyzer.ui.app_state import AppState
 from pam_analyzer.ui.panels.project_panel import ProjectPanel
 
@@ -16,13 +15,13 @@ _LOCALES = ("de", "en_uk", "en_us", "fr")
 
 @pytest.fixture
 def state() -> AppState:
-    return AppState(TomlProjectRepository(), TomlCampaignRepository())
+    return AppState()
 
 
 @pytest.fixture
 def loaded_project(tmp_path: Path) -> Project:
     proj = Project(folder=tmp_path / "proj")
-    TomlProjectRepository().save(proj)
+    proj.save()
     return proj
 
 
@@ -41,7 +40,7 @@ def test_settings_disabled_without_project(qtbot, state: AppState):
 
 def test_controls_reflect_loaded_project(qtbot, state: AppState, tmp_path: Path):
     proj = Project(folder=tmp_path / "p", min_conf=0.6, overlap=1.2, locales=("fr",))
-    TomlProjectRepository().save(proj)
+    proj.save()
     p = _panel(qtbot, state)
     state.load_project(proj.folder)
 
@@ -60,7 +59,7 @@ def test_slider_autosave_persists_to_project(qtbot, state: AppState, loaded_proj
     assert state.project is not None
     assert abs(state.project.min_conf - 0.60) < 1e-9
     # Persisted to disk, not just held in memory.
-    assert abs(TomlProjectRepository().load(loaded_project.folder).min_conf - 0.60) < 1e-9
+    assert abs(Project.load(loaded_project.folder).min_conf - 0.60) < 1e-9
 
 
 def test_locale_selection_persists_to_project(qtbot, state: AppState, loaded_project: Project):
@@ -76,7 +75,7 @@ def test_main_combo_uses_model_locales(qtbot, state: AppState, tmp_path: Path):
     """Main and Extra draw from the same model locale list: no bare 'en', and a
     legacy stored 'en' displays as its canonical 'en_us'."""
     proj = Project(folder=tmp_path / "p", preferred_species_lang="en")
-    TomlProjectRepository().save(proj)
+    proj.save()
     p = _panel(qtbot, state)
     state.load_project(proj.folder)
 

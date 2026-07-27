@@ -13,8 +13,6 @@ from pathlib import Path
 from ..domain import AnalysisRunResult, AudioInventory, Campaign, Project
 from .analysis_discovery import discover_analysis_result
 from .audio_inventory_discovery import discover_audio_inventory
-from .toml_campaign_repo import TomlCampaignRepository
-from .toml_project_repo import TomlProjectRepository
 
 _log = logging.getLogger(__name__)
 
@@ -27,11 +25,7 @@ class ProjectLoadResult:
     analysis_result: AnalysisRunResult | None
 
 
-def load_project_bundle(
-    project_repo: TomlProjectRepository,
-    campaign_repo: TomlCampaignRepository,
-    folder: Path,
-) -> ProjectLoadResult:
+def load_project_bundle(folder: Path) -> ProjectLoadResult:
     """Read a project folder and everything derived from it.
 
     Each step is a separate filesystem pass over `folder`, which is what
@@ -43,12 +37,12 @@ def load_project_bundle(
     t0 = time.perf_counter() if dbg else 0.0
 
     t = t0
-    project = project_repo.load(folder)
+    project = Project.load(folder)
     if dbg:
         t, prev = time.perf_counter(), t
-        _log.debug("load_project_bundle: repo.load %.2fs", t - prev)
+        _log.debug("load_project_bundle: load project %.2fs", t - prev)
 
-    campaigns = campaign_repo.discover(project.folder)
+    campaigns = Campaign.discover(project.folder)
     if dbg:
         t, prev = time.perf_counter(), t
         _log.debug("load_project_bundle: discover campaigns %.2fs", t - prev)

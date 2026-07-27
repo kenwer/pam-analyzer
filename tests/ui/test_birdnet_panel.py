@@ -12,7 +12,6 @@ from pam_analyzer.domain import (
     LatLon,
     Project,
 )
-from pam_analyzer.infrastructure import TomlCampaignRepository, TomlProjectRepository
 from pam_analyzer.ui.app_state import AppState
 from pam_analyzer.ui.panels.birdnet_panel import BirdNetPanel
 
@@ -77,29 +76,29 @@ def project_and_campaigns(tmp_path: Path):
         ),
     ]
     for c in campaigns:
-        TomlCampaignRepository().create(c)
+        c.create()
     proj = Project(folder=project_folder)
-    TomlProjectRepository().save(proj)
+    proj.save()
     return proj, campaigns
 
 
 @pytest.fixture
 def state(project_and_campaigns) -> AppState:
-    return AppState(TomlProjectRepository(), TomlCampaignRepository())
+    return AppState()
 
 
 @pytest.fixture
 def panel(qtbot, state: AppState, project_and_campaigns) -> BirdNetPanel:
     proj, _ = project_and_campaigns
-    p = BirdNetPanel(state, {"BirdNET-2.4": _FakeRunner()}, TomlCampaignRepository())
+    p = BirdNetPanel(state, {"BirdNET-2.4": _FakeRunner()})
     qtbot.addWidget(p)
     state.load_project(proj.folder)
     return p
 
 
 def test_panel_loads_disabled_without_project(qtbot):
-    state = AppState(TomlProjectRepository(), TomlCampaignRepository())
-    p = BirdNetPanel(state, {"BirdNET-2.4": _FakeRunner()}, TomlCampaignRepository())
+    state = AppState()
+    p = BirdNetPanel(state, {"BirdNET-2.4": _FakeRunner()})
     qtbot.addWidget(p)
 
     assert not p.ui.run_button.isEnabled()
@@ -173,7 +172,7 @@ def test_loads_previous_results_from_disk(qtbot, tmp_path: Path):
     """Opening a project that already has detection CSVs should surface them
     in the BirdNET panel without the user re-running analysis."""
     proj = Project(folder=tmp_path / "loaded")
-    TomlProjectRepository().save(proj)
+    proj.save()
 
     campaign_dir = proj.folder / "alpha"
     campaign_dir.mkdir(parents=True)
@@ -187,8 +186,8 @@ def test_loads_previous_results_from_disk(qtbot, tmp_path: Path):
         encoding="utf-8",
     )
 
-    state = AppState(TomlProjectRepository(), TomlCampaignRepository())
-    panel = BirdNetPanel(state, {"BirdNET-2.4": _FakeRunner()}, TomlCampaignRepository())
+    state = AppState()
+    panel = BirdNetPanel(state, {"BirdNET-2.4": _FakeRunner()})
     qtbot.addWidget(panel)
 
     state.load_project(proj.folder)
@@ -205,7 +204,7 @@ def test_panel_shows_all_csvs_regardless_of_model_selection(qtbot, tmp_path: Pat
     suffix already tells the user which model each row belongs to.
     """
     proj = Project(folder=tmp_path / "dual")
-    TomlProjectRepository().save(proj)
+    proj.save()
 
     campaign_dir = proj.folder / "alpha"
     campaign_dir.mkdir(parents=True)
@@ -215,14 +214,13 @@ def test_panel_shows_all_csvs_regardless_of_model_selection(qtbot, tmp_path: Pat
     pc = campaign_dir / "detections-Perch-2.0.csv"
     pc.write_text("Species,Confidence\nCrow,0.7\nJay,0.6\n", encoding="utf-8")
 
-    state = AppState(TomlProjectRepository(), TomlCampaignRepository())
+    state = AppState()
     bn_runner = _FakeRunner()
     perch_runner = _FakeRunner()
     perch_runner.model_key = "Perch-2.0"
     panel = BirdNetPanel(
         state,
         {"BirdNET-2.4": bn_runner, "Perch-2.0": perch_runner},
-        TomlCampaignRepository(),
     )
     qtbot.addWidget(panel)
     state.load_project(proj.folder)
@@ -244,7 +242,7 @@ def test_panel_keeps_birdnet_after_perch_run(qtbot, tmp_path: Path):
     run's rows, so the earlier sibling-model CSV vanished from the view.
     """
     proj = Project(folder=tmp_path / "seq")
-    TomlProjectRepository().save(proj)
+    proj.save()
     campaign_dir = proj.folder / "alpha"
     campaign_dir.mkdir(parents=True)
     (campaign_dir / "campaign.toml").touch()
@@ -256,14 +254,13 @@ def test_panel_keeps_birdnet_after_perch_run(qtbot, tmp_path: Path):
     perch_csv = campaign_dir / "detections-Perch-2.0.csv"
     perch_csv.write_text("Species,Confidence\nCrow,0.7\n", encoding="utf-8")
 
-    state = AppState(TomlProjectRepository(), TomlCampaignRepository())
+    state = AppState()
     bn_runner = _FakeRunner()
     perch_runner = _FakeRunner()
     perch_runner.model_key = "Perch-2.0"
     panel = BirdNetPanel(
         state,
         {"BirdNET-2.4": bn_runner, "Perch-2.0": perch_runner},
-        TomlCampaignRepository(),
     )
     qtbot.addWidget(panel)
     state.load_project(proj.folder)
@@ -308,7 +305,7 @@ def test_project_switch_clears_stale_results(
 
     # Build a second project on disk and switch to it.
     other = Project(folder=tmp_path / "other")
-    TomlProjectRepository().save(other)
+    other.save()
     state.load_project(other.folder)
 
     assert state.last_analysis_result is None

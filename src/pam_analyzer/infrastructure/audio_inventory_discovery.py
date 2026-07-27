@@ -22,9 +22,8 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..domain import AudioInventory, CampaignInventory, CardInventory, WeekInventory
+from ..domain import AudioInventory, CampaignInventory, CardInventory, WeekInventory, paths
 from ..domain.audio_import import WEEK_YEAR_ROUND, date_range_from_stems, merge_date_ranges
-from . import paths
 
 _log = logging.getLogger(__name__)
 

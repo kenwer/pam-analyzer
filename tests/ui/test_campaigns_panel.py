@@ -10,11 +10,7 @@ import pytest
 
 from pam_analyzer.domain import Campaign, FilterMode, LatLon, Project
 from pam_analyzer.domain.audio_import import DetectedCard, ImportSource
-from pam_analyzer.infrastructure import (
-    AudioImporter,
-    TomlCampaignRepository,
-    TomlProjectRepository,
-)
+from pam_analyzer.infrastructure import AudioImporter
 from pam_analyzer.ui.app_state import AppState
 from pam_analyzer.ui.panels.campaigns_panel import (
     SORT_ORDER_LABELS,
@@ -82,15 +78,15 @@ def project_with_campaign(tmp_path: Path) -> tuple[Project, Campaign]:
         species_filter_mode=FilterMode.LOCATION,
         location=LatLon(48.0, 11.0),
     )
-    TomlCampaignRepository().create(campaign)
+    campaign.create()
     proj = Project(folder=project_folder)
-    TomlProjectRepository().save(proj)
+    proj.save()
     return proj, campaign
 
 
 @pytest.fixture
 def state(project_with_campaign) -> AppState:
-    return AppState(TomlProjectRepository(), TomlCampaignRepository())
+    return AppState()
 
 
 @pytest.fixture
@@ -104,16 +100,16 @@ def panel(
 ) -> CampaignsPanel:
     proj, _ = project_with_campaign
     orchestrator = ImportOrchestrator(AudioImporter(), scanner)
-    p = CampaignsPanel(state, TomlCampaignRepository(), orchestrator, AppSettings())
+    p = CampaignsPanel(state, orchestrator, AppSettings())
     qtbot.addWidget(p)
     state.load_project(proj.folder)
     return p
 
 
 def test_panel_shows_empty_on_no_project(qtbot):
-    state = AppState(TomlProjectRepository(), TomlCampaignRepository())
+    state = AppState()
     orchestrator = ImportOrchestrator(AudioImporter(), _FakeScanner())
-    p = CampaignsPanel(state, TomlCampaignRepository(), orchestrator, AppSettings())
+    p = CampaignsPanel(state, orchestrator, AppSettings())
     qtbot.addWidget(p)
     assert p._detail.ui.stack.currentWidget() is p._detail.ui.empty_page
 
@@ -280,7 +276,7 @@ def test_campaign_switch_while_watching_prompts(
         species_filter_mode=FilterMode.LOCATION,
         location=LatLon(50.0, 8.0),
     )
-    TomlCampaignRepository().create(second)
+    second.create()
     panel._app_state.refresh_campaigns()
 
     # Select 'alpha' and start watching.
@@ -324,7 +320,7 @@ def _add_campaign(proj: Project, name: str) -> Campaign:
         species_filter_mode=FilterMode.LOCATION,
         location=LatLon(50.0, 8.0),
     )
-    TomlCampaignRepository().create(campaign)
+    campaign.create()
     return campaign
 
 
@@ -470,7 +466,7 @@ def test_inventory_clears_when_project_switches(
     assert state.audio_inventory.for_campaign("alpha") is not None
 
     other = Project(folder=tmp_path / "other")
-    TomlProjectRepository().save(other)
+    other.save()
     state.load_project(other.folder)
 
     assert state.audio_inventory.campaigns == ()
@@ -507,15 +503,15 @@ def test_create_campaign_with_nfd_folder_name_closes_form(
 ):
     """HFS+ style drives hand back NFD-normalized folder names; the typed NFC
     name must still match so the form closes and the new campaign is shown."""
-    real_discover = TomlCampaignRepository.discover
+    real_discover = Campaign.discover  # bound classmethod
 
-    def nfd_discover(self, folder):
+    def nfd_discover(cls, folder):
         return [
             dataclasses.replace(c, name=unicodedata.normalize("NFD", c.name))
-            for c in real_discover(self, folder)
+            for c in real_discover(folder)
         ]
 
-    monkeypatch.setattr(TomlCampaignRepository, "discover", nfd_discover)
+    monkeypatch.setattr(Campaign, "discover", classmethod(nfd_discover))
 
     panel.ui.new_button.click()
     panel._detail.ui.name_edit.setText("S\u00fcd")  # NFC, single u-umlaut codepoint
@@ -535,15 +531,15 @@ def test_create_campaign_falls_back_to_overview_when_name_mangled(
     """Even if the filesystem mangles the folder name beyond a normalization
     difference, the form must close instead of trapping the user in a state
     where the next Save reports "already exists"."""
-    real_discover = TomlCampaignRepository.discover
+    real_discover = Campaign.discover  # bound classmethod
 
-    def mangling_discover(self, folder):
+    def mangling_discover(cls, folder):
         return [
             dataclasses.replace(c, name="BETA-mangled") if c.name == "beta" else c
-            for c in real_discover(self, folder)
+            for c in real_discover(folder)
         ]
 
-    monkeypatch.setattr(TomlCampaignRepository, "discover", mangling_discover)
+    monkeypatch.setattr(Campaign, "discover", classmethod(mangling_discover))
 
     panel.ui.new_button.click()
     panel._detail.ui.name_edit.setText("beta")
@@ -761,9 +757,9 @@ def test_overview_includes_campaign_without_audio(panel: CampaignsPanel):
 
 def test_overview_empty_without_project(qtbot):
     """No project loaded means empty overview text and the fallback state."""
-    state = AppState(TomlProjectRepository(), TomlCampaignRepository())
+    state = AppState()
     orchestrator = ImportOrchestrator(AudioImporter(), _FakeScanner())
-    p = CampaignsPanel(state, TomlCampaignRepository(), orchestrator, AppSettings())
+    p = CampaignsPanel(state, orchestrator, AppSettings())
     qtbot.addWidget(p)
     assert p._detail.ui.overview_label.text() == ""
     assert not p._detail.ui.overview_scroll.isVisibleTo(p._detail)

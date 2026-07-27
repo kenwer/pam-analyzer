@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from .entities import AnalysisRunResult
+from .analysis_result import AnalysisRunResult
 from .enums import FilterMode
 from .values import AnalysisSettings, LatLon
 

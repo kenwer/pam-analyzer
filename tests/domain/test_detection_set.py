@@ -1,9 +1,9 @@
 import csv
 from pathlib import Path
 
-from pam_analyzer.domain import VerifiedState
-from pam_analyzer.infrastructure import CsvDetectionRepository
-from pam_analyzer.infrastructure.paths import campaign_csv_for_model, campaign_toml
+from pam_analyzer.domain import DetectionSet, VerifiedState
+from pam_analyzer.domain.detection_schema import campaign_csv_for_model
+from pam_analyzer.domain.paths import campaign_toml
 
 _HEADERS = [
     "Campaign",
@@ -79,8 +79,7 @@ def test_load_for_campaign_parses_numeric_and_annotation_columns(tmp_path: Path)
             ],
         ],
     )
-    repo = CsvDetectionRepository()
-    detections = repo.load_for_campaign(folder)
+    detections = DetectionSet.load_for_campaign(folder).detections
     assert len(detections) == 2
     assert detections[0].confidence == 0.85
     assert detections[0].verified == VerifiedState.TRUE
@@ -91,15 +90,14 @@ def test_load_for_campaign_parses_numeric_and_annotation_columns(tmp_path: Path)
 def test_load_prefixes_file_with_campaign_folder_name(tmp_path: Path) -> None:
     """On disk File is campaign-relative; in memory it is project-relative."""
     folder = _seed_csv(tmp_path, "east", [_sample("east")])
-    detections = CsvDetectionRepository().load_for_campaign(folder)
+    detections = DetectionSet.load_for_campaign(folder).detections
     assert detections[0].file == "east/f.wav"
 
 
 def test_load_combined_concatenates_campaign_csvs(tmp_path: Path) -> None:
     _seed_csv(tmp_path, "east", [_sample("east")])
     _seed_csv(tmp_path, "west", [_sample("west")])
-    repo = CsvDetectionRepository()
-    detections = repo.load_combined(tmp_path)
+    detections = DetectionSet.load_combined(tmp_path).detections
     assert {d.campaign for d in detections} == {"east", "west"}
 
 
@@ -111,20 +109,18 @@ def test_load_combined_skips_non_campaign_dirs(tmp_path: Path) -> None:
         w = csv.writer(f)
         w.writerow(_HEADERS)
         w.writerow(_sample("stray"))
-    detections = CsvDetectionRepository().load_combined(tmp_path)
+    detections = DetectionSet.load_combined(tmp_path).detections
     assert {d.campaign for d in detections} == {"east"}
 
 
 def test_save_round_trip_preserves_edits(tmp_path: Path) -> None:
     folder = _seed_csv(tmp_path, "east", [_sample("east")])
-    repo = CsvDetectionRepository()
-    detections = repo.load_for_campaign(folder)
-    detections[0].verified = VerifiedState.TRUE
-    detections[0].comment = "edited"
-    repo.save(detections)
+    ds = DetectionSet.load_for_campaign(folder)
+    ds.detections[0].verified = VerifiedState.TRUE
+    ds.detections[0].comment = "edited"
+    ds.save()
 
-    repo2 = CsvDetectionRepository()
-    reloaded = repo2.load_for_campaign(folder)
+    reloaded = DetectionSet.load_for_campaign(folder).detections
     assert reloaded[0].verified == VerifiedState.TRUE
     assert reloaded[0].comment == "edited"
 
@@ -132,16 +128,15 @@ def test_save_round_trip_preserves_edits(tmp_path: Path) -> None:
 def test_save_keeps_file_campaign_relative_on_disk(tmp_path: Path) -> None:
     """Saving an edit must not leak the in-memory campaign prefix to disk."""
     folder = _seed_csv(tmp_path, "east", [_sample("east")])
-    repo = CsvDetectionRepository()
-    detections = repo.load_for_campaign(folder)
-    detections[0].comment = "edited"
-    repo.save(detections)
+    ds = DetectionSet.load_for_campaign(folder)
+    ds.detections[0].comment = "edited"
+    ds.save()
 
     with open(campaign_csv_for_model(folder, "BirdNET-2.4"), encoding="utf-8") as f:
         row = next(csv.DictReader(f))
     assert row["File"] == "f.wav"
     # The in-memory detection stays project-relative even after the save.
-    assert detections[0].file == "east/f.wav"
+    assert ds.detections[0].file == "east/f.wav"
 
 
 def test_save_failure_leaves_original_file_intact(tmp_path: Path, monkeypatch) -> None:
@@ -155,17 +150,14 @@ def test_save_failure_leaves_original_file_intact(tmp_path: Path, monkeypatch) -
     csv_path = campaign_csv_for_model(folder, "BirdNET-2.4")
     original_bytes = csv_path.read_bytes()
 
-    repo = CsvDetectionRepository()
-    detections = repo.load_for_campaign(folder)
+    ds = DetectionSet.load_for_campaign(folder)
 
     def _boom(_d):
         raise RuntimeError("simulated crash mid-serialization")
 
-    monkeypatch.setattr(
-        "pam_analyzer.infrastructure.csv_detection_repo.schema.detection_to_row", _boom
-    )
+    monkeypatch.setattr("pam_analyzer.domain.detection_set.schema.detection_to_row", _boom)
     try:
-        repo.save(detections)
+        ds.save()
     except RuntimeError:
         pass
 
@@ -175,8 +167,7 @@ def test_save_failure_leaves_original_file_intact(tmp_path: Path, monkeypatch) -
 
 def test_save_leaves_no_temp_file(tmp_path: Path) -> None:
     folder = _seed_csv(tmp_path, "east", [_sample("east")])
-    repo = CsvDetectionRepository()
-    repo.save(repo.load_for_campaign(folder))
+    DetectionSet.load_for_campaign(folder).save()
     csv_path = campaign_csv_for_model(folder, "BirdNET-2.4")
     assert not list(csv_path.parent.glob("*.part"))
 
@@ -191,14 +182,14 @@ def test_lat_lon_round_trip(tmp_path: Path) -> None:
         w.writerow(headers)
         w.writerow(_sample("east") + ["48.0", "11.0"])
 
-    repo = CsvDetectionRepository()
-    detections = repo.load_for_campaign(folder)
+    ds = DetectionSet.load_for_campaign(folder)
+    detections = ds.detections
     assert detections[0].lat == 48.0
     assert detections[0].lon == 11.0
     assert "Lat" not in detections[0].extra
     assert "Lon" not in detections[0].extra
 
-    repo.save(detections)
+    ds.save()
     with open(path, encoding="utf-8") as f:
         reader = csv.DictReader(f)
         row = next(reader)
@@ -216,8 +207,7 @@ def test_truly_unknown_columns_go_to_extra(tmp_path: Path) -> None:
         w.writerow(headers)
         w.writerow(_sample("east") + ["mytag"])
 
-    repo = CsvDetectionRepository()
-    detections = repo.load_for_campaign(folder)
+    detections = DetectionSet.load_for_campaign(folder).detections
     assert detections[0].extra == {"CustomTag": "mytag"}
 
 

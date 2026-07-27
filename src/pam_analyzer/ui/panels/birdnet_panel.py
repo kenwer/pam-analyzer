@@ -21,7 +21,6 @@ from ...domain import (
     FilterMode,
     Project,
 )
-from ...infrastructure import TomlCampaignRepository
 from ...widgets.no_hover_style import disable_item_hover
 from ...workers import AnalysisWorker
 from ..app_state import AppState
@@ -48,7 +47,6 @@ class BirdNetPanel(QWidget):
         self,
         app_state: AppState,
         runners: dict[str, AnalysisRunner],
-        campaign_repo: TomlCampaignRepository,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -62,7 +60,6 @@ class BirdNetPanel(QWidget):
         first_key = next(iter(runners))
         self._runner: AnalysisRunner = runners[first_key]
         self._runner_key: str = first_key
-        self._campaign_repo = campaign_repo
         self._state = _PanelState()
         self._thread: QThread | None = None
         self._worker: AnalysisWorker | None = None
@@ -242,7 +239,7 @@ class BirdNetPanel(QWidget):
         settings = project.analysis_settings
 
         self._thread = QThread(self)
-        self._worker = AnalysisWorker(self._runner, self._campaign_repo, project, campaigns, settings)
+        self._worker = AnalysisWorker(self._runner, project, campaigns, settings)
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
         self._worker.progress.connect(self._on_progress)

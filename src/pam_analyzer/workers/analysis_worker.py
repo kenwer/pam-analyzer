@@ -12,7 +12,6 @@ from ..domain import (
     FilterMode,
     Project,
 )
-from ..infrastructure import TomlCampaignRepository
 
 
 class _SignalProgress:
@@ -41,14 +40,12 @@ class AnalysisWorker(QObject):
     def __init__(
         self,
         runner: AnalysisRunner,
-        campaign_repo: TomlCampaignRepository,
         project: Project,
         campaigns: list[Campaign],
         settings: AnalysisSettings,
     ) -> None:
         super().__init__()
         self._runner = runner
-        self._campaigns_repo = campaign_repo
         self._project = project
         self._campaigns = campaigns
         self._settings = settings
@@ -65,12 +62,12 @@ class AnalysisWorker(QObject):
                     mode=c.species_filter_mode,
                     location=c.location,
                     species_list_text=(
-                        self._campaigns_repo.read_species_list(c)
+                        c.read_species_list()
                         if c.species_filter_mode == FilterMode.LIST
                         else None
                     ),
                     must_have_species_text=(
-                        self._campaigns_repo.read_must_have_species(c)
+                        c.read_must_have_species()
                         if c.species_filter_mode == FilterMode.LOCATION
                         else None
                     ),

@@ -25,9 +25,7 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..domain import Project
-from . import paths
-from .toml_project_repo import TomlProjectRepository, project_from_table
+from ..domain import Project, paths
 
 
 @dataclass(frozen=True)
@@ -98,8 +96,8 @@ def load_legacy(pamproj_path: Path, *, audio_root: Path | None = None) -> Legacy
     output_base = Path(out_raw) if out_raw else audio_root / f"{pamproj_path.stem}-detections"
 
     # The settings subset of the legacy schema is identical to the current
-    # one; project_from_table drops the legacy path keys and fills defaults.
-    project = project_from_table(audio_root, table)
+    # one; Project.from_table drops the legacy path keys and fills defaults.
+    project = Project.from_table(audio_root, table)
     return LegacyProject(
         pamproj_path=pamproj_path,
         audio_root=audio_root,
@@ -124,7 +122,7 @@ def migrate(legacy: LegacyProject) -> MigrationReport:
 
     _cleanup_output_tree(legacy.output_base, legacy.audio_root, warnings)
 
-    TomlProjectRepository().save(legacy.project)
+    legacy.project.save()
 
     if legacy.pamproj_path != paths.project_toml(legacy.audio_root):
         backup = legacy.pamproj_path.with_name(legacy.pamproj_path.name + ".bak")

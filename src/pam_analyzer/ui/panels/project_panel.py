@@ -8,8 +8,7 @@ from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QCheckBox, QWidget
 
-from ...domain import MAX_OVERLAP_S, Project
-from ...infrastructure import paths
+from ...domain import MAX_OVERLAP_S, Project, paths
 from ...infrastructure.birdnet_lib import normalize_lang_code
 from ..app_state import AppState
 from .ui_project_panel import Ui_ProjectPanel

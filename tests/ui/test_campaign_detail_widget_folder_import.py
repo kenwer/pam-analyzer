@@ -22,11 +22,7 @@ from PySide6.QtWidgets import QDialog
 
 from pam_analyzer.domain import Campaign, FilterMode, LatLon, Project
 from pam_analyzer.domain.audio_import import DetectedCard
-from pam_analyzer.infrastructure import (
-    AudioImporter,
-    TomlCampaignRepository,
-    TomlProjectRepository,
-)
+from pam_analyzer.infrastructure import AudioImporter
 from pam_analyzer.ui.app_state import AppState
 from pam_analyzer.ui.dialogs.folder_import_dialog import FolderImportDialog
 from pam_analyzer.ui.panels.campaigns_panel import CampaignsPanel
@@ -116,9 +112,9 @@ def project_with_campaign(tmp_path: Path) -> tuple[Project, Campaign]:
         species_filter_mode=FilterMode.LOCATION,
         location=LatLon(48.0, 11.0),
     )
-    TomlCampaignRepository().create(campaign)
+    campaign.create()
     proj = Project(folder=project_folder)
-    TomlProjectRepository().save(proj)
+    proj.save()
     return proj, campaign
 
 
@@ -130,9 +126,9 @@ def scanner() -> _FakeScanner:
 @pytest.fixture
 def panel(qtbot, project_with_campaign, scanner: _FakeScanner) -> CampaignsPanel:
     proj, _ = project_with_campaign
-    state = AppState(TomlProjectRepository(), TomlCampaignRepository())
+    state = AppState()
     orchestrator = ImportOrchestrator(AudioImporter(), scanner)
-    p = CampaignsPanel(state, TomlCampaignRepository(), orchestrator, AppSettings())
+    p = CampaignsPanel(state, orchestrator, AppSettings())
     qtbot.addWidget(p)
     state.load_project(proj.folder)
     return p

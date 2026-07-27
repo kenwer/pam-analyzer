@@ -23,9 +23,9 @@ from ..domain import (
     AnalysisProgressSnapshot,
     CampaignRunInput,
     FilterMode,
+    paths,
 )
 from ..domain.audio_import import WEEK_YEAR_ROUND
-from . import paths
 from .birdnet_lib import region_species_scientific
 
 

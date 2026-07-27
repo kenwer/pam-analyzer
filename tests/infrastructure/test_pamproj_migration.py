@@ -5,13 +5,12 @@ from pathlib import Path
 
 import pytest
 
+from pam_analyzer.domain import Project, paths
 from pam_analyzer.infrastructure import (
     AudioRootNotFound,
-    TomlProjectRepository,
     find_legacy_pamproj,
     load_legacy,
     migrate,
-    paths,
 )
 
 _CSV_HEADER = "Campaign,Species,Confidence,File,Verified,CustomTag\n"
@@ -86,7 +85,7 @@ def test_migrate_happy_path(tmp_path: Path) -> None:
     assert (audio_root / "alpha" / "applied-species-list-week-08.txt").exists()
 
     # Settings carried over into pam-analyzer.toml. Legacy file kept as .bak.
-    project = TomlProjectRepository().load(audio_root)
+    project = Project.load(audio_root)
     assert project.sdcard_name_pattern == "^FIELD-"
     assert project.min_conf == 0.4
     assert not pamproj.exists()

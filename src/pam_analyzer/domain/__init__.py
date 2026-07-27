@@ -5,6 +5,7 @@ from .analysis import (
     CampaignRunInput,
     CancelledError,
 )
+from .analysis_result import AnalysisRunResult, CampaignRunResult
 from .audio_import import (
     CardImportResult,
     CardQueue,
@@ -18,20 +19,18 @@ from .audio_import import (
     merge_date_ranges,
     parse_recording_time,
 )
+from .campaign import Campaign, campaign_name_error
+from .detection import Detection
+from .detection_set import DetectionSet
 from .detections import filter_top_per_aru_species
-from .entities import (
-    AnalysisRunResult,
-    AudioInventory,
-    Campaign,
-    CampaignInventory,
-    CampaignRunResult,
-    CardInventory,
-    Detection,
-    Project,
-    WeekInventory,
-    campaign_name_error,
-)
 from .enums import FilterMode, VerifiedState
+from .inventory import (
+    AudioInventory,
+    CampaignInventory,
+    CardInventory,
+    WeekInventory,
+)
+from .project import Project
 from .values import MAX_OVERLAP_S, AnalysisSettings, LatLon
 
 __all__ = [
@@ -54,6 +53,7 @@ __all__ = [
     "ConflictReport",
     "DetectedCard",
     "Detection",
+    "DetectionSet",
     "FileConflict",
     "FilterMode",
     "ImportProgress",

@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ...infrastructure import paths
+from ...domain import paths
 from .. import resources_rc  # noqa: F401  registers :/icons/* resources
 from .ui_welcome_panel import Ui_WelcomePanel
 
