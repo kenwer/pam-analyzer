@@ -3,34 +3,35 @@ Automated bird species detection from acoustic recordings.
 
 <!--TOC-->
 
-- [About](#about)
-- [Download](#download)
-- [Features](#features)
-- [Usage](#usage)
-- [Workflow](#workflow)
-  - [Project Settings](#project-settings)
-  - [Campaigns](#campaigns)
-  - [Run bird species detection using BirdNET-2.4 or Perch-2.0](#run-bird-species-detection-using-birdnet-24-or-perch-20)
-  - [Output files](#output-files)
-  - [Examine Detections](#examine-detections)
-- [Keyboard shortcuts](#keyboard-shortcuts)
-  - [Global](#global)
-  - [Examine panel: detection row selected](#examine-panel-detection-row-selected)
-- [Core Concepts](#core-concepts)
-  - [Project](#project)
-  - [Campaign](#campaign)
-  - [ARU (Autonomous Recording Unit)](#aru-autonomous-recording-unit)
-- [Models](#models)
-  - [BirdNET v2.4](#birdnet-v24)
-  - [Perch v2](#perch-v2)
-    - [Taxonomy differences](#taxonomy-differences)
-    - [Logit calibration](#logit-calibration)
-  - [Choosing a model](#choosing-a-model)
-- [Troubleshooting](#troubleshooting)
-- [Changelog](#changelog)
-- [Acknowledgements](#acknowledgements)
-- [Citation](#citation)
-- [License](#license)
+- [PAM Analyzer](#pam-analyzer)
+  - [About](#about)
+  - [Download](#download)
+  - [Features](#features)
+  - [Usage](#usage)
+  - [Workflow](#workflow)
+    - [Project Settings](#project-settings)
+    - [Campaigns](#campaigns)
+    - [Run bird species detection using BirdNET-2.4 or Perch-2.0](#run-bird-species-detection-using-birdnet-24-or-perch-20)
+    - [Output files](#output-files)
+    - [Examine Detections](#examine-detections)
+  - [Keyboard shortcuts](#keyboard-shortcuts)
+    - [Global](#global)
+    - [Examine panel: detection row selected](#examine-panel-detection-row-selected)
+  - [Core Concepts](#core-concepts)
+    - [Project](#project)
+    - [Campaign](#campaign)
+    - [ARU (Autonomous Recording Unit)](#aru-autonomous-recording-unit)
+  - [Models](#models)
+    - [BirdNET v2.4](#birdnet-v24)
+    - [Perch v2](#perch-v2)
+      - [Taxonomy differences](#taxonomy-differences)
+      - [Logit calibration](#logit-calibration)
+    - [Choosing a model](#choosing-a-model)
+  - [Troubleshooting](#troubleshooting)
+  - [Changelog](#changelog)
+  - [Acknowledgements](#acknowledgements)
+  - [Citation](#citation)
+  - [License](#license)
 
 <!--TOC-->
 
@@ -269,6 +270,8 @@ First, the location-mode filter matches Perch's names against BirdNET's regional
 Second, the common-name columns (`Species` and any per-language columns) are looked up from BirdNET's label files. A Perch detection whose scientific name is not on BirdNET's axis gets a blank common name even though its scientific name is filled in. A blank `Species` cell next to a populated `Scientific_name` is the visible sign of a taxonomy mismatch or a non-bird class.
 
 The debug log reports the split for each campaign, for example `perch: per-week species filter dropped 412 row(s): 190 out-of-region, 222 not on BirdNET's axis (taxonomy mismatch or non-bird). 1391 kept`. A large second number is the taxonomy gap at work rather than geography.
+
+This gap is specific to the v2.4 axis and should shrink with BirdNET v3.0. The v3.0 preview model (and its aligned v3.0 geo model) adopts the newer taxonomy that Perch already uses, so the renamed birds like `Astur gentilis` would match. Moving the app's filter and common-name axis from v2.4 to v3.0 would recover most of those 256 birds, and running the v3.0 acoustic model against the v3.0 geo model would close the gap entirely, since both then share one taxonomy. BirdNET v3.0 is still a preview and is not yet in a released `birdnet` library version.
 
 #### Logit calibration
 Perch's classification head emits raw logits, not probabilities. Pure silence sits around +4.5 and ambient noise (wind, distant traffic) sits higher still, so a naive sigmoid would mark every 5 s window as ~99% confident in something. The runner therefore applies a hardcoded offset before the sigmoid (`_PERCH_LOGIT_OFFSET`) that is currently set to 11.2. The offset makes the probabilities written to the CSV somewhat comparable to BirdNET's units in the 0-1 range. This is not ideal and might change in the future.
