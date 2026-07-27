@@ -23,6 +23,7 @@ Automated bird species detection from acoustic recordings.
 - [Models](#models)
   - [BirdNET v2.4](#birdnet-v24)
   - [Perch v2](#perch-v2)
+    - [Taxonomy differences](#taxonomy-differences)
     - [Logit calibration](#logit-calibration)
   - [Choosing a model](#choosing-a-model)
 - [Troubleshooting](#troubleshooting)
@@ -235,8 +236,8 @@ PAM Analyzer ships two bird-detection models. Both run locally on CPU, write to 
 | Backend | TFLite via the [`birdnet`](https://github.com/birdnet-team/birdnet) library | TensorFlow SavedModel via the same library |
 | Audio window | 3 s | 5 s |
 | Sample rate | 48 kHz | 32 kHz |
-| Segment overlap | Configurable (0 to 2.5 s) | Configurable (0 to 2.5 s) |
-| Classes | ~6500 species | 14,795 classes |
+| Classes | ~6500 species (all birds) | 14,795 classes (birds, other animals, sound events) |
+| Taxonomy | eBird 2021 | iNaturalist 2024 + FSD50K |
 | Speed (Apple M4 Pro, CPU, ~4 h audio) | ~1050x real-time | ~77x real-time |
 | Confidence units in CSV | Sigmoid probability (0-1) | Calibrated probability (0-1), see [Logit calibration](#logit-calibration) |
 
@@ -244,14 +245,35 @@ PAM Analyzer ships two bird-detection models. Both run locally on CPU, write to 
 A compact CNN for global birdsong classification. The runner uses the campaign's coordinates to derive a per-week regional species list, so the model only emits species that are plausible at that location and time of year. BirdNET is the fast first-pass model: a four-hour campaign runs in under a minute on a modern laptop. Its confidence scores are sigmoid probabilities and need no calibration.
 
 ### Perch v2
-A conformer-based open-world bird vocalization classifier from Google. Perch analyzes 5 s windows at 32 kHz with configurable overlap (0 to 4.9 s), emits the top-5 species per window, and recognizes ~14,795 classes globally. It is more sensitive than BirdNET at the cost of being roughly 13x slower (on my CPU). Perch's added value lies in low-amplitude calls (distant, partially-occluded, or under-modeled species) that BirdNET misses.
+A conformer-based open-world bird vocalization classifier from Google. Perch analyzes 5 s windows at 32 kHz, emits the top-5 species per window, and recognizes ~14,795 classes globally. It is more sensitive than BirdNET at the cost of being roughly 13x slower (on my CPU). Perch's added value seem to lie in low-amplitude calls (distant, partially-occluded, or under-modeled species) that BirdNET misses.
 
 In location mode the runner post-filters Perch's open-world output against the campaign's regional species list (derived from BirdNET's geographic filter), so Perch and BirdNET runs on the same campaign return comparably-scoped species sets.
 
-#### Logit calibration
-Perch's classification head emits raw logits, not probabilities. Pure silence sits around +4.5 and ambient noise (wind, distant traffic) sits higher still, so a naive sigmoid would mark every 5 s window as ~99% confident in something. The runner therefore applies a hardcoded offset before the sigmoid (`_PERCH_LOGIT_OFFSET`) that is currently set to 11.2. The that the probabilities written to the CSV are somewhat comparable (to BirdNET's units in the 0-1 range). This is not ideal and might change in the future.
+#### Taxonomy differences
+The two models do not speak the same taxonomy, and this affects how their outputs line up. BirdNET v2.4 labels its ~6500 classes with eBird 2021 scientific names, all of them birds. Perch v2 labels its 14,795 classes under iNaturalist 2024 taxonomy plus the FSD50K sound-event set, so the classes span birds, amphibians (frogs, toads), mammals, insects, and general audio events. The newer taxonomy also renames some genera: the Northern Goshawk is `Accipiter gentilis` for BirdNET but `Astur gentilis` for Perch, and the same holds for other recently split genera.
 
-The offset was tuned (empirically) by cross-comparison against BirdNET (also not ideal, because we're missing ground truth). `scripts/calibrate_perch_offset.py` analyzues pairs of BirdNET/Perch detection CSVs and generates per-offset statistics and graphs (raw-logit histogram, per-species histograms, BN-agreement curves).
+Comparing the two label sets by exact scientific name:
+
+| Label sets compared | Count |
+|---|---|
+| Perch v2 classes | 14,795 |
+| BirdNET v2.4 species | 6,522 |
+| Names present in both | 6,266 |
+| BirdNET birds with no matching Perch name | 256 |
+| Perch classes not on BirdNET's axis | 8,529 |
+
+This has two practical consequences you may notice in Perch output.
+
+First, the location-mode filter matches Perch's names against BirdNET's regional list by exact string. A bird that Perch names differently from BirdNET (the 256 above) is dropped even where it is expected, and every non-bird Perch class is dropped too. That is usually what you want for a bird study, but it means Perch cannot contribute those 256 birds in location mode. Species-list mode does not apply this filter, so those detections come through there.
+
+Second, the common-name columns (`Species` and any per-language columns) are looked up from BirdNET's label files. A Perch detection whose scientific name is not on BirdNET's axis gets a blank common name even though its scientific name is filled in. A blank `Species` cell next to a populated `Scientific_name` is the visible sign of a taxonomy mismatch or a non-bird class.
+
+The debug log reports the split for each campaign, for example `perch: per-week species filter dropped 412 row(s): 190 out-of-region, 222 not on BirdNET's axis (taxonomy mismatch or non-bird). 1391 kept`. A large second number is the taxonomy gap at work rather than geography.
+
+#### Logit calibration
+Perch's classification head emits raw logits, not probabilities. Pure silence sits around +4.5 and ambient noise (wind, distant traffic) sits higher still, so a naive sigmoid would mark every 5 s window as ~99% confident in something. The runner therefore applies a hardcoded offset before the sigmoid (`_PERCH_LOGIT_OFFSET`) that is currently set to 11.2. The offset makes the probabilities written to the CSV somewhat comparable to BirdNET's units in the 0-1 range. This is not ideal and might change in the future.
+
+The offset was tuned (empirically) by cross-comparison against BirdNET (also not ideal, because we're missing ground truth). `scripts/calibrate_perch_offset.py` analyzes pairs of BirdNET/Perch detection CSVs and generates per-offset statistics and graphs (raw-logit histogram, per-species histograms, BN-agreement curves).
 
 ### Choosing a model
 - Run **BirdNET** as the default first pass over every campaign. It is fast and has a low false-positive rate.

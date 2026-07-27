@@ -145,6 +145,24 @@ def available_locales() -> tuple[str, ...]:
     return tuple(sorted(GeoDownloaderBaseV2_4.AVAILABLE_LANGUAGES))
 
 
+@cache
+def birdnet_species_scientific() -> frozenset[str]:
+    """Every scientific name on BirdNET's v2.4 label axis, ignoring region.
+
+    Lets a caller tell two kinds of filter drop apart: a species BirdNET
+    knows but does not expect at a given location/week (a geography drop),
+    versus a name BirdNET's axis does not carry at all. The latter happens
+    when another model (e.g. Perch v2) emits a name under a different
+    taxonomy (Astur gentilis vs BirdNET's Accipiter gentilis) or a non-bird
+    class (frogs, insects, general sound events).
+
+    Sourced from the en_us label map, whose keys are the full species set.
+    en_us is always present in the shipped locale set, so this never
+    degrades to an empty set the way an arbitrary locale could.
+    """
+    return frozenset(locale_label_map("en_us"))
+
+
 @lru_cache(maxsize=8)
 def locale_label_map(lang: str) -> dict[str, str]:
     """{scientific_name: localized_common_name} for one language.

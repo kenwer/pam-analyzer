@@ -59,7 +59,12 @@ from ._analysis_helpers import (
     write_species_list_files,
 )
 from .birdnet_lib import available_locales as _available_locales
-from .birdnet_lib import locale_label_map, normalize_lang_code, region_species_scientific
+from .birdnet_lib import (
+    birdnet_species_scientific,
+    locale_label_map,
+    normalize_lang_code,
+    region_species_scientific,
+)
 
 
 @dataclass(frozen=True)
@@ -323,7 +328,10 @@ class BaseAnalysisRunner(ABC):
         locale_maps = {loc: locale_label_map(loc) for loc in settings.locales}
 
         detection_count = 0
-        filtered_count = 0
+        # Two reasons a row can be dropped by the per-week allow-list, tracked
+        # apart so a taxonomy mismatch does not hide behind ordinary geography.
+        out_of_region_count = 0  # a BirdNET-known bird, just not expected here
+        unknown_species_count = 0  # name absent from BirdNET's axis entirely
         aru_set: set[str] = set()
 
         arr = result.to_structured_array()
@@ -350,7 +358,14 @@ class BaseAnalysisRunner(ABC):
 
                 allowed = resolved.allowed_for(parsed.file_path)
                 if allowed is not None and parsed.scientific_name not in allowed:
-                    filtered_count += 1
+                    # birdnet_species_scientific() is called lazily here, in
+                    # the drop path, so a species-only run (allowed is always
+                    # None) never forces the en_us label download just to
+                    # classify drops it will not make.
+                    if parsed.scientific_name in birdnet_species_scientific():
+                        out_of_region_count += 1
+                    else:
+                        unknown_species_count += 1
                     continue
 
                 try:
@@ -405,11 +420,14 @@ class BaseAnalysisRunner(ABC):
                 writer.writerow(schema.detection_to_row(detection))
                 detection_count += 1
 
-        if filtered_count:
+        if out_of_region_count or unknown_species_count:
             logging.info(
-                "%s: per-week species filter dropped %d row(s); %d kept",
+                "%s: per-week species filter dropped %d row(s): %d out-of-region, "
+                "%d not on BirdNET's axis (taxonomy mismatch or non-bird). %d kept",
                 self.log_prefix,
-                filtered_count,
+                out_of_region_count + unknown_species_count,
+                out_of_region_count,
+                unknown_species_count,
                 detection_count,
             )
 
