@@ -15,6 +15,8 @@ from ..domain import (
     AudioInventory,
     Campaign,
     CardImportResult,
+    FilterMode,
+    LatLon,
     Project,
 )
 from ..infrastructure import (
@@ -218,6 +220,83 @@ class AppState(QObject):
             {c.name: c.file_count for c in inventory.campaigns},
         )
         self._set_audio_inventory(inventory)
+
+    def create_campaign(
+        self, campaign: Campaign, species_text: str, must_have_text: str
+    ) -> None:
+        """Create a campaign folder, write its species file, and rebuild derived state.
+
+        Raises FileExistsError if the folder already exists (nothing is created
+        or refreshed in that case). If the folder is created but writing the
+        species file fails, derived state is still rebuilt and the OSError is
+        re-raised so the caller can warn the user while treating the campaign as
+        created.
+        """
+        self._campaign_repo.create(campaign)
+        try:
+            self._write_species_file(campaign, species_text, must_have_text)
+        finally:
+            self._reload_campaign_derived_state()
+
+    def update_campaign(
+        self,
+        existing: Campaign,
+        new_name: str,
+        mode: FilterMode,
+        location: LatLon | None,
+        species_text: str,
+        must_have_text: str,
+    ) -> None:
+        """Apply an edit to an existing campaign, then rebuild derived state.
+
+        Performs an optional rename, saves the settings change, and rewrites the
+        species file. A failed rename (OSError) propagates before anything else
+        changes, so nothing is refreshed in that case.
+        """
+        campaign = existing
+        if new_name != existing.name:
+            campaign = self._campaign_repo.rename(existing, new_name)
+        updated = replace(campaign, species_filter_mode=mode, location=location)
+        self._campaign_repo.save(updated)
+        self._write_species_file(updated, species_text, must_have_text)
+        self._reload_campaign_derived_state()
+
+    def rename_campaign(self, campaign: Campaign, new_name: str) -> None:
+        """Rename a campaign folder, then rebuild derived state.
+
+        Routed through here, rather than the repo directly, so the audio
+        inventory is rebuilt alongside the campaign list. A rename changes the
+        on-disk folder name, and the inventory is keyed by name, so skipping the
+        inventory rebuild would strand the renamed campaign's cached file count
+        under its old name (the same stale-count bug as a delete or create).
+        Propagates OSError on a failed rename before anything is refreshed.
+        """
+        self._campaign_repo.rename(campaign, new_name)
+        self._reload_campaign_derived_state()
+
+    def delete_campaign(self, campaign: Campaign) -> None:
+        """Delete a campaign folder and rebuild derived state."""
+        self._campaign_repo.delete(campaign)
+        self._reload_campaign_derived_state()
+
+    def _write_species_file(
+        self, campaign: Campaign, species_text: str, must_have_text: str
+    ) -> None:
+        if campaign.species_filter_mode == FilterMode.LIST:
+            self._campaign_repo.write_species_list(campaign, species_text)
+        elif campaign.species_filter_mode == FilterMode.LOCATION:
+            self._campaign_repo.write_must_have_species(campaign, must_have_text)
+
+    def _reload_campaign_derived_state(self) -> None:
+        """Rebuild everything derived from the set of campaign folders after a
+        create, rename, or delete: the campaign list and the audio inventory.
+
+        Centralized so a mutation cannot rebuild one and forget the other. That
+        omission was the stale-file-count bug: a deleted campaign's cached
+        inventory entry outlived the campaign and resurfaced under a reused name.
+        """
+        self.refresh_campaigns()
+        self.refresh_audio_inventory()
 
     def _set_audio_inventory(self, inventory: AudioInventory) -> None:
         self._audio_inventory = inventory

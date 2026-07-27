@@ -589,6 +589,27 @@ def test_rename_rejects_windows_hostile_name(
     assert campaign.folder.exists()  # folder untouched
 
 
+def test_rename_campaign_rekeys_audio_inventory(
+    state: AppState, project_with_campaign
+):
+    """Renaming rebuilds the audio inventory, not just the campaign list.
+
+    The inventory is keyed by campaign name, so a rename that refreshed only
+    the list would strand the renamed campaign's file count under its old name
+    (the same class of stale-count bug as a delete or create). Guards that
+    rename_campaign goes through the shared derived-state rebuild.
+    """
+    _proj, campaign = project_with_campaign
+    (campaign.folder / "20240101_120000.WAV").write_bytes(b"\x00" * 2048)
+    state.load_project(_proj.folder)
+    assert state.audio_inventory.for_campaign("alpha") is not None
+
+    state.rename_campaign(campaign, "beta")
+
+    assert state.audio_inventory.for_campaign("alpha") is None
+    assert state.audio_inventory.for_campaign("beta") is not None
+
+
 def test_duplicate_name_check_ignores_unicode_normalization(panel: CampaignsPanel):
     """Typing the NFC spelling of an existing NFD-named campaign is a duplicate."""
     nfd_name = unicodedata.normalize("NFD", "S\u00fcd")

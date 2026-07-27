@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+### Fixed
+- Deleting a campaign and creating (or renaming to) the same name no longer shows the old campaign's imported file count.
+- Renaming a campaign now updates its imported file count instead of leaving it stranded under the old name.
+
 ## [0.5.2] - 2026-07-23
 ### Added
 - The Campaigns panel overview now shows a project-wide summary (total campaigns, ARUs, recordings, disk usage, and date range).

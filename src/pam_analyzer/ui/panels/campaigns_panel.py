@@ -1,9 +1,9 @@
 """Campaigns panel: master/detail list for creating and editing campaigns."""
 
-import dataclasses
 import logging
 import unicodedata
 from enum import Enum
+from typing import Protocol
 
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import (
@@ -22,7 +22,6 @@ from PySide6.QtWidgets import (
 )
 
 from ...domain import Campaign, FilterMode, LatLon, campaign_name_error
-from ...infrastructure import TomlCampaignRepository
 from ...workers import ImportOrchestrator
 from ..app_state import AppState
 from ..models.campaign_overview import CampaignOverviewEntry
@@ -31,6 +30,24 @@ from .campaign_detail_widget import CampaignDetailWidget
 from .ui_campaigns_panel import Ui_CampaignsPanel
 
 _log = logging.getLogger(__name__)
+
+
+class CampaignReader(Protocol):
+    """The read-only slice of campaign persistence the panel depends on.
+
+    A consumer-defined view onto TomlCampaignRepository. The panel reads a
+    single campaign's on-disk files (its species lists, its audio count) but is
+    typed so it cannot reach the repository's write methods. Those writes must
+    go through AppState, which rebuilds derived state on every mutation. A stray
+    repo.rename() or repo.write_*() from the view would bypass that rebuild.
+    Structural typing means TomlCampaignRepository satisfies this without
+    naming it.
+    """
+
+    def read_species_list(self, campaign: Campaign) -> str: ...
+    def read_must_have_species(self, campaign: Campaign) -> str: ...
+    def has_must_have_species(self, campaign: Campaign) -> bool: ...
+    def count_audio_files(self, campaign: Campaign) -> int: ...
 
 
 class CampaignSortOrder(Enum):
@@ -52,7 +69,7 @@ class CampaignsPanel(QWidget):
     def __init__(
         self,
         app_state: AppState,
-        campaign_repo: TomlCampaignRepository,
+        campaign_reader: CampaignReader,
         orchestrator: ImportOrchestrator,
         settings: AppSettings,
         parent: QWidget | None = None,
@@ -63,7 +80,9 @@ class CampaignsPanel(QWidget):
         self.ui.splitter.setSizes([220, 780])
 
         self._app_state = app_state
-        self._service = campaign_repo
+        # Read-only view of campaign files (species lists, audio counts).
+        # Mutations go through app_state so derived state stays consistent.
+        self._reads = campaign_reader
         self._settings = settings
         self._model = QStandardItemModel(self)
         # Raw campaign list as last received from AppState, in repository
@@ -192,7 +211,7 @@ class CampaignsPanel(QWidget):
         ns = "N" if loc.latitude >= 0 else "S"
         ew = "E" if loc.longitude >= 0 else "W"
         text = f"{abs(loc.latitude):.4f}°{ns}, {abs(loc.longitude):.4f}°{ew}"
-        if self._service.has_must_have_species(campaign):
+        if self._reads.has_must_have_species(campaign):
             text += " · +must-have"
         return text
 
@@ -281,12 +300,12 @@ class CampaignsPanel(QWidget):
     def _species_text_for(self, campaign: Campaign) -> str:
         if campaign.species_filter_mode != FilterMode.LIST:
             return ""
-        return self._service.read_species_list(campaign)
+        return self._reads.read_species_list(campaign)
 
     def _must_have_text_for(self, campaign: Campaign) -> str:
         if campaign.species_filter_mode != FilterMode.LOCATION:
             return ""
-        return self._service.read_must_have_species(campaign)
+        return self._reads.read_must_have_species(campaign)
 
     def _on_create_requested(
         self,
@@ -306,7 +325,7 @@ class CampaignsPanel(QWidget):
             location=location,
         )
         try:
-            self._service.create(campaign)
+            self._app_state.create_campaign(campaign, species_text, must_have_text)
         except FileExistsError:
             QMessageBox.warning(
                 self,
@@ -314,11 +333,6 @@ class CampaignsPanel(QWidget):
                 f'A folder named "{name}" already exists.',
             )
             return
-        try:
-            if mode == FilterMode.LIST:
-                self._service.write_species_list(campaign, species_text)
-            elif mode == FilterMode.LOCATION:
-                self._service.write_must_have_species(campaign, must_have_text)
         except OSError as exc:
             # The folder already exists at this point, so the form must still
             # close below; leaving it open would make the next Save fail with
@@ -328,7 +342,6 @@ class CampaignsPanel(QWidget):
                 "Create campaign",
                 f"Campaign created, but writing the species file failed: {exc}",
             )
-        self._app_state.refresh_campaigns()
         if not self._select_by_name(name):
             # The filesystem can hand back a differently spelled folder name
             # (e.g. HFS+ drives store Unicode names in NFD form). The create
@@ -345,27 +358,19 @@ class CampaignsPanel(QWidget):
         species_text: str,
         must_have_text: str,
     ) -> None:
-        campaign = existing
-        if new_name != existing.name:
-            try:
-                campaign = self._service.rename(existing, new_name)
-            except OSError as exc:
-                QMessageBox.warning(self, "Rename failed", str(exc))
-                return
-        updated = dataclasses.replace(campaign, species_filter_mode=mode, location=location)
-        self._service.save(updated)
-        if mode == FilterMode.LIST:
-            self._service.write_species_list(updated, species_text)
-        elif mode == FilterMode.LOCATION:
-            self._service.write_must_have_species(updated, must_have_text)
-        self._app_state.refresh_campaigns()
+        try:
+            self._app_state.update_campaign(
+                existing, new_name, mode, location, species_text, must_have_text
+            )
+        except OSError as exc:
+            QMessageBox.warning(self, "Rename failed", str(exc))
+            return
         if not self._select_by_name(new_name):
             self.ui.campaign_list.clearSelection()
             self._show_overview()
 
     def _on_delete_requested(self, campaign: Campaign) -> None:
-        self._service.delete(campaign)
-        self._app_state.refresh_campaigns()
+        self._app_state.delete_campaign(campaign)
         self._show_overview()
 
     def _on_detail_cancelled(self) -> None:
@@ -452,7 +457,7 @@ class CampaignsPanel(QWidget):
             self.ui.campaign_list.clearSelection()
 
     def _show_delete_confirm(self, campaign: Campaign) -> None:
-        audio_count = self._service.count_audio_files(campaign)
+        audio_count = self._reads.count_audio_files(campaign)
         self._detail.show_delete_confirm(
             campaign,
             audio_count,
@@ -474,11 +479,10 @@ class CampaignsPanel(QWidget):
             QMessageBox.warning(self, "Rename", error)
             return
         try:
-            self._service.rename(campaign, new_name)
+            self._app_state.rename_campaign(campaign, new_name)
         except OSError as exc:
             QMessageBox.warning(self, "Rename failed", str(exc))
             return
-        self._app_state.refresh_campaigns()
         self._select_by_name(new_name)
 
     # busy/cancel API (used by MainWindow's cancel-on-switch gate)
