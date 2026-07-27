@@ -41,26 +41,25 @@ from ..domain import (
     AnalysisProgress,
     AnalysisRunResult,
     AnalysisSettings,
-    CampaignRunInput,
+    Campaign,
     CancelledError,
     Detection,
     paths,
+    week_from_path,
 )
 from ..domain import detection_schema as schema
 from ..domain.analysis_result import CampaignRunResult
 from ..domain.audio_import import WEEK_YEAR_ROUND, parse_recording_time
 from ._analysis_helpers import (
     RunGlobalProgress,
-    build_allowed_lookup,
     build_progress_callback,
     count_audio_files,
     emit_progress,
     list_audio_files,
-    week_from_path,
     write_species_list_files,
 )
 from .birdnet_lib import available_locales as _available_locales
-from .birdnet_lib import locale_label_map, normalize_lang_code
+from .birdnet_lib import locale_label_map, normalize_lang_code, region_species_scientific
 
 
 @dataclass(frozen=True)
@@ -103,7 +102,7 @@ class BaseAnalysisRunner(ABC):
     def run(
         self,
         *,
-        campaigns: list[CampaignRunInput],
+        campaigns: list[Campaign],
         settings: AnalysisSettings,
         preferred_lang: str,
         progress: AnalysisProgress,
@@ -119,14 +118,14 @@ class BaseAnalysisRunner(ABC):
         model = self._load_model()
         logging.info("%s: model loaded.", self.log_prefix)
 
-        per_campaign_totals = [count_audio_files(ci.folder) for ci in campaigns]
+        per_campaign_totals = [count_audio_files(c.folder) for c in campaigns]
         run_total = sum(per_campaign_totals)
         run_progress = RunGlobalProgress(progress, run_total)
 
         results: list[CampaignRunResult] = []
         total = len(campaigns)
         files_completed = 0
-        for i, (ci, ci_total) in enumerate(
+        for i, (campaign, campaign_total) in enumerate(
             zip(campaigns, per_campaign_totals, strict=True), start=1
         ):
             if progress.is_cancelled():
@@ -135,7 +134,7 @@ class BaseAnalysisRunner(ABC):
             try:
                 results.append(
                     self._run_campaign(
-                        ci,
+                        campaign,
                         settings,
                         preferred_lang,
                         run_progress,
@@ -148,10 +147,10 @@ class BaseAnalysisRunner(ABC):
                 raise
             except Exception as exc:  # noqa: BLE001
                 logging.exception(
-                    "%s: campaign %s failed: %s", self.log_prefix, ci.name, exc
+                    "%s: campaign %s failed: %s", self.log_prefix, campaign.name, exc
                 )
                 raise
-            files_completed += ci_total
+            files_completed += campaign_total
 
         return AnalysisRunResult(
             campaigns=tuple(results),
@@ -160,7 +159,7 @@ class BaseAnalysisRunner(ABC):
 
     def _run_campaign(
         self,
-        ci: CampaignRunInput,
+        campaign: Campaign,
         settings: AnalysisSettings,
         preferred_lang: str,
         progress: AnalysisProgress,
@@ -168,11 +167,11 @@ class BaseAnalysisRunner(ABC):
         total_campaigns: int,
         model: Any,
     ) -> CampaignRunResult:
-        campaign_name = ci.name
+        campaign_name = campaign.name
         t0 = time.monotonic()
         # Analysis artifacts live inside the campaign folder itself, so a
         # campaign stays self-contained and relocatable.
-        output_dir = ci.folder
+        output_dir = campaign.folder
 
         emit_progress(
             progress,
@@ -184,17 +183,17 @@ class BaseAnalysisRunner(ABC):
             phase="preparing",
         )
 
-        wav_files = list_audio_files(ci.folder)
+        wav_files = list_audio_files(campaign.folder)
         wav_count = len(wav_files)
 
-        detections_csv = schema.campaign_csv_for_model(ci.folder, self.model_key)
+        detections_csv = schema.campaign_csv_for_model(campaign.folder, self.model_key)
 
         # Resolve the species filter before opening the inference session:
         # in LOCATION mode this pre-warms the geo model and computes per-
         # week whitelists, so any geo lookup cost is paid during 'preparing'.
-        allowed_for, lat, lon, per_week_allowed, must_haves = build_allowed_lookup(
-            ci, wav_files
-        )
+        resolved = campaign.load_species_filter().resolve(wav_files, region_species_scientific)
+        lat = resolved.location.latitude if resolved.location else None
+        lon = resolved.location.longitude if resolved.location else None
 
         # Write the applied per-week allow-list (geo + must-haves) alongside
         # the detections so the user can inspect exactly what the model was
@@ -203,7 +202,7 @@ class BaseAnalysisRunner(ABC):
         # round-trips cleanly if anyone pastes lines back into a campaign's
         # species_list.txt.
         species_list_txt = write_species_list_files(
-            output_dir, per_week_allowed, must_haves
+            output_dir, resolved.per_week_allowed, resolved.must_haves
         )
 
         fieldnames = schema.write_fieldnames(settings.locales)
@@ -349,13 +348,13 @@ class BaseAnalysisRunner(ABC):
                     settings=settings,
                 )
 
-                allowed = allowed_for(parsed.file_path)
+                allowed = resolved.allowed_for(parsed.file_path)
                 if allowed is not None and parsed.scientific_name not in allowed:
                     filtered_count += 1
                     continue
 
                 try:
-                    aru = parsed.file_path.relative_to(ci.folder).parts[0]
+                    aru = parsed.file_path.relative_to(campaign.folder).parts[0]
                 except (ValueError, IndexError):
                     aru = ""
                 aru_set.add(aru)
@@ -363,7 +362,7 @@ class BaseAnalysisRunner(ABC):
                 # Campaign-relative so the campaign folder can be renamed or
                 # moved without invalidating its own CSV.
                 try:
-                    file_rel = parsed.file_path.relative_to(ci.folder).as_posix()
+                    file_rel = parsed.file_path.relative_to(campaign.folder).as_posix()
                 except ValueError:
                     file_rel = parsed.file_path.as_posix()
 

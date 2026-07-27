@@ -11,6 +11,7 @@ import tomli_w
 
 from . import paths
 from .enums import FilterMode
+from .species_filter import SpeciesFilter
 from .values import LatLon
 
 _log = logging.getLogger(__name__)
@@ -91,31 +92,28 @@ class Campaign:
         self.folder.rename(new_folder)
         return replace(self, name=new_name, folder=new_folder)
 
-    def read_species_list(self) -> str:
-        f = paths.species_list_file(self.folder)
-        return f.read_text(encoding="utf-8") if f.exists() else ""
-
-    def write_species_list(self, content: str) -> None:
-        paths.species_list_file(self.folder).write_text(content, encoding="utf-8")
-
-    def read_must_have_species(self) -> str:
-        f = paths.must_have_species_file(self.folder)
-        return f.read_text(encoding="utf-8") if f.exists() else ""
+    def load_species_filter(self) -> SpeciesFilter:
+        """Load this campaign's species filter, reading its sidecar file(s)."""
+        return SpeciesFilter.load(self.folder, self.species_filter_mode, self.location)
 
     def has_must_have_species(self) -> bool:
-        """Whether a non-empty must-have list exists, via a stat (no file read)."""
+        """Whether a non-empty must-have list exists, via a stat (no file read).
+
+        Kept as a stat rather than routing through load_species_filter() so the
+        campaigns overview can render one line per campaign without reading a
+        sidecar for each.
+        """
         f = paths.must_have_species_file(self.folder)
         return f.exists() and f.stat().st_size > 0
 
-    def write_must_have_species(self, content: str) -> None:
-        paths.must_have_species_file(self.folder).write_text(content, encoding="utf-8")
-
     def write_species_filter(self, species_text: str, must_have_text: str) -> None:
         """Persist the species filter to the sidecar file for this campaign's mode."""
-        if self.species_filter_mode == FilterMode.LIST:
-            self.write_species_list(species_text)
-        elif self.species_filter_mode == FilterMode.LOCATION:
-            self.write_must_have_species(must_have_text)
+        SpeciesFilter(
+            mode=self.species_filter_mode,
+            location=self.location,
+            list_text=species_text,
+            must_have_text=must_have_text,
+        ).save(self.folder)
 
     def count_audio_files(self) -> int:
         if not self.folder.exists():

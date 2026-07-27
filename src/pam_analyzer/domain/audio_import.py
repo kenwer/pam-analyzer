@@ -77,6 +77,17 @@ def birdnet_week(dt: datetime) -> int:
     return min(48, (dt.month - 1) * 4 + math.ceil(dt.day / 7))
 
 
+def week_from_path(path: Path) -> int | None:
+    """Extract the BirdNET week number from a 'week_NN' path segment, or None."""
+    for part in path.parts:
+        if part.startswith("week_"):
+            try:
+                return int(part.split("_", 1)[1])
+            except (IndexError, ValueError):
+                pass
+    return None
+
+
 def parse_recording_time(stem: str) -> datetime | None:
     """Pull a 'YYYYMMDD_HHMMSS' timestamp out of an audio filename."""
     match = _RECORDING_TIME_RE.search(stem)

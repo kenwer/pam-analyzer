@@ -7,9 +7,7 @@ from ..domain import (
     AnalysisRunner,
     AnalysisSettings,
     Campaign,
-    CampaignRunInput,
     CancelledError,
-    FilterMode,
     Project,
 )
 
@@ -55,27 +53,9 @@ class AnalysisWorker(QObject):
     def run(self) -> None:
         prog = _SignalProgress(self)
         try:
-            inputs = [
-                CampaignRunInput(
-                    name=c.name,
-                    folder=c.folder,
-                    mode=c.species_filter_mode,
-                    location=c.location,
-                    species_list_text=(
-                        c.read_species_list()
-                        if c.species_filter_mode == FilterMode.LIST
-                        else None
-                    ),
-                    must_have_species_text=(
-                        c.read_must_have_species()
-                        if c.species_filter_mode == FilterMode.LOCATION
-                        else None
-                    ),
-                )
-                for c in self._campaigns
-            ]
+            # The runner takes domain Campaign objects directly and loads each campaign's SpeciesFilter itself
             result = self._runner.run(
-                campaigns=inputs,
+                campaigns=self._campaigns,
                 settings=self._settings,
                 preferred_lang=self._project.preferred_species_lang,
                 progress=prog,

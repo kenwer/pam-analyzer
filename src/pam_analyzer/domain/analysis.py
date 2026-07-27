@@ -5,13 +5,17 @@ implements it for production, and tests supply a FakeRunner that satisfies
 the protocol structurally (duck typing).
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from .analysis_result import AnalysisRunResult
-from .enums import FilterMode
-from .values import AnalysisSettings, LatLon
+from .values import AnalysisSettings
+
+if TYPE_CHECKING:
+    from .campaign import Campaign
 
 
 class CancelledError(Exception):
@@ -42,17 +46,6 @@ class AnalysisProgress(Protocol):
     def is_cancelled(self) -> bool: ...
 
 
-@dataclass(frozen=True, slots=True)
-class CampaignRunInput:
-    name: str
-    folder: Path
-    mode: FilterMode
-    location: LatLon | None
-    species_list_text: str | None  # LIST mode only
-    # LOCATION mode only: species merged on top of the location-derived list.
-    must_have_species_text: str | None = None
-
-
 class AnalysisRunner(Protocol):
     # Short filesystem-safe identifier for this runner. Used as a suffix
     # on output CSV filenames so multiple model runs can coexist in one
@@ -66,7 +59,7 @@ class AnalysisRunner(Protocol):
     def run(
         self,
         *,
-        campaigns: list[CampaignRunInput],
+        campaigns: list[Campaign],
         settings: AnalysisSettings,
         preferred_lang: str,
         progress: AnalysisProgress,

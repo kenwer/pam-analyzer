@@ -1,4 +1,9 @@
-"""Verify that AnalysisWorker correctly maps Campaign objects to CampaignRunInput."""
+"""AnalysisWorker maps a runner outcome to the right Qt signal.
+
+The runner takes domain Campaign objects and loads each SpeciesFilter itself,
+so the worker's only job is to run it on the worker thread and translate the
+result, a CancelledError, or any other exception into succeeded/cancelled/failed.
+"""
 
 from pathlib import Path
 
@@ -6,16 +11,22 @@ from pam_analyzer.domain import (
     AnalysisRunResult,
     AnalysisSettings,
     Campaign,
-    CampaignRunInput,
+    CancelledError,
     FilterMode,
-    LatLon,
     Project,
 )
 from pam_analyzer.workers.analysis_worker import AnalysisWorker
 
 
 class FakeRunner:
-    def __init__(self) -> None:
+    """Runner stub whose run() enacts `outcome`.
+
+    outcome is either an AnalysisRunResult to return or an Exception to raise.
+    Records the kwargs it was called with so a test can check forwarding.
+    """
+
+    def __init__(self, outcome: AnalysisRunResult | Exception) -> None:
+        self.outcome = outcome
         self.calls: list[dict] = []
 
     def count_audio_files(self, _path: Path) -> int:
@@ -26,58 +37,41 @@ class FakeRunner:
 
     def run(self, **kwargs) -> AnalysisRunResult:
         self.calls.append(kwargs)
-        return AnalysisRunResult(campaigns=(), elapsed=0.0)
+        if isinstance(self.outcome, Exception):
+            raise self.outcome
+        return self.outcome
 
 
-def _project(tmp_path: Path) -> Project:
-    return Project(folder=tmp_path)
-
-
-def test_run_passes_species_list_text_only_for_list_mode(tmp_path: Path, qtbot) -> None:
-    runner = FakeRunner()
-    # The worker now reads each campaign's species files directly off the
-    # Campaign, so seed real sidecar files rather than injecting a fake repo.
-    campaign_a = Campaign(
-        name="A",
-        folder=tmp_path / "A",
-        species_filter_mode=FilterMode.LOCATION,
-        location=LatLon(48.0, 11.0),
-    )
-    campaign_b = Campaign(
-        name="B",
-        folder=tmp_path / "B",
-        species_filter_mode=FilterMode.LIST,
-    )
-    campaign_a.create()
-    campaign_b.create()
-    campaign_a.write_must_have_species("must_have_for_A")
-    campaign_b.write_species_list("species_list_for_B")
-
-    settings = AnalysisSettings(min_conf=0.3)
-    worker = AnalysisWorker(runner, _project(tmp_path), [campaign_a, campaign_b], settings)
-
-    worker.run()
-
-    inputs: list[CampaignRunInput] = runner.calls[0]["campaigns"]
-    assert inputs[0].species_list_text is None
-    assert inputs[1].species_list_text == "species_list_for_B"
-    # The must-have list is the mirror image: read for LOCATION, not LIST.
-    assert inputs[0].must_have_species_text == "must_have_for_A"
-    assert inputs[1].must_have_species_text is None
-
-
-def test_run_forwards_project_fields(tmp_path: Path, qtbot) -> None:
-    runner = FakeRunner()
-    proj = Project(folder=tmp_path, preferred_species_lang="de")
+def _worker(runner: FakeRunner, tmp_path: Path, *, preferred_lang: str = "en") -> AnalysisWorker:
+    project = Project(folder=tmp_path, preferred_species_lang=preferred_lang)
     campaigns = [Campaign(name="X", folder=tmp_path / "X", species_filter_mode=FilterMode.LOCATION)]
-    worker = AnalysisWorker(runner, proj, campaigns, AnalysisSettings())
+    return AnalysisWorker(runner, project, campaigns, AnalysisSettings())
 
-    worker.run()
 
-    call = runner.calls[0]
-    assert call["preferred_lang"] == "de"
-    # The runner no longer receives paths; each campaign folder is both
-    # input and output.
-    assert "audio_root" not in call
-    assert "output_base" not in call
-    assert call["campaigns"][0].folder == tmp_path / "X"
+def test_success_emits_succeeded_and_forwards_preferred_lang(tmp_path: Path, qtbot) -> None:
+    result = AnalysisRunResult(campaigns=(), elapsed=1.5)
+    runner = FakeRunner(result)
+    worker = _worker(runner, tmp_path, preferred_lang="de")
+
+    with qtbot.waitSignal(worker.succeeded, raising=True) as blocker:
+        worker.run()
+
+    assert blocker.args == [result]
+    # The worker's one piece of real forwarding: the project's preferred language.
+    assert runner.calls[0]["preferred_lang"] == "de"
+
+
+def test_cancelled_error_emits_cancelled_not_failed(tmp_path: Path, qtbot) -> None:
+    worker = _worker(FakeRunner(CancelledError()), tmp_path)
+
+    with qtbot.waitSignal(worker.cancelled, raising=True), qtbot.assertNotEmitted(worker.failed):
+        worker.run()
+
+
+def test_other_error_emits_failed_with_message(tmp_path: Path, qtbot) -> None:
+    worker = _worker(FakeRunner(RuntimeError("model exploded")), tmp_path)
+
+    with qtbot.waitSignal(worker.failed, raising=True) as blocker:
+        worker.run()
+
+    assert "model exploded" in blocker.args[0]

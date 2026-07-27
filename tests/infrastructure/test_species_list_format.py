@@ -5,10 +5,8 @@ pasted back into an input species list, otherwise the documented round-
 trip would break silently.
 """
 
-from pam_analyzer.infrastructure._analysis_helpers import (
-    _format_species_lines,
-    parse_species_lines,
-)
+from pam_analyzer.domain.species_filter import parse_species_lines
+from pam_analyzer.infrastructure._analysis_helpers import _format_species_lines
 
 
 def test_parse_strips_hash_comments() -> None:

@@ -113,12 +113,16 @@ def test_count_audio_files_empty(audio_root):
     assert c.count_audio_files() == 0
 
 
-def test_species_list_read_write_roundtrip(audio_root):
-    c = _new_campaign(audio_root, "species-test")
+def test_species_filter_read_write_roundtrip(audio_root):
+    c = Campaign(
+        name="species-test",
+        folder=audio_root / "species-test",
+        species_filter_mode=FilterMode.LIST,
+    )
     c.create()
-    assert c.read_species_list() == ""
-    c.write_species_list("Robin\nBlackcap\n")
-    result = c.read_species_list()
+    assert c.load_species_filter().list_text == ""
+    c.write_species_filter("Robin\nBlackcap\n", "")
+    result = c.load_species_filter().list_text
     assert "Robin" in result
     assert "Blackcap" in result
 

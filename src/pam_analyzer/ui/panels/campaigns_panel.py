@@ -281,12 +281,12 @@ class CampaignsPanel(QWidget):
     def _species_text_for(self, campaign: Campaign) -> str:
         if campaign.species_filter_mode != FilterMode.LIST:
             return ""
-        return campaign.read_species_list()
+        return campaign.load_species_filter().list_text
 
     def _must_have_text_for(self, campaign: Campaign) -> str:
         if campaign.species_filter_mode != FilterMode.LOCATION:
             return ""
-        return campaign.read_must_have_species()
+        return campaign.load_species_filter().must_have_text
 
     def _on_create_requested(
         self,

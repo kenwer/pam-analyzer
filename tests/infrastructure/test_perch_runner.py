@@ -24,7 +24,7 @@ import soundfile as sf
 from pam_analyzer.domain import (
     AnalysisProgressSnapshot,
     AnalysisSettings,
-    CampaignRunInput,
+    Campaign,
     CancelledError,
     FilterMode,
 )
@@ -97,17 +97,11 @@ def test_perch_runner_writes_detections_csv_for_silent_input(
 ) -> None:
     camp_dir = campaign_with_minute_wav
     settings = AnalysisSettings(min_conf=0.001, overlap=0.0, locales=("en_us",))
-    ci = CampaignRunInput(
-        name="c1",
-        folder=camp_dir,
-        mode=FilterMode.LIST,
-        location=None,
-        species_list_text=None,
-    )
+    campaign = Campaign(name="c1", folder=camp_dir, species_filter_mode=FilterMode.LIST)
     progress = _RecordingProgress()
 
     result = PerchRunner().run(
-        campaigns=[ci],
+        campaigns=[campaign],
         settings=settings,
         preferred_lang="en_us",
         progress=progress,
@@ -144,18 +138,13 @@ def test_perch_runner_list_mode_filters_to_supplied_species(
     """
     camp_dir = campaign_with_minute_wav
     settings = AnalysisSettings(min_conf=0.0001, overlap=0.0, locales=("en_us",))
-    ci = CampaignRunInput(
-        name="c1",
-        folder=camp_dir,
-        mode=FilterMode.LIST,
-        location=None,
-        # Mixed format: plain Latin on one line, 'Sci_Common' on the other.
-        species_list_text="Parus major\nPseudobird fakensis_Made Up Bird\n",
-    )
+    campaign = Campaign(name="c1", folder=camp_dir, species_filter_mode=FilterMode.LIST)
+    # Mixed format: plain Latin on one line, 'Sci_Common' on the other.
+    campaign.write_species_filter("Parus major\nPseudobird fakensis_Made Up Bird\n", "")
     progress = _RecordingProgress()
 
     result = PerchRunner().run(
-        campaigns=[ci],
+        campaigns=[campaign],
         settings=settings,
         preferred_lang="en_us",
         progress=progress,
@@ -185,19 +174,13 @@ def test_perch_runner_honors_cancellation(
 ) -> None:
     camp_dir = campaign_with_short_wav
     settings = AnalysisSettings(min_conf=0.001, overlap=0.0, locales=("en_us",))
-    ci = CampaignRunInput(
-        name="c1",
-        folder=camp_dir,
-        mode=FilterMode.LIST,
-        location=None,
-        species_list_text=None,
-    )
+    campaign = Campaign(name="c1", folder=camp_dir, species_filter_mode=FilterMode.LIST)
     # Cancel as soon as the first snapshot (the 'preparing' report) arrives.
     progress = _RecordingProgress(cancel_after=1)
 
     with pytest.raises(CancelledError):
         PerchRunner().run(
-            campaigns=[ci],
+            campaigns=[campaign],
             settings=settings,
             preferred_lang="en_us",
             progress=progress,
