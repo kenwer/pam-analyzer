@@ -39,7 +39,6 @@ from typing import Any, ClassVar
 
 from ..domain import (
     AnalysisProgress,
-    AnalysisRunResult,
     AnalysisSettings,
     Campaign,
     CancelledError,
@@ -48,7 +47,7 @@ from ..domain import (
     week_from_path,
 )
 from ..domain import detection_schema as schema
-from ..domain.analysis_result import CampaignRunResult
+from ..domain.analysis_run_result import AnalysisRunResult, CampaignResult, RunStatus
 from ..domain.audio_import import WEEK_YEAR_ROUND, parse_recording_time
 from ._analysis_helpers import (
     RunGlobalProgress,
@@ -127,14 +126,21 @@ class BaseAnalysisRunner(ABC):
         run_total = sum(per_campaign_totals)
         run_progress = RunGlobalProgress(progress, run_total)
 
-        results: list[CampaignRunResult] = []
+        # Each finished campaign has already written its CSV to disk, so a
+        # cancel or a mid-batch failure must not throw the completed ones
+        # away. Instead of raising past `results`, the loop stops and the
+        # accumulated campaigns are returned with the outcome that ended it.
+        results: list[CampaignResult] = []
         total = len(campaigns)
         files_completed = 0
+        status = RunStatus.COMPLETED
+        error: str | None = None
         for i, (campaign, campaign_total) in enumerate(
             zip(campaigns, per_campaign_totals, strict=True), start=1
         ):
             if progress.is_cancelled():
-                raise CancelledError()
+                status = RunStatus.CANCELLED
+                break
             run_progress.start_campaign(files_completed)
             try:
                 results.append(
@@ -149,17 +155,22 @@ class BaseAnalysisRunner(ABC):
                     )
                 )
             except CancelledError:
-                raise
+                status = RunStatus.CANCELLED
+                break
             except Exception as exc:  # noqa: BLE001
                 logging.exception(
                     "%s: campaign %s failed: %s", self.log_prefix, campaign.name, exc
                 )
-                raise
+                status = RunStatus.FAILED
+                error = str(exc)
+                break
             files_completed += campaign_total
 
         return AnalysisRunResult(
+            status=status,
             campaigns=tuple(results),
             elapsed=time.monotonic() - t0,
+            error=error,
         )
 
     def _run_campaign(
@@ -171,7 +182,7 @@ class BaseAnalysisRunner(ABC):
         campaign_index: int,
         total_campaigns: int,
         model: Any,
-    ) -> CampaignRunResult:
+    ) -> CampaignResult:
         campaign_name = campaign.name
         t0 = time.monotonic()
         # Analysis artifacts live inside the campaign folder itself, so a
@@ -224,7 +235,7 @@ class BaseAnalysisRunner(ABC):
                 files_total=0,
                 phase="done",
             )
-            return CampaignRunResult(
+            return CampaignResult(
                 campaign_name=campaign_name,
                 output_dir=output_dir,
                 detections_csv=detections_csv,
@@ -449,7 +460,7 @@ class BaseAnalysisRunner(ABC):
             phase="done",
         )
 
-        return CampaignRunResult(
+        return CampaignResult(
             campaign_name=campaign_name,
             output_dir=output_dir,
             detections_csv=detections_csv,

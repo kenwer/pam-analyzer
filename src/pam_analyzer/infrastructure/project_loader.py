@@ -10,8 +10,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..domain import AnalysisRunResult, AudioInventory, Campaign, Project
-from .analysis_discovery import discover_analysis_result
+from ..domain import AnalysisInventory, AudioInventory, Campaign, Project
+from .analysis_inventory_discovery import discover_analysis_inventory
 from .audio_inventory_discovery import discover_audio_inventory
 
 _log = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ class ProjectLoadResult:
     project: Project
     campaigns: list[Campaign]
     audio_inventory: AudioInventory
-    analysis_result: AnalysisRunResult | None
+    analysis_inventory: AnalysisInventory | None
 
 
 def load_project_bundle(folder: Path) -> ProjectLoadResult:
@@ -52,15 +52,15 @@ def load_project_bundle(folder: Path) -> ProjectLoadResult:
         t, prev = time.perf_counter(), t
         _log.debug("load_project_bundle: discover_audio_inventory %.2fs", t - prev)
 
-    analysis_result = discover_analysis_result(project.folder)
+    analysis_inventory = discover_analysis_inventory(project.folder)
     if dbg:
         t, prev = time.perf_counter(), t
-        _log.debug("load_project_bundle: discover_analysis_result %.2fs", t - prev)
+        _log.debug("load_project_bundle: discover_analysis_inventory %.2fs", t - prev)
         _log.debug("load_project_bundle: total %.2fs", t - t0)
 
     return ProjectLoadResult(
         project=project,
         campaigns=campaigns,
         audio_inventory=audio_inventory,
-        analysis_result=analysis_result,
+        analysis_inventory=analysis_inventory,
     )

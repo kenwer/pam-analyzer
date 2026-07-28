@@ -115,7 +115,7 @@ class ExaminePanel(QWidget):
         # Reload the currently-selected campaign whenever a fresh analysis
         # finishes (or a discovery rebuilds the on-disk result), so the user
         # doesn't have to bounce the campaign combo to see new rows.
-        self._app_state.lastAnalysisResultChanged.connect(self._schedule_reload)
+        self._app_state.analysisInventoryChanged.connect(self._schedule_reload)
 
         self.ui.campaign_combo.currentIndexChanged.connect(self._on_campaign_selected)
         self.ui.max_per_spin.valueChanged.connect(self._on_max_per_changed)
@@ -209,8 +209,8 @@ class ExaminePanel(QWidget):
     def _schedule_reload(self, *_args) -> None:
         """Coalesce a re-read of the current campaign to one pass per event-loop turn.
 
-        apply_loaded_project() emits campaignsChanged and lastAnalysisResultChanged
-        (plus a spurious mid-batch lastAnalysisResultChanged(None) while it clears
+        apply_loaded_project() emits campaignsChanged and analysisInventoryChanged
+        (plus a spurious mid-batch analysisInventoryChanged(None) while it clears
         the previous session) in one synchronous burst, and each would otherwise
         re-read every campaign's CSV from disk. Deferring to a single-shot timer
         collapses the burst into one read against the final combo state. A genuine

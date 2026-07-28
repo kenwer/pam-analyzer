@@ -4,7 +4,7 @@ from .analysis import (
     AnalysisRunner,
     CancelledError,
 )
-from .analysis_result import AnalysisRunResult, CampaignRunResult
+from .analysis_run_result import AnalysisRunResult, CampaignResult, RunStatus
 from .audio_import import (
     CardImportResult,
     CardQueue,
@@ -25,6 +25,7 @@ from .detection_set import DetectionSet
 from .detections import filter_top_per_aru_species
 from .enums import FilterMode, VerifiedState
 from .inventory import (
+    AnalysisInventory,
     AudioInventory,
     CampaignInventory,
     CardInventory,
@@ -37,14 +38,14 @@ from .values import MAX_OVERLAP_S, AnalysisSettings, LatLon
 __all__ = [
     "AnalysisProgress",
     "AnalysisProgressSnapshot",
+    "AnalysisInventory",
     "AnalysisRunner",
-    "AnalysisRunResult",
     "AnalysisSettings",
     "AudioInventory",
     "CancelledError",
     "Campaign",
     "CampaignInventory",
-    "CampaignRunResult",
+    "CampaignResult",
     "CardImportResult",
     "CardInventory",
     "CardQueue",
@@ -62,6 +63,8 @@ __all__ = [
     "filter_top_per_aru_species",
     "Project",
     "ResolvedSpeciesFilter",
+    "AnalysisRunResult",
+    "RunStatus",
     "SpeciesFilter",
     "VerifiedState",
     "WeekInventory",

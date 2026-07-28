@@ -102,8 +102,8 @@ def write_species_list_files(
     actually filtered against, with `  # must-have` appended to lines whose
     species came from the user's must-have input. One file per week when
     week_NN folders are present, or a single applied-species-list.txt
-    when they are not; that single-file path is returned for inclusion in
-    CampaignRunResult.species_list_txt. Filenames carry no campaign name so
+    when they are not. In the single-file case that path is returned for
+    inclusion in CampaignResult.species_list_txt. Filenames carry no campaign name so
     a campaign folder rename never orphans them, and the 'applied-' prefix
     keeps them apart from the user inputs species_list.txt and
     must_have_species.txt.

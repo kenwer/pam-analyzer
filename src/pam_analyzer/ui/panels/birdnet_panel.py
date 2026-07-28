@@ -15,12 +15,14 @@ from PySide6.QtWidgets import (
 )
 
 from ...domain import (
+    AnalysisInventory,
     AnalysisProgressSnapshot,
     AnalysisRunner,
     AnalysisRunResult,
     Campaign,
     FilterMode,
     Project,
+    RunStatus,
 )
 from ...widgets.no_hover_style import disable_item_hover
 from ...workers import AnalysisWorker
@@ -74,7 +76,7 @@ class BirdNetPanel(QWidget):
         self._wire_signals()
         self._set_status_page(_StatusPage.IDLE)
         self._render_project(app_state.project)
-        self._on_last_result_changed(app_state.last_analysis_result)
+        self._on_analysis_inventory_changed(app_state.analysis_inventory)
 
     def _populate_model_combo(self) -> None:
         combo = self.ui.model_combo
@@ -102,7 +104,7 @@ class BirdNetPanel(QWidget):
     def _wire_signals(self) -> None:
         self._app_state.projectChanged.connect(self._render_project)
         self._app_state.campaignsChanged.connect(self._rebuild_campaign_combo)
-        self._app_state.lastAnalysisResultChanged.connect(self._on_last_result_changed)
+        self._app_state.analysisInventoryChanged.connect(self._on_analysis_inventory_changed)
 
         self.ui.model_combo.currentIndexChanged.connect(self._on_model_changed)
         self.ui.campaign_combo.currentIndexChanged.connect(self._on_campaign_changed)
@@ -244,18 +246,13 @@ class BirdNetPanel(QWidget):
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
         self._worker.progress.connect(self._on_progress)
-        self._worker.succeeded.connect(self._on_succeeded)
-        self._worker.failed.connect(self._on_failed)
-        self._worker.cancelled.connect(self._on_cancelled)
+        self._worker.finished.connect(self._on_finished)
         # DirectConnection: quit() is called inline from the worker thread.
         # Without this, quit() is queued to the main thread, which is already
         # blocked in _teardown_worker's thread.wait(), causing a deadlock.
-        for sig in (
-            self._worker.succeeded,
-            self._worker.failed,
-            self._worker.cancelled,
-        ):
-            sig.connect(self._thread.quit, Qt.ConnectionType.DirectConnection)
+        self._worker.finished.connect(
+            self._thread.quit, Qt.ConnectionType.DirectConnection
+        )
 
         self._state.running = True
         self._set_status_page(_StatusPage.PROGRESS)
@@ -306,24 +303,44 @@ class BirdNetPanel(QWidget):
             parts.append(snap.phase_detail)
         self.ui.progress_label.setText("  ·  ".join(parts))
 
-    def _on_succeeded(self, result: AnalysisRunResult) -> None:
-        self._teardown_worker()
-        self._app_state.analysisFinished.emit(result)
-        # The runner has already written its CSV to disk, so a fresh
-        # discovery rebuilds the full multi-model view in one shot.
-        self._app_state.refresh_analysis_result_from_disk()
+    def _on_finished(self, outcome: AnalysisRunResult) -> None:
+        """Single terminal handler for every way a run can end.
 
-    def _on_last_result_changed(self, result: AnalysisRunResult | None) -> None:
+        The disk is the source of truth for what was produced: each finished
+        campaign writes its CSV before the run moves on, so a fresh discovery
+        surfaces the completed work whether the run completed, was cancelled,
+        or failed partway. refresh_analysis_inventory() drives the
+        results page through analysisInventoryChanged. This handler only adds
+        the status-specific message on top, and falls back to the idle page
+        when nothing was produced.
+        """
+        self._teardown_worker()
+        self._app_state.analysisFinished.emit(outcome)
+        self._app_state.refresh_analysis_inventory()
+        # When the discovery snapshot did not change (a cancel before any CSV
+        # was written, over a project that had none to begin with), the signal
+        # stays silent, so the progress page would otherwise linger.
+        results = self._app_state.analysis_inventory
+        if results is None or not results.campaigns:
+            self._set_status_page(_StatusPage.IDLE)
+        if outcome.status is RunStatus.FAILED:
+            self._app_state.errorOccurred.emit(
+                f"Analysis failed: {outcome.error or 'unknown error'}"
+            )
+        elif outcome.status is RunStatus.CANCELLED:
+            self._app_state.statusMessage.emit("Analysis cancelled.")
+
+    def _on_analysis_inventory_changed(self, results: AnalysisInventory | None) -> None:
         # A run currently in progress owns the status page; don't fight it.
         if self._state.running:
             return
-        if result is None or not result.campaigns:
+        if results is None or not results.campaigns:
             self._results_model.clear()
             self._results_model.setHorizontalHeaderLabels(["Name", "Files"])
             self.ui.summary_label.clear()
             self._set_status_page(_StatusPage.IDLE)
         else:
-            self._render_results(result)
+            self._render_results(results)
             self._set_status_page(_StatusPage.RESULTS)
 
     def is_busy(self) -> bool:
@@ -331,18 +348,6 @@ class BirdNetPanel(QWidget):
 
     def busy_label(self) -> str | None:
         return f"{self._runner_key} analysis" if self._state.running else None
-
-    def _on_failed(self, message: str) -> None:
-        self._teardown_worker()
-        self._app_state.analysisFinished.emit(None)
-        self._app_state.errorOccurred.emit(f"Analysis failed: {message}")
-        self._set_status_page(_StatusPage.IDLE)
-
-    def _on_cancelled(self) -> None:
-        self._teardown_worker()
-        self._app_state.analysisFinished.emit(None)
-        self._app_state.statusMessage.emit("Analysis cancelled.")
-        self._set_status_page(_StatusPage.IDLE)
 
     def _teardown_worker(self) -> None:
         self._state.running = False
@@ -361,7 +366,7 @@ class BirdNetPanel(QWidget):
         self._set_settings_enabled(True)
         self.ui.run_button.setEnabled(self._can_run())
 
-    def _render_results(self, result: AnalysisRunResult) -> None:
+    def _render_results(self, result: AnalysisInventory) -> None:
         self._results_model.set_result(result)
         self.ui.results_tree.expandAll()
         self._populate_row_widgets()
@@ -397,14 +402,14 @@ class BirdNetPanel(QWidget):
             self.ui.results_tree.setIndexWidget(index, files_widget(folder, files))
         self.ui.results_tree.resizeColumnToContents(0)
 
-    def _build_summary(self, result: AnalysisRunResult) -> str:
+    def _build_summary(self, result: AnalysisInventory) -> str:
         total_det = sum(c.detection_count for c in result.campaigns)
         parts = [f"{total_det:,} detections"]
         if len(result.campaigns) > 1:
             parts.append(f"{len(result.campaigns)} CSVs")
         return "  ·  ".join(parts) + self._model_breakdown(result)
 
-    def _model_breakdown(self, result: AnalysisRunResult) -> str:
+    def _model_breakdown(self, result: AnalysisInventory) -> str:
         """Per-model detections and CSV counts, appended when the results span
         more than one model (e.g. a campaign analyzed by both BirdNET and
         Perch). Suppressed for a single model, where each cell would just

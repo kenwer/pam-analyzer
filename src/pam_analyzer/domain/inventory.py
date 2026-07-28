@@ -1,13 +1,19 @@
-"""The audio-on-disk inventory tree: what recordings exist under a project.
+"""The on-disk inventories: what a project contains, discovered not persisted.
 
-A value-object hierarchy, all frozen: AudioInventory holds campaigns, each
-CampaignInventory holds cards, each CardInventory holds weeks. Built by
-infrastructure.audio_inventory_discovery; never persisted.
+Two frozen value-object trees:
+  * AudioInventory holds campaigns, each CampaignInventory holds cards, each
+    CardInventory holds weeks (built by infrastructure.audio_inventory_discovery).
+  * AnalysisInventory holds the detection results found across all campaigns and
+    models (built by infrastructure.analysis_inventory_discovery).
+Both are the audio and analysis sides of the same idea: a catalog of what exists
+on disk, rebuilt on demand.
 """
 
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+
+from .analysis_run_result import CampaignResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,3 +61,14 @@ class AudioInventory:
             if c.name == name:
                 return c
         return None
+
+
+@dataclass(frozen=True, slots=True)
+class AnalysisInventory:
+    """Every detection result on disk under a project, as a display view.
+
+    Built by discovery from all campaign CSVs, so it spans every campaign and
+    model, one CampaignResult per CSV.
+    """
+
+    campaigns: tuple[CampaignResult, ...]

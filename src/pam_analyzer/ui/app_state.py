@@ -11,7 +11,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Signal
 
 from ..domain import (
-    AnalysisRunResult,
+    AnalysisInventory,
     AudioInventory,
     Campaign,
     CardImportResult,
@@ -20,7 +20,7 @@ from ..domain import (
     Project,
 )
 from ..infrastructure import (
-    discover_analysis_result,
+    discover_analysis_inventory,
     discover_audio_inventory,
     load_project_bundle,
 )
@@ -36,8 +36,8 @@ class AppState(QObject):
     errorOccurred = Signal(str)
     analysisStarted = Signal()
     analysisProgress = Signal(object)  # AnalysisProgressSnapshot
-    analysisFinished = Signal(object)  # AnalysisRunResult | None
-    lastAnalysisResultChanged = Signal(object)  # AnalysisRunResult | None
+    analysisFinished = Signal(object)  # AnalysisRunResult
+    analysisInventoryChanged = Signal(object)  # AnalysisInventory | None
     importStarted = Signal(str, object)  # campaign name, ImportSource (which flavor of import)
     importFinished = Signal()
     importResultsChanged = Signal(list)  # list[CardImportResult]
@@ -48,7 +48,7 @@ class AppState(QObject):
         self._project: Project | None = None
         self._campaigns: list[Campaign] = []
         self._current_campaign: Campaign | None = None
-        self._last_analysis_result: AnalysisRunResult | None = None
+        self._analysis_inventory: AnalysisInventory | None = None
         self._import_results: list[CardImportResult] = []
         self._audio_inventory: AudioInventory = AudioInventory()
 
@@ -65,8 +65,8 @@ class AppState(QObject):
         return self._current_campaign
 
     @property
-    def last_analysis_result(self) -> AnalysisRunResult | None:
-        return self._last_analysis_result
+    def analysis_inventory(self) -> AnalysisInventory | None:
+        return self._analysis_inventory
 
     @property
     def import_results(self) -> list[CardImportResult]:
@@ -90,7 +90,7 @@ class AppState(QObject):
             self.errorOccurred.emit(f"Failed to open {folder.name}: {exc}")
             return
         self.apply_loaded_project(
-            result.project, result.campaigns, result.audio_inventory, result.analysis_result
+            result.project, result.campaigns, result.audio_inventory, result.analysis_inventory
         )
 
     def apply_loaded_project(
@@ -98,7 +98,7 @@ class AppState(QObject):
         project: Project,
         campaigns: list[Campaign],
         audio_inventory: AudioInventory,
-        analysis_result: AnalysisRunResult | None,
+        analysis_inventory: AnalysisInventory | None,
     ) -> None:
         """Apply an already-loaded project bundle.
 
@@ -109,7 +109,7 @@ class AppState(QObject):
         self._apply_project(project)
         self._apply_campaigns(campaigns)
         self._set_audio_inventory(audio_inventory)
-        self.set_last_analysis_result(analysis_result)
+        self.set_analysis_inventory(analysis_inventory)
         self.statusMessage.emit(f"Opened {project.name}")
 
     def create_project(self, folder: Path) -> None:
@@ -165,24 +165,25 @@ class AppState(QObject):
         except Exception as exc:
             self.errorOccurred.emit(f"Failed to save settings: {exc}")
 
-    def set_last_analysis_result(self, result: AnalysisRunResult | None) -> None:
-        if result is self._last_analysis_result:
+    def set_analysis_inventory(self, results: AnalysisInventory | None) -> None:
+        if results is self._analysis_inventory:
             return
-        self._last_analysis_result = result
-        self.lastAnalysisResultChanged.emit(result)
+        self._analysis_inventory = results
+        self.analysisInventoryChanged.emit(results)
 
-    def refresh_analysis_result_from_disk(self) -> None:
-        """Rebuild the analysis result from the on-disk CSV inventory.
+    def refresh_analysis_inventory(self) -> None:
+        """Rebuild the analysis results view from the on-disk CSV inventory.
 
-        The panel calls this after every successful run so sibling-model
-        CSVs the user accumulated in earlier runs stay visible alongside
-        the new one. Discovery is the only source of truth for what's been
-        produced; the in-memory result is just a view of it.
+        The panel calls this after every run (completed, cancelled, or
+        failed) so sibling-model CSVs the user accumulated in earlier runs
+        stay visible alongside the new one, and the campaigns that finished
+        before a cancel or failure are surfaced too. Discovery is the only
+        source of truth for what's been produced.
         """
         if self._project is None:
-            self.set_last_analysis_result(None)
+            self.set_analysis_inventory(None)
             return
-        self.set_last_analysis_result(discover_analysis_result(self._project.folder))
+        self.set_analysis_inventory(discover_analysis_inventory(self._project.folder))
 
     def append_import_result(self, result: CardImportResult) -> None:
         self._import_results.append(result)
@@ -298,9 +299,9 @@ class AppState(QObject):
         # Clear session-scoped derived state before emitting projectChanged so
         # any panel that re-reads these properties during its render sees the
         # new (empty) session, not the previous project's results.
-        if self._last_analysis_result is not None:
-            self._last_analysis_result = None
-            self.lastAnalysisResultChanged.emit(None)
+        if self._analysis_inventory is not None:
+            self._analysis_inventory = None
+            self.analysisInventoryChanged.emit(None)
         if self._import_results:
             self._import_results = []
             self.importResultsChanged.emit([])

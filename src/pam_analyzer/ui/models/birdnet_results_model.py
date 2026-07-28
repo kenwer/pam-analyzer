@@ -1,6 +1,6 @@
-"""Tree model adapter for AnalysisRunResult.
+"""Tree model adapter for AnalysisInventory.
 
-One row per CampaignRunResult, exposing that campaign's detections CSV (and,
+One row per CampaignResult, exposing that campaign's detections CSV (and,
 in location mode, its geographic species-list .txt) in the 'Files' widget.
 
 Column 0 holds the row label; column 1 is rendered via setIndexWidget in
@@ -13,7 +13,7 @@ from pathlib import Path
 from PySide6.QtCore import QModelIndex
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 
-from ...domain import AnalysisRunResult, CampaignRunResult
+from ...domain import AnalysisInventory, CampaignResult
 
 _ROLE_FOLDER = 0x100  # Qt.UserRole
 _ROLE_FILES = 0x101
@@ -24,12 +24,12 @@ class BirdnetResultsModel(QStandardItemModel):
         super().__init__(parent)
         self.setHorizontalHeaderLabels(["Name", "Files"])
 
-    def set_result(self, result: AnalysisRunResult) -> None:
+    def set_result(self, result: AnalysisInventory) -> None:
         self.clear()
         self.setHorizontalHeaderLabels(["Name", "Files"])
         self._append_campaigns(self.invisibleRootItem(), result.campaigns)
 
-    def _append_campaigns(self, parent: QStandardItem, campaigns: tuple[CampaignRunResult, ...]) -> None:
+    def _append_campaigns(self, parent: QStandardItem, campaigns: tuple[CampaignResult, ...]) -> None:
         for c in campaigns:
             model_name = f"{c.model_key}" if c.model_key else ""
             label = f"{c.campaign_name} · {c.detection_count:,} detections via {model_name}"

@@ -15,7 +15,7 @@ from pam_analyzer.workers.project_load_worker import ProjectLoadWorker
 
 def test_run_emits_succeeded_with_bundle_result(monkeypatch, tmp_path: Path, qtbot) -> None:
     sentinel = ProjectLoadResult(
-        project=object(), campaigns=[], audio_inventory=object(), analysis_result=None
+        project=object(), campaigns=[], audio_inventory=object(), analysis_inventory=None
     )
     monkeypatch.setattr(
         project_load_worker_module, "load_project_bundle", lambda *_args, **_kwargs: sentinel

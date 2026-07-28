@@ -7,10 +7,11 @@ import pytest
 from pam_analyzer.domain import (
     AnalysisRunResult,
     Campaign,
-    CampaignRunResult,
+    CampaignResult,
     FilterMode,
     LatLon,
     Project,
+    RunStatus,
 )
 from pam_analyzer.ui.app_state import AppState
 from pam_analyzer.ui.panels.birdnet_panel import BirdNetPanel
@@ -55,7 +56,7 @@ class _FakeRunner:
         return ["en", "de", "fr"]
 
     def run(self, **kwargs) -> AnalysisRunResult:
-        return AnalysisRunResult(campaigns=(), elapsed=0.0)
+        return AnalysisRunResult(status=RunStatus.COMPLETED)
 
 
 @pytest.fixture
@@ -128,10 +129,10 @@ def test_filter_info_shows_species_list_for_list_campaign(panel: BirdNetPanel):
     assert "Species list" in panel.ui.filter_info_label.text()
 
 
-def _make_result_on_disk(state: AppState, count: int = 42) -> AnalysisRunResult:
+def _make_completed_outcome(state: AppState, count: int = 42) -> AnalysisRunResult:
     """Plant a real CSV inside the alpha campaign folder so the disk-discovery
-    triggered by _on_succeeded picks it up, and return a matching in-memory
-    AnalysisRunResult for completeness."""
+    triggered by _on_finished picks it up, and return a matching COMPLETED
+    AnalysisRunResult for the run that produced it."""
     project = state.project
     assert project is not None
     campaign_dir = project.folder / "alpha"
@@ -143,8 +144,9 @@ def _make_result_on_disk(state: AppState, count: int = 42) -> AnalysisRunResult:
         encoding="utf-8",
     )
     return AnalysisRunResult(
+        status=RunStatus.COMPLETED,
         campaigns=(
-            CampaignRunResult(
+            CampaignResult(
                 campaign_name="alpha",
                 output_dir=campaign_dir,
                 detections_csv=csv_path,
@@ -160,12 +162,41 @@ def _make_result_on_disk(state: AppState, count: int = 42) -> AnalysisRunResult:
     )
 
 
-def test_on_succeeded_switches_to_results_page(panel: BirdNetPanel, state: AppState):
-    result = _make_result_on_disk(state)
-    panel._on_succeeded(result)
+def test_on_finished_switches_to_results_page(panel: BirdNetPanel, state: AppState):
+    result = _make_completed_outcome(state)
+    panel._on_finished(result)
 
     assert panel.ui.status_stack.currentIndex() == 2  # page_results
     assert "42" in panel.ui.summary_label.text()
+
+
+def test_cancelled_run_still_shows_completed_campaigns(
+    panel: BirdNetPanel, state: AppState
+):
+    """A cancelled run must surface the campaigns that finished before the
+    cancel. Their CSVs are already on disk, so the panel shows the results
+    page, not a blank idle page. Regression test for the original bug: a
+    cancel over a multi-campaign run wiped the summary of the completed ones.
+    """
+    _make_completed_outcome(state, count=7)
+    # The runner stopped early: it carries no in-memory campaigns, only the
+    # CANCELLED outcome. The completed work is discovered from disk.
+    panel._on_finished(AnalysisRunResult(status=RunStatus.CANCELLED))
+
+    assert panel.ui.status_stack.currentIndex() == 2  # page_results
+    assert "7" in panel.ui.summary_label.text()
+
+
+def test_cancelled_before_any_csv_returns_to_idle(
+    panel: BirdNetPanel, state: AppState
+):
+    """A cancel before any campaign wrote a CSV (and nothing on disk from a
+    prior run) drops back to the idle page rather than lingering on progress.
+    """
+    panel.ui.status_stack.setCurrentIndex(1)  # progress page, as during a run
+    panel._on_finished(AnalysisRunResult(status=RunStatus.CANCELLED))
+
+    assert panel.ui.status_stack.currentIndex() == 0  # page_idle
 
 
 def test_loads_previous_results_from_disk(qtbot, tmp_path: Path):
@@ -193,8 +224,8 @@ def test_loads_previous_results_from_disk(qtbot, tmp_path: Path):
     state.load_project(proj.folder)
 
     assert panel.ui.status_stack.currentIndex() == 2  # page_results
-    assert state.last_analysis_result is not None
-    assert len(state.last_analysis_result.campaigns) == 1
+    assert state.analysis_inventory is not None
+    assert len(state.analysis_inventory.campaigns) == 1
     # A single model carries no per-model breakdown (it would repeat the total).
     assert "3 detections" in panel.ui.summary_label.text()
     assert "[" not in panel.ui.summary_label.text()
@@ -268,10 +299,11 @@ def test_panel_keeps_birdnet_after_perch_run(qtbot, tmp_path: Path):
     state.load_project(proj.folder)
 
     # Simulate Perch finishing: the runner has already written its CSV, and
-    # _on_succeeded triggers a fresh on-disk discovery.
+    # _on_finished triggers a fresh on-disk discovery.
     fresh_perch = AnalysisRunResult(
+        status=RunStatus.COMPLETED,
         campaigns=(
-            CampaignRunResult(
+            CampaignResult(
                 campaign_name="alpha",
                 output_dir=campaign_dir,
                 detections_csv=perch_csv,
@@ -285,7 +317,7 @@ def test_panel_keeps_birdnet_after_perch_run(qtbot, tmp_path: Path):
         ),
         elapsed=0.5,
     )
-    panel._on_succeeded(fresh_perch)
+    panel._on_finished(fresh_perch)
 
     # Both CSVs are present: 2 BirdNET detections + 1 Perch = 3.
     assert panel.ui.status_stack.currentIndex() == 2  # page_results
@@ -305,16 +337,16 @@ def test_project_switch_clears_stale_results(
     This locks in the cure for the original bug: panels showed stale BirdNET
     results from the previously opened project.
     """
-    panel._on_succeeded(_make_result_on_disk(state))
+    panel._on_finished(_make_completed_outcome(state))
     assert panel.ui.status_stack.currentIndex() == 2  # page_results
-    assert state.last_analysis_result is not None
+    assert state.analysis_inventory is not None
 
     # Build a second project on disk and switch to it.
     other = Project(folder=tmp_path / "other")
     other.save()
     state.load_project(other.folder)
 
-    assert state.last_analysis_result is None
+    assert state.analysis_inventory is None
     assert panel.ui.status_stack.currentIndex() == 0  # page_idle
     assert panel._results_model.rowCount() == 0
     assert panel.ui.summary_label.text() == ""

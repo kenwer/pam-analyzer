@@ -126,7 +126,7 @@ shape: column names and canonical order, per-column access and CSV conversion
 (`ColumnSpec`), CSV row serialization derived from the column table, and the
 `detections-{model_key}.csv` filename pattern (plus the `campaign_csvs` and
 `campaign_csv_for_model` path helpers that depend on it).
-The `DetectionSet` aggregate, `BaseAnalysisRunner`, `analysis_discovery`, and
+The `DetectionSet` aggregate, `BaseAnalysisRunner`, `analysis_inventory_discovery`, and
 `DetectionsTableModel` all derive from it, so a schema change (new column, renamed
 column, filename convention) lands in one file. The Examine panel's compound table
 widget lives in `ui/detection_table.py`: it is Detection-specific, so it belongs in

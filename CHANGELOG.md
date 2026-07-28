@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+### Fixed
+- Cancelling or failing an analysis run now shows the campaigns that already finished, instead of a blank results panel.
+### Changed
+- [Dev] Split the analysis run result from the on-disk results inventory into separate domain types (`AnalysisRunResult`/`RunStatus`, `AnalysisInventory`).
+
 ## [0.5.3] - 2026-07-28
 ### Added
 - The BirdNET results summary now breaks the detection and CSV counts down per-model.

@@ -142,7 +142,7 @@ class MainWindow(QMainWindow):
         self._update_tab_lock()
         self.ui.status_bar.showMessage("BirdNET running…", 0)
 
-    def _on_analysis_finished(self, _result: object) -> None:
+    def _on_analysis_finished(self, _outcome: object) -> None:
         self._analysis_running = False
         self._update_tab_lock()
         self.ui.status_bar.clearMessage()
@@ -308,7 +308,7 @@ class MainWindow(QMainWindow):
         self._welcome_panel.clear_loading()
         self._teardown_project_load()
         self._app_state.apply_loaded_project(
-            result.project, result.campaigns, result.audio_inventory, result.analysis_result
+            result.project, result.campaigns, result.audio_inventory, result.analysis_inventory
         )
         if self._pending_project_folder is not None:
             self._remember(self._pending_project_folder)

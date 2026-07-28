@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
-from .analysis_result import AnalysisRunResult
+from .analysis_run_result import AnalysisRunResult
 from .values import AnalysisSettings
 
 if TYPE_CHECKING:

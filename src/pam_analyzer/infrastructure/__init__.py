@@ -1,4 +1,4 @@
-from .analysis_discovery import discover_analysis_result
+from .analysis_inventory_discovery import discover_analysis_inventory
 from .audio_extractor import SoundfileAudioExtractor
 from .audio_import import AudioImporter
 from .audio_inventory_discovery import discover_audio_inventory
@@ -25,7 +25,7 @@ __all__ = [
     "ProjectLoadResult",
     "PsutilSdCardScanner",
     "SoundfileAudioExtractor",
-    "discover_analysis_result",
+    "discover_analysis_inventory",
     "discover_audio_inventory",
     "find_legacy_pamproj",
     "load_legacy",

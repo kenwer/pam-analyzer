@@ -22,7 +22,7 @@ def test_bundles_project_campaigns_and_inventory(tmp_path: Path) -> None:
     (inventory_campaign,) = result.audio_inventory.campaigns
     assert inventory_campaign.name == "alpha"
     assert inventory_campaign.file_count == 0  # no audio imported into 'alpha' yet
-    assert result.analysis_result is None  # no analysis has been run yet
+    assert result.analysis_inventory is None  # no analysis has been run yet
 
 
 def test_missing_project_toml_raises(tmp_path: Path) -> None:

@@ -10,7 +10,7 @@ The audio I/O and 5 s framing that used to live in this module now sit
 inside the birdnet>=0.2 library, so the unit tests against
 _frame_into_windows are gone. The remaining cases verify the runner's
 contract: it produces a detections CSV with our schema, emits the expected
-progress phases, and translates a Stop click into a CancelledError.
+progress phases, and translates a Stop click into a CANCELLED AnalysisRunResult.
 """
 
 from __future__ import annotations
@@ -25,8 +25,8 @@ from pam_analyzer.domain import (
     AnalysisProgressSnapshot,
     AnalysisSettings,
     Campaign,
-    CancelledError,
     FilterMode,
+    RunStatus,
 )
 from pam_analyzer.infrastructure.perch_runner import PerchRunner
 
@@ -178,10 +178,14 @@ def test_perch_runner_honors_cancellation(
     # Cancel as soon as the first snapshot (the 'preparing' report) arrives.
     progress = _RecordingProgress(cancel_after=1)
 
-    with pytest.raises(CancelledError):
-        PerchRunner().run(
-            campaigns=[campaign],
-            settings=settings,
-            preferred_lang="en_us",
-            progress=progress,
-        )
+    # run() converts the internal CancelledError into a CANCELLED outcome so
+    # that any campaigns finished before the cancel are still returned. This
+    # single campaign never finished, so campaigns is empty.
+    result = PerchRunner().run(
+        campaigns=[campaign],
+        settings=settings,
+        preferred_lang="en_us",
+        progress=progress,
+    )
+    assert result.status is RunStatus.CANCELLED
+    assert result.campaigns == ()
