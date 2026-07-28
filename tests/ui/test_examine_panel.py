@@ -125,7 +125,77 @@ def test_panel_loads_detections_for_first_campaign(panel: ExaminePanel) -> None:
     # "All campaigns" is selected by default, so 3 rows * 2 campaigns = 6.
     assert panel._model.rowCount() == 6
     assert panel.ui.campaign_combo.count() == 3  # All + alpha + beta
-    assert "6 / 6 detections" in panel.ui.info_label.text()
+    # Unfiltered, so the count collapses to a single number (no "of").
+    assert "6 detections" in panel.ui.info_label.text()
+    assert " of " not in panel.ui.info_label.text()
+    # A single model run carries no breakdown suffix (it would just repeat the count).
+    assert "[" not in panel.ui.info_label.text()
+
+
+def test_info_label_breaks_down_counts_by_model(
+    panel: ExaminePanel, project: Project, monkeypatch
+) -> None:
+    """A campaign with two model runs shows a per-model total after the count."""
+    # A campaign switch selects a row, which schedules a deferred audio prepare
+    # that would try to open the dummy f.wav. Patch the presentation call it
+    # ends up in (the timer is already bound to the real _do_prepare, so
+    # patching that method wouldn't take); this test is about label text, not
+    # playback.
+    monkeypatch.setattr(panel.ui.detections_table, "_present", lambda *a, **k: None)
+
+    # Add a Perch run (2 rows) alongside alpha's existing 3 BirdNET rows. The
+    # base fixture omits the Model column, so its rows load as model "" and
+    # would collide with the Perch rows in the breakdown; rewrite alpha's
+    # BirdNET CSV to name its model explicitly, matching what a real runner writes.
+    _write_model_csv(project.folder / "alpha" / "detections-BirdNET-2.4.csv", "alpha", "MSD-1", "BirdNET-2.4", rows=3)
+    _write_model_csv(project.folder / "alpha" / "detections-Perch-2.0.csv", "alpha", "MSD-1", "Perch-2.0", rows=2)
+
+    # Switch to the alpha campaign (found by data, since combo order isn't
+    # guaranteed). This is a synchronous reload, and it excludes beta's
+    # model-less rows so the breakdown is a clean two-model split.
+    panel.ui.campaign_combo.setCurrentIndex(panel.ui.campaign_combo.findData("alpha"))
+
+    text = panel.ui.info_label.text()
+    # alpha only: 3 BirdNET + 2 Perch = 5. Unfiltered, so every cell collapses
+    # to a single number.
+    assert "5 detections" in text
+    assert "[BirdNET-2.4: 3]   [Perch-2.0: 2]" in text
+
+    # A cap narrows the view to the single highest-confidence row per
+    # (ARU, Species). That row is a BirdNET one (conf 0.7 > any Perch row),
+    # so its cell shows the shown-of-total split while Perch drops to 0 of 2.
+    # Perch stays listed (order and membership come from the totals).
+    panel.ui.max_per_spin.setValue(1)
+    text = panel.ui.info_label.text()
+    assert "1 of 5 detections" in text
+    assert "[BirdNET-2.4: 1 of 3]   [Perch-2.0: 0 of 2]" in text
+
+
+def _write_model_csv(path: Path, campaign: str, aru: str, model: str, rows: int) -> None:
+    """Write a detections CSV that includes a populated Model column."""
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow([*_HEADERS, "Model"])
+        for i in range(rows):
+            w.writerow(
+                [
+                    campaign,
+                    aru,
+                    "24",
+                    "Robin",
+                    "Erithacus rubecula",
+                    f"{0.5 + i * 0.1}",
+                    f"{i * 3.0}",
+                    f"{i * 3.0 + 3.0}",
+                    str(i + 1),
+                    "f.wav",
+                    f"2026-04-{25 + i:02d}T{4 + i:02d}:00:00",
+                    "",
+                    "",
+                    "",
+                    model,
+                ]
+            )
 
 
 def test_max_per_filter_truncates_displayed_rows(panel: ExaminePanel) -> None:

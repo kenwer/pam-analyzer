@@ -1,6 +1,7 @@
 """Examine panel: review detections in a multi-column-sort table."""
 
 import csv
+from collections import Counter
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -68,6 +69,11 @@ class ExaminePanel(QWidget):
         # list so the display/filter code keeps working unchanged.
         self._detections = DetectionSet([])
         self._raw_detections: list[Detection] = self._detections.detections
+        # Full detection count per model for the loaded campaign, cached at
+        # load time so the info label can show a per-model breakdown without
+        # recounting the raw list on every filter keystroke. See
+        # _model_breakdown_suffix.
+        self._model_totals: Counter[str] = Counter()
         # Guards a pending debounced reload of the current campaign (see _schedule_reload).
         self._reload_pending = False
 
@@ -253,6 +259,9 @@ class ExaminePanel(QWidget):
         # reset shifting indices below. Falls back to the panel default when
         # there's no active user sort yet.
         prior = self.ui.detections_table.sortPriority() or _DEFAULT_SORT_PRIORITY
+        # Recount per model before set_detections, since that call synchronously
+        # emits statusChanged into _on_detection_count_changed, which reads this.
+        self._model_totals = Counter(d.model for d in self._raw_detections)
         self._model.set_detections(self._raw_detections)
         self._model.set_max_per(self.ui.max_per_spin.value())
         # New columns from set_detections (Species_<locale> extras) default
@@ -271,7 +280,28 @@ class ExaminePanel(QWidget):
 
     def _on_detection_count_changed(self, shown: int) -> None:
         total = len(self._raw_detections)
-        self.ui.info_label.setText(f"{shown:,} / {total:,} detections")
+        self.ui.info_label.setText(f"{_fmt_count(shown, total)} detections{self._model_breakdown_suffix()}")
+
+    def _model_breakdown_suffix(self) -> str:
+        """Per-model split appended to the count label when the loaded rows span
+        more than one model run (BirdNET and Perch in one campaign, or any mix
+        across all campaigns). Suppressed for a single model, where the
+        breakdown would just repeat the headline.
+
+        Each cell shows that model's shown-of-total in the same notation as the
+        leading count, collapsing to a single number when nothing is filtered
+        out of it (see _fmt_count). The shown halves sum to the leading shown
+        count and track the filters, while the totals stay fixed at the
+        full-campaign figures."""
+        if len(self._model_totals) < 2:
+            return ""
+        shown_by_model = Counter(d.model for d in self._model.detections())
+        order = sorted(self._model_totals, key=lambda m: (-self._model_totals[m], m))
+        breakdown = "]   [".join(
+            f"{m or 'unknown'}: {_fmt_count(shown_by_model.get(m, 0), self._model_totals[m])}"
+            for m in order
+        )
+        return f"        [{breakdown}]"
 
     def _on_padding_changed(self) -> None:
         before = float(self.pad_before_spin.value())
@@ -405,6 +435,17 @@ class ExaminePanel(QWidget):
         # Pull from the model (not the static COLUMNS_BY_NAME) so dynamic
         # Species_<locale> extras participate in CSV export when visible.
         return [name for name in self._model.column_names() if name not in hidden]
+
+
+def _fmt_count(shown: int, total: int) -> str:
+    """Render a shown-of-total pair for the info label.
+
+    Collapses to a single number when nothing is filtered out (shown == total),
+    so 'X of Y' only appears when the two actually differ.
+    """
+    if shown == total:
+        return f"{total:,}"
+    return f"{shown:,} of {total:,}"
 
 
 def _write_visible_csv(
