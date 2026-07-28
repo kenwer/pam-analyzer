@@ -336,7 +336,11 @@ class BaseAnalysisRunner(ABC):
 
         arr = result.to_structured_array()
 
-        with open(detections_csv, "w", newline="", encoding="utf-8") as outfile:
+        # Write to a sibling temp file and swap it into place only once every
+        # row is on disk (Path.replace is atomic within a folder)
+        tmp_csv = detections_csv.with_name(detections_csv.name + ".tmp")
+
+        with open(tmp_csv, "w", newline="", encoding="utf-8") as outfile:
             writer = csv.DictWriter(outfile, fieldnames=fieldnames)
             writer.writeheader()
 
@@ -419,6 +423,10 @@ class BaseAnalysisRunner(ABC):
                 )
                 writer.writerow(schema.detection_to_row(detection))
                 detection_count += 1
+
+        # Every row is now flushed and the file handle closed, so the swap
+        # publishes a complete CSV under the final name in one atomic step.
+        tmp_csv.replace(detections_csv)
 
         if out_of_region_count or unknown_species_count:
             logging.info(

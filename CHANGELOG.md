@@ -10,6 +10,7 @@
 - The analysis log now splits species-filter drops into out-of-region and off-axis (taxonomy mismatch or non-bird) counts.
 - Document the BirdNET and Perch taxonomy differences and their effect on Perch output in the README.
 ### Fixed
+- Each campaign's CSV now appears complete or not at all. Killing the app no longer leaves a half-written detections CSV.
 - Deleting a campaign and creating (or renaming to) the same name no longer shows the old campaign's imported file count.
 - Renaming a campaign now updates its imported file count instead of leaving it stranded under the old name.
 
