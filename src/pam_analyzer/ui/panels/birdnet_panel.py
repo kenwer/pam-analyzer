@@ -1,5 +1,6 @@
 """BirdNET panel: configure analysis settings, run, and review results."""
 
+from collections import Counter
 from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
@@ -401,7 +402,30 @@ class BirdNetPanel(QWidget):
         parts = [f"{total_det:,} detections"]
         if len(result.campaigns) > 1:
             parts.append(f"{len(result.campaigns)} CSVs")
-        return "  ·  ".join(parts)
+        return "  ·  ".join(parts) + self._model_breakdown(result)
+
+    def _model_breakdown(self, result: AnalysisRunResult) -> str:
+        """Per-model detections and CSV counts, appended when the results span
+        more than one model (e.g. a campaign analyzed by both BirdNET and
+        Perch). Suppressed for a single model, where each cell would just
+        repeat the headline totals. Ordered by detection count, highest first.
+
+        One CSV is written per campaign per model, so a model's CSV count is
+        just how many campaign results carry its model_key.
+        """
+        det_by_model: Counter[str] = Counter()
+        csv_by_model: Counter[str] = Counter()
+        for c in result.campaigns:
+            det_by_model[c.model_key] += c.detection_count
+            csv_by_model[c.model_key] += 1
+        if len(det_by_model) < 2:
+            return ""
+        order = sorted(det_by_model, key=lambda m: (-det_by_model[m], m))
+        cells = "]   [".join(
+            f"{m or 'unknown'}: {_plural(det_by_model[m], 'detection')}, {_plural(csv_by_model[m], 'CSV')}"
+            for m in order
+        )
+        return f"        [{cells}]"
 
     def _open_path(self, path: Path | None) -> None:
         if path is None:
@@ -410,3 +434,8 @@ class BirdNetPanel(QWidget):
 
     def _set_status_page(self, page: _StatusPage) -> None:
         self.ui.status_stack.setCurrentIndex(page)
+
+
+def _plural(n: int, noun: str) -> str:
+    """Format a count with its noun, adding a trailing 's' unless n is 1."""
+    return f"{n:,} {noun}" if n == 1 else f"{n:,} {noun}s"

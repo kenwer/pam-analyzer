@@ -2,7 +2,8 @@
 
 ## [Unreleased]
 ### Added
-- The Examine panel now shows detection counts per-model.
+- The BirdNET results summary now breaks the detection and CSV counts down per-model.
+- The Examine panel also shows detection counts per-model.
 ### Changed
 - The BirdNET progress now labels the ETA as campaign-specific.
 - The analysis log now splits species-filter drops into out-of-region and off-axis (taxonomy mismatch or non-bird) counts.

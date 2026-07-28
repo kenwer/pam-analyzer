@@ -195,7 +195,9 @@ def test_loads_previous_results_from_disk(qtbot, tmp_path: Path):
     assert panel.ui.status_stack.currentIndex() == 2  # page_results
     assert state.last_analysis_result is not None
     assert len(state.last_analysis_result.campaigns) == 1
+    # A single model carries no per-model breakdown (it would repeat the total).
     assert "3 detections" in panel.ui.summary_label.text()
+    assert "[" not in panel.ui.summary_label.text()
 
 
 def test_panel_shows_all_csvs_regardless_of_model_selection(qtbot, tmp_path: Path):
@@ -287,8 +289,12 @@ def test_panel_keeps_birdnet_after_perch_run(qtbot, tmp_path: Path):
 
     # Both CSVs are present: 2 BirdNET detections + 1 Perch = 3.
     assert panel.ui.status_stack.currentIndex() == 2  # page_results
-    assert "3 detections" in panel.ui.summary_label.text()
     assert panel._results_model.rowCount() == 2
+    # The summary breaks the totals down per model (ordered by count), and
+    # singularizes "1 detection" / "1 CSV".
+    text = panel.ui.summary_label.text()
+    assert "3 detections  ·  2 CSVs" in text
+    assert "[BirdNET-2.4: 2 detections, 1 CSV]   [Perch-2.0: 1 detection, 1 CSV]" in text
 
 
 def test_project_switch_clears_stale_results(
