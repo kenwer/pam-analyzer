@@ -2,9 +2,11 @@
 
 from datetime import date, time
 
+import polars as pl
 import pytest
 
 from pam_analyzer.domain.filter_ops import (
+    ColumnFilter,
     ColumnKind,
     FilterOp,
     matches,
@@ -254,3 +256,26 @@ def test_datetime_column_still_supports_text_ops():
 )
 def test_is_any_of(value, text, expected):
     assert matches(value, text, FilterOp.IS_ANY_OF, kind=ColumnKind.CATEGORICAL) is expected
+
+
+# ColumnFilter value object
+
+
+def test_column_filter_matches_delegates_to_operator():
+    numeric = ColumnFilter("Confidence", FilterOp.GREATER_THAN, "0.5", ColumnKind.NUMERIC)
+    assert numeric.matches(0.7) is True
+    assert numeric.matches(0.3) is False
+
+    text = ColumnFilter("ARU", FilterOp.EQUALS, "MSD-1", ColumnKind.TEXT)
+    assert text.matches("MSD-1") is True
+    assert text.matches("MSD-2") is False
+
+
+def test_column_filter_to_polars_selects_matching_rows():
+    df = pl.DataFrame({"Confidence": [0.3, 0.5, 0.7], "ARU": ["MSD-1", "MSD-2", "MSD-1"]})
+
+    numeric = ColumnFilter("Confidence", FilterOp.GREATER_THAN, "0.5", ColumnKind.NUMERIC)
+    assert df.filter(numeric.to_polars())["Confidence"].to_list() == [0.7]
+
+    text = ColumnFilter("ARU", FilterOp.EQUALS, "MSD-1", ColumnKind.TEXT)
+    assert df.filter(text.to_polars())["ARU"].to_list() == ["MSD-1", "MSD-1"]

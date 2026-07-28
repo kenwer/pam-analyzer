@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QWidgetAction,
 )
 
-from ...domain import Campaign, Detection, DetectionSet, filter_top_per_aru_species
+from ...domain import Campaign, Detection, DetectionSet
 from ...infrastructure import SoundfileAudioExtractor
 from ..app_state import AppState
 from ..models.detections_table_model import DetectionsTableModel
@@ -72,7 +72,7 @@ class ExaminePanel(QWidget):
         self._reload_pending = False
 
         self.ui.detections_table.setModel(self._model)
-        # Initial default sort. Re-resolved by name on every _apply_filter
+        # Initial default sort. Re-resolved by name on every _reload_detections
         # because dynamic Species_<locale> extras shift the index of Confidence
         # after set_detections.
 
@@ -112,7 +112,7 @@ class ExaminePanel(QWidget):
         self._app_state.lastAnalysisResultChanged.connect(self._schedule_reload)
 
         self.ui.campaign_combo.currentIndexChanged.connect(self._on_campaign_selected)
-        self.ui.max_per_spin.valueChanged.connect(self._apply_filter)
+        self.ui.max_per_spin.valueChanged.connect(self._on_max_per_changed)
         self.pad_before_spin.valueChanged.connect(self._on_padding_changed)
         self.pad_after_spin.valueChanged.connect(self._on_padding_changed)
         self.ui.detections_table.columnVisibilityChanged.connect(self._on_column_visibility_changed)
@@ -239,16 +239,22 @@ class ExaminePanel(QWidget):
             self._app_state.errorOccurred.emit(f"Failed to load detections: {exc}")
             self._detections = DetectionSet([])
         self._raw_detections = self._detections.detections
-        self._apply_filter()
+        self._reload_detections()
 
-    def _apply_filter(self) -> None:
-        max_per = self.ui.max_per_spin.value()
-        rows = filter_top_per_aru_species(self._raw_detections, max_per)
+    def _reload_detections(self) -> None:
+        """Load the current campaign's rows into the model (a fresh dataset).
+
+        Hands the full detection list to the model and lets it own both the
+        max-per cap and the per-column filters. A fresh dataset clears any
+        prior column filters, but the max-per spin value persists across
+        campaigns, so it is re-applied here.
+        """
         # Snapshot the current sort by column NAME so it survives the model
         # reset shifting indices below. Falls back to the panel default when
         # there's no active user sort yet.
         prior = self.ui.detections_table.sortPriority() or _DEFAULT_SORT_PRIORITY
-        self._model.set_detections(rows)
+        self._model.set_detections(self._raw_detections)
+        self._model.set_max_per(self.ui.max_per_spin.value())
         # New columns from set_detections (Species_<locale> extras) default
         # to visible in Qt. Re-apply the persisted hidden set so anything
         # the user previously hid stays hidden even after the model rebuild.
@@ -256,6 +262,11 @@ class ExaminePanel(QWidget):
         self.ui.detections_table.setSortPriority(prior)
         # Refresh the Corrected_Species combo choices from the loaded data.
         self.ui.detections_table.setSpeciesChoices(sorted({d.species for d in self._raw_detections if d.species}))
+        self.ui.detections_table.fitColumnsToContents()
+
+    def _on_max_per_changed(self) -> None:
+        """Re-cap the visible rows without disturbing the active column filters."""
+        self._model.set_max_per(self.ui.max_per_spin.value())
         self.ui.detections_table.fitColumnsToContents()
 
     def _on_detection_count_changed(self, shown: int) -> None:

@@ -134,6 +134,37 @@ def test_max_per_filter_truncates_displayed_rows(panel: ExaminePanel) -> None:
     assert panel._model.rowCount() == 2
 
 
+def test_column_filter_survives_max_per_change(panel: ExaminePanel) -> None:
+    """Regression: adjusting Max per ARU/Species must not drop an active column filter."""
+    aru_col = COLUMNS_BY_NAME["ARU"]
+    panel._model.set_column_filter(aru_col, "MSD-1", FilterOp.EQUALS)
+    assert panel._model.rowCount() == 3  # only the alpha/MSD-1 rows
+
+    panel.ui.max_per_spin.setValue(1)
+    # Filter first (3 MSD-1 Robin rows), then cap to the single best by confidence.
+    assert panel._model.rowCount() == 1
+    conf_col = panel._model.index_of("Confidence")
+    assert float(panel._model.data(panel._model.index(0, conf_col))) == pytest.approx(0.7)
+
+    # Turning the cap back off must reveal all three MSD-1 rows again, proving
+    # the ARU filter stayed active throughout rather than being cleared.
+    panel.ui.max_per_spin.setValue(0)
+    assert panel._model.rowCount() == 3
+
+
+def test_max_per_caps_after_column_filter(panel: ExaminePanel) -> None:
+    """The cap ranks only rows that survive the column filters (filter first, then cap)."""
+    aru_col = COLUMNS_BY_NAME["ARU"]
+    conf_col = COLUMNS_BY_NAME["Confidence"]
+    panel._model.set_column_filter(aru_col, "MSD-1", FilterOp.EQUALS)
+    # Exclude the overall-best 0.7 row, leaving 0.5 and 0.6.
+    panel._model.set_column_filter(conf_col, "0.7", FilterOp.LESS_THAN)
+    panel.ui.max_per_spin.setValue(1)
+    # Cap-first would rank 0.7 top then drop it (0 rows); filter-first keeps 0.6.
+    assert panel._model.rowCount() == 1
+    assert float(panel._model.data(panel._model.index(0, conf_col))) == pytest.approx(0.6)
+
+
 def test_edit_verified_marks_row_dirty(panel: ExaminePanel) -> None:
     col = COLUMNS_BY_NAME["Verified"]
     idx = panel._model.index(0, col)

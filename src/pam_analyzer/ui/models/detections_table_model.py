@@ -16,11 +16,11 @@ from typing import Any
 import polars as pl
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 
-from ...domain import Detection
+from ...domain import Detection, filter_top_per_aru_species
 from ...domain.detection_schema import COLUMNS as _SCHEMA_COLUMNS
 from ...domain.detection_schema import ColumnSpec, is_locale_column
 from ...domain.filter_ops import (
-    OPERATORS,
+    ColumnFilter,
     ColumnKind,
     FilterOp,
     datetime_helper_exprs,
@@ -95,11 +95,15 @@ class DetectionsTableModel(QAbstractTableModel):
         # Detections that have been edited but not yet saved by the panel.
         # Tracked by id() so sorting/filtering doesn't invalidate the set.
         self._dirty_ids: set[int] = set()
-        # Per-column active filter as (raw text, FilterOp).
-        # Col 0 is reserved for the play column and is never filtered.
-        # An entry is only present when the column has an active filter
-        # (text ops with non-empty input, or BLANK and NOT_BLANK regardless).
-        self._col_filters: dict[int, tuple[str, FilterOp]] = {}
+        # Per-column active filter, keyed by column index. Col 0 is reserved
+        # for the play column and is never filtered. An entry is only present
+        # when the column has an active filter (text ops with non-empty input,
+        # or BLANK and NOT_BLANK regardless).
+        self._col_filters: dict[int, ColumnFilter] = {}
+        # Cap on rows kept per (ARU, Species), highest confidence first. 0
+        # disables the cap. Applied after the column filters (filter first,
+        # then cap) so the cap ranks only the rows that survive the filters.
+        self._max_per: int = 0
         # Active sort priority. Re-applied after filter changes.
         self._sort_priority: list[tuple[int, Qt.SortOrder]] = []
         # Polars DataFrame mirroring _all for filter/sort index computation.
@@ -128,7 +132,9 @@ class DetectionsTableModel(QAbstractTableModel):
             *_STATIC_COLUMNS[species_pos + 1 :],
         ]
         self._sort_df = self._build_sort_df(self._all)
-        self._visible = list(range(len(self._all)))
+        # Filters were just cleared, so this only applies any active max-per cap
+        # (a persistent user preference) to the fresh rows.
+        self._rebuild_visible()
         self._apply_sort()
         self.endResetModel()
 
@@ -227,13 +233,14 @@ class DetectionsTableModel(QAbstractTableModel):
         """
         if not (0 <= col < len(self._columns)) or col == PLAY_COLUMN_INDEX:
             return
+        spec = self._columns[col]
         if op is None:
-            op = default_op(self._columns[col].kind)
+            op = default_op(spec.kind)
 
         text = text.strip()
         active = (op in _BLANK_OPS) or bool(text)
         if active:
-            self._col_filters[col] = (text, op)
+            self._col_filters[col] = ColumnFilter(spec.name, op, text, spec.kind)
         else:
             self._col_filters.pop(col, None)
         self.beginResetModel()
@@ -245,6 +252,24 @@ class DetectionsTableModel(QAbstractTableModel):
         if not self._col_filters:
             return
         self._col_filters.clear()
+        self.beginResetModel()
+        self._rebuild_visible()
+        self._apply_sort()
+        self.endResetModel()
+
+    def set_max_per(self, n: int) -> None:
+        """Cap the visible rows to the top *n* per (ARU, Species) by confidence.
+
+        A value of 0 (or less) disables the cap. The cap composes with the
+        per-column filters: filters run first, then the cap keeps the highest
+        confidence rows among the survivors. Unlike a fresh set_detections, this
+        leaves the column filters in place, so adjusting the cap never silently
+        drops an active filter.
+        """
+        n = max(n, 0)
+        if n == self._max_per:
+            return
+        self._max_per = n
         self.beginResetModel()
         self._rebuild_visible()
         self._apply_sort()
@@ -359,21 +384,34 @@ class DetectionsTableModel(QAbstractTableModel):
         return df.with_columns(helper_exprs) if helper_exprs else df
 
     def _rebuild_visible(self) -> None:
-        """Recompute _visible from _all and _col_filters. Called inside a model reset."""
-        if not self._col_filters or self._sort_df.is_empty():
+        """Recompute _visible from _all, the column filters, and the max-per cap.
+
+        Column filters run first (their masks are ANDed over the sort frame),
+        then the cap keeps the top rows per (ARU, Species) among the survivors.
+        Called inside a model reset.
+        """
+        if self._sort_df.is_empty():
             self._visible = list(range(len(self._all)))
             return
 
-        mask = pl.lit(True)
-        for col_idx, (text, op) in self._col_filters.items():
-            if col_idx == PLAY_COLUMN_INDEX or col_idx >= len(self._columns):
-                continue
-            col_name = self._columns[col_idx].name
-            if col_name not in self._sort_df.columns:
-                continue
-            mask = mask & OPERATORS[op].to_polars(col_name, text, self._columns[col_idx].kind)
+        if self._col_filters:
+            mask = pl.lit(True)
+            for col_idx, cf in self._col_filters.items():
+                if col_idx == PLAY_COLUMN_INDEX or col_idx >= len(self._columns):
+                    continue
+                if cf.column not in self._sort_df.columns:
+                    continue
+                mask = mask & cf.to_polars()
+            visible = self._sort_df.with_row_index("__idx").filter(mask)["__idx"].to_list()
+        else:
+            visible = list(range(len(self._all)))
 
-        self._visible = self._sort_df.with_row_index("__idx").filter(mask)["__idx"].to_list()
+        if self._max_per > 0:
+            kept = filter_top_per_aru_species([self._all[i] for i in visible], self._max_per)
+            kept_ids = {id(d) for d in kept}
+            visible = [i for i in visible if id(self._all[i]) in kept_ids]
+
+        self._visible = visible
 
     def _apply_sort(self) -> None:
         """Reorder _visible according to _sort_priority. Called inside a model reset."""

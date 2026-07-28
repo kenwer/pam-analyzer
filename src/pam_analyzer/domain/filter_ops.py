@@ -20,6 +20,7 @@ against a parsed date.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from datetime import date, datetime, time
 from enum import Enum
 
@@ -626,6 +627,30 @@ _ALL_OPERATORS: tuple[FilterOperator, ...] = (
 )
 
 OPERATORS: dict[FilterOp, FilterOperator] = {o.op: o for o in _ALL_OPERATORS}
+
+
+@dataclass(frozen=True, slots=True)
+class ColumnFilter:
+    """One column's active filter: which column, which operator, and its input.
+
+    A value object over the operator registry. It names its column (rather than
+    keying by position) so it survives the Species_<locale> extras that shift
+    column indices, and it carries the column kind so numeric-vs-text operator
+    behavior is decided the same way for both the polars and scalar forms.
+    """
+
+    column: str
+    op: FilterOp
+    text: str
+    kind: ColumnKind
+
+    def to_polars(self) -> pl.Expr:
+        """Boolean expression selecting the rows this filter keeps."""
+        return OPERATORS[self.op].to_polars(self.column, self.text, self.kind)
+
+    def matches(self, value: object) -> bool:
+        """Whether a single cell value passes this filter."""
+        return OPERATORS[self.op].matches(value, self.text, self.kind)
 
 # Menu order per column kind. This is the one thing that stays a table, because
 # it is presentation (which operators a column offers, and in what order), not

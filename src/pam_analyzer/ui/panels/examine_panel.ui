@@ -44,6 +44,9 @@
        <property name="text">
         <string>Max per ARU/Species:</string>
        </property>
+       <property name="toolTip">
+        <string>Keep only the N highest-confidence detections for each ARU and species pair. Applied after the column filters.</string>
+       </property>
       </widget>
      </item>
      <item>

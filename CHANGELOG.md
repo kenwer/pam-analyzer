@@ -12,6 +12,7 @@
   - Give the species filter its own domain module (`SpeciesFilter`) that owns sidecar persistence and allow-list resolution.
 - [Dev] Upgrade dependencies.
 ### Fixed
+- Changing Max per ARU/Species no longer clears the active column filters. The cap now applies after the filters.
 - Each campaign's CSV now appears complete or not at all. Killing the app no longer leaves a half-written detections CSV.
 - Deleting a campaign and creating (or renaming to) the same name no longer shows the old campaign's imported file count.
 - Renaming a campaign now updates its imported file count instead of leaving it stranded under the old name.
