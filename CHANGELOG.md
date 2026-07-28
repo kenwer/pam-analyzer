@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.5.3] - 2026-07-28
 ### Added
 - The BirdNET results summary now breaks the detection and CSV counts down per-model.
 - The Examine panel also shows detection counts per-model.
