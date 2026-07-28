@@ -190,7 +190,7 @@ def build_progress_callback(
             files_done=files_done,
             files_total=files_total,
             phase="analyzing",
-            phase_detail=(f"ETA {eta}" if eta else None),
+            phase_detail=(f"Campaign ETA {eta}" if eta else None),
         )
 
     return cb

@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 ### Changed
+- The BirdNET progress now labels the ETA as campaign-specific.
 - The analysis log now splits species-filter drops into out-of-region and off-axis (taxonomy mismatch or non-bird) counts.
 - Document the BirdNET and Perch taxonomy differences and their effect on Perch output in the README.
 - [Dev] Refactor the codebase to use a richer domain model.
