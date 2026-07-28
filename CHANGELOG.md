@@ -2,13 +2,14 @@
 
 ## [Unreleased]
 ### Changed
-- [Dev] Refactor the codebase to use a richer domain model. Campaign, Project, and detections now persist themselves and the repository classes were removed.
-- [Dev] Split the domain `entities.py` into per-concept modules: `campaign.py`, `project.py`, `detection.py`, `inventory.py`, `analysis_result.py`.
-- [Dev] Refactor the filter operators into per-operator classes.
-- [Dev] Give the species filter its own domain module (`SpeciesFilter`) that owns sidecar persistence and allow-list resolution.
-- [Dev] Upgrade dependencies.
 - The analysis log now splits species-filter drops into out-of-region and off-axis (taxonomy mismatch or non-bird) counts.
 - Document the BirdNET and Perch taxonomy differences and their effect on Perch output in the README.
+- [Dev] Refactor the codebase to use a richer domain model.
+  - Campaign, Project, and detections now persist themselves and the repo classes were removed.
+  - Split the domain `entities.py` into per-concept modules.
+  - Refactor the filter operators into per-operator classes.
+  - Give the species filter its own domain module (`SpeciesFilter`) that owns sidecar persistence and allow-list resolution.
+- [Dev] Upgrade dependencies.
 ### Fixed
 - Each campaign's CSV now appears complete or not at all. Killing the app no longer leaves a half-written detections CSV.
 - Deleting a campaign and creating (or renaming to) the same name no longer shows the old campaign's imported file count.
