@@ -7,6 +7,7 @@ Automated bird species detection from acoustic recordings.
 - [Download](#download)
 - [Features](#features)
 - [Usage](#usage)
+  - [Migrating legacy projects](#migrating-legacy-projects)
 - [Workflow](#workflow)
   - [Project Settings](#project-settings)
   - [Campaigns](#campaigns)
@@ -15,6 +16,7 @@ Automated bird species detection from acoustic recordings.
   - [Examine Detections](#examine-detections)
 - [Keyboard shortcuts](#keyboard-shortcuts)
   - [Global](#global)
+  - [Campaigns panel](#campaigns-panel)
   - [Examine panel: detection row selected](#examine-panel-detection-row-selected)
 - [Core Concepts](#core-concepts)
   - [Project](#project)
@@ -61,7 +63,10 @@ Note: On any supported OS you can also easily run PAM Analyzer from source using
 ## Usage
 Download and execute the binary for your platform from the [Download](#download) section.
 
-Upon first launch, use `New Project` and pick (or create) the folder that will hold your data such as recordings and detection CSVs. The app marks it as a project by writing a `pam-analyzer.toml` settings file into it. Then create at least one campaign in the `Campaigns` panel (audio import from SD cards is also handled there), run analysis in the `BirdNET` panel, and review detections in the `Examine` panel. More details are in the workflow section below.
+Upon first launch, use `New Project` and pick (or create) the folder that will hold your data such as recordings and detection CSVs. The app marks it as a project by writing a `pam-analyzer.toml` settings file into it. Then create at least one campaign in the `Campaigns` panel (audio import from SD cards is also handled there), run species detection in the `BirdNET` panel (select BirdNET-2.4 or Perch-2.0 from the model dropdown), and review detections in the `Examine` panel. More details are in the workflow section below.
+
+### Migrating legacy projects
+If you used an older version of PAM Analyzer that stored projects as `.pamproj` files, use **File > Open Legacy Project File…** to select the `.pamproj` file. The app will offer to migrate it: detection CSVs are moved into their campaign folders, and the old file is kept as `.bak`. If the audio recordings folder moved since the project was created, a folder picker lets you relocate it. When opening a project folder that contains a `.pamproj` file, migration is offered automatically.
 
 
 ## Workflow
@@ -81,7 +86,7 @@ Configure a study in the project settings.
 All settings are saved automatically to the `pam-analyzer.toml` file inside the project folder.
 
 ### Campaigns
-Create and manage the campaigns that belong to this project. The panel on the left shows a list of all discovered campaigns. If no campaign is selected a project-wide summary is shown on the right. Clicking a campaign opens its settings where you can:
+Create and manage the campaigns that belong to this project. The panel on the left shows a list of all discovered campaigns. **When no campaign is selected**, a project-wide overview is shown on the right, displaying total campaigns, ARUs, recordings, disk usage, and date range. Clicking a campaign opens its settings where you can:
 
 - **Create** a new campaign using the `+` button. Each campaign must be configured with a species filter:
   - **Location mode**: specify a lat/lon on a map or enter coordinates manually; BirdNET derives the species list from this location. Here you can also add species you want to have always included when feeding the detection models.
@@ -128,7 +133,13 @@ Analysis results are written directly into each campaign folder, next to the aud
 No combined, summary, or per-week CSVs are produced: the "All campaigns" view in the Examine panel concatenates the per-campaign CSVs in memory, so it always reflects the current per-campaign files.
 
 ### Examine Detections
-Review and annotate results. Detection CSVs are loaded into a grid with multi-column sorting and filtering, inline annotation editing (Verified, Corrected_Species, Comment), and audio playback per detection. When more than one model has been run for a campaign, all detections appear in the same grid; sort or filter on the `Model` column to slice by source. The `Max per ARU/Species` control caps how many detections to keep for each ARU and species pair, keeping the highest-confidence ones (set it to `All` to disable). The cap is applied *after* the per-column filters, so it thins only the rows that already passed those filters. For example, filtering `Model` to Perch and then setting the cap to 1 shows the single best Perch detection per ARU and species. Annotations are written back to the source CSV (the one the row was loaded from) automatically. Filtered results can be exported to a new CSV, and audio snippets for selected detections can be extracted with configurable padding.
+Review and annotate results. Detection CSVs are loaded into a grid with multi-column sorting and filtering, inline annotation editing (Verified, Corrected_Species, Comment), and audio playback per detection. When more than one model has been run for a campaign, all detections appear in the same grid; sort or filter on the `Model` column to slice by source. The info label above the table shows detection counts per model.
+
+- **Column filters**: Click a column header to open the filter menu. Text columns support `contains`, `starts with`, and `ends with` operators. The `Campaign`, `ARU`, `Species`, `Model`, `Verified`, and `Corrected_Species` columns also support an "Is one of" operator for multi-value selection. Date and time columns have dedicated date range and time range filters. Pressing `Enter` in a filter input applies the filter immediately and moves focus to the table.
+- **Max per ARU/Species**: This control caps how many detections to keep for each ARU and species pair, keeping the highest-confidence ones (set it to `All` to disable). The cap is applied *after* the per-column filters, so it thins only the rows that already passed those filters. For example, filtering `Model` to Perch and then setting the cap to 1 shows the single best Perch detection per ARU and species.
+- **Playback padding**: The `⚙` button lets you configure how many seconds of audio to play before and after each detection, helpful for hearing context around the vocalization. These values are saved per-project.
+- **Annotations**: Verified, Corrected_Species, and Comment edits are written back to the source CSV automatically.
+- **Export**: The `⬇` button offers CSV export of the currently filtered rows and audio snippet extraction with configurable padding.
 
 When exporting audio snippets, annotation values are reflected in the output filenames:
 - **Verified**: appends `_confirmed`, `_incorrect`, or `_uncertain` depending on the value.
@@ -146,6 +157,14 @@ Both suffixes can appear together, e.g. `…_corrected_confirmed.wav`.
 | Ctrl+O        | ⌘O   | **Open Project Folder...**    | Open an existing project folder |
 | Ctrl+W        | ⌘W   | **Close Project**      | Close the current project and return to the welcome screen |
 | Ctrl+Q        | ⌘Q   | **Quit**               | Exit the application |
+
+### Campaigns panel
+| Key | Action |
+| --- | --- |
+| `Ctrl+N` / `⌘N` | Create a new campaign |
+| `F2` | Rename the selected campaign |
+| `Delete` | Delete the selected campaign |
+| `Escape` | Leave campaign details and return to the overview |
 
 ### Examine panel: detection row selected
 These shortcuts work whenever a row is selected in the Examine panel and no cell editor is open.
