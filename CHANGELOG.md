@@ -3,6 +3,7 @@
 ## [Unreleased]
 ### Changed
 - [Dev] CI runs the test suite on every commit but only builds distributables on manual dispatch or release.
+- [Dev] Bump GitHub Actions `checkout`, `cache`, `upload-artifact`, `action-gh-release`, `setup-uv`.
 
 ## [0.5.5] - 2026-07-30
 ### Changed
