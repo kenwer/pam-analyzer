@@ -7,7 +7,7 @@ import pytest
 from pam_analyzer.domain import (
     AnalysisRunResult,
     Campaign,
-    CampaignResult,
+    CampaignRunResult,
     FilterMode,
     LatLon,
     Project,
@@ -146,16 +146,13 @@ def _make_completed_outcome(state: AppState, count: int = 42) -> AnalysisRunResu
     return AnalysisRunResult(
         status=RunStatus.COMPLETED,
         campaigns=(
-            CampaignResult(
+            CampaignRunResult(
                 campaign_name="alpha",
-                output_dir=campaign_dir,
                 detections_csv=csv_path,
-                species_list_txt=None,
                 detection_count=count,
                 wav_count=10,
                 aru_count=2,
                 elapsed=1.5,
-                model_key="BirdNET-2.4",
             ),
         ),
         elapsed=1.5,
@@ -303,16 +300,13 @@ def test_panel_keeps_birdnet_after_perch_run(qtbot, tmp_path: Path):
     fresh_perch = AnalysisRunResult(
         status=RunStatus.COMPLETED,
         campaigns=(
-            CampaignResult(
+            CampaignRunResult(
                 campaign_name="alpha",
-                output_dir=campaign_dir,
                 detections_csv=perch_csv,
-                species_list_txt=None,
                 detection_count=1,
                 wav_count=1,
                 aru_count=1,
                 elapsed=0.5,
-                model_key="Perch-2.0",
             ),
         ),
         elapsed=0.5,

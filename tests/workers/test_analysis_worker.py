@@ -19,7 +19,7 @@ from pam_analyzer.domain import (
     AnalysisRunResult,
     AnalysisSettings,
     Campaign,
-    CampaignResult,
+    CampaignRunResult,
     CancelledError,
     FilterMode,
     Project,
@@ -76,16 +76,13 @@ def test_forwards_returned_cancelled_outcome_with_its_campaigns(tmp_path: Path, 
     campaigns that finished before the cancel, and the worker forwards it
     unchanged, so the completed work survives the seam.
     """
-    done = CampaignResult(
+    done = CampaignRunResult(
         campaign_name="a",
-        output_dir=tmp_path,
         detections_csv=tmp_path / "detections-BirdNET-2.4.csv",
-        species_list_txt=None,
         detection_count=3,
         wav_count=5,
         aru_count=1,
         elapsed=0.5,
-        model_key="BirdNET-2.4",
     )
     outcome = AnalysisRunResult(status=RunStatus.CANCELLED, campaigns=(done,))
     worker = _worker(FakeRunner(outcome), tmp_path)

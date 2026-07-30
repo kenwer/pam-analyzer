@@ -13,7 +13,25 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from .analysis_run_result import CampaignResult
+
+@dataclass(frozen=True, slots=True)
+class AnalysisInventoryEntry:
+    """One detection CSV found on disk, described for display.
+
+    A found artifact, not the result of a run: it carries only what discovery
+    can read back from disk (where the CSV and the applied species list are, how
+    many detections the CSV holds, which model produced it). It has no temporal
+    or input-scope data, so it never carries the sentinel elapsed=0.0 or
+    warnings=() a reused run type would leave behind. Multiple models of the
+    same campaign coexist as sibling entries tagged by model_key.
+    """
+
+    campaign_name: str
+    output_dir: Path
+    detections_csv: Path
+    species_list_txt: Path | None  # location mode only
+    detection_count: int
+    model_key: str = ""  # model that produced this CSV, inferred from its filename
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,7 +86,7 @@ class AnalysisInventory:
     """Every detection result on disk under a project, as a display view.
 
     Built by discovery from all campaign CSVs, so it spans every campaign and
-    model, one CampaignResult per CSV.
+    model, one AnalysisInventoryEntry per CSV.
     """
 
-    campaigns: tuple[CampaignResult, ...]
+    campaigns: tuple[AnalysisInventoryEntry, ...]

@@ -47,7 +47,7 @@ from ..domain import (
     week_from_path,
 )
 from ..domain import detection_schema as schema
-from ..domain.analysis_run_result import AnalysisRunResult, CampaignResult, RunStatus
+from ..domain.analysis_run_result import AnalysisRunResult, CampaignRunResult, RunStatus
 from ..domain.audio_import import WEEK_YEAR_ROUND, parse_recording_time
 from ._analysis_helpers import (
     RunGlobalProgress,
@@ -130,7 +130,7 @@ class BaseAnalysisRunner(ABC):
         # cancel or a mid-batch failure must not throw the completed ones
         # away. Instead of raising past `results`, the loop stops and the
         # accumulated campaigns are returned with the outcome that ended it.
-        results: list[CampaignResult] = []
+        results: list[CampaignRunResult] = []
         total = len(campaigns)
         files_completed = 0
         status = RunStatus.COMPLETED
@@ -182,7 +182,7 @@ class BaseAnalysisRunner(ABC):
         campaign_index: int,
         total_campaigns: int,
         model: Any,
-    ) -> CampaignResult:
+    ) -> CampaignRunResult:
         campaign_name = campaign.name
         t0 = time.monotonic()
         # Analysis artifacts live inside the campaign folder itself, so a
@@ -213,11 +213,12 @@ class BaseAnalysisRunner(ABC):
 
         # Write the applied per-week allow-list (geo + must-haves) alongside
         # the detections so the user can inspect exactly what the model was
-        # asked to consider. Must-have entries are tagged with a
-        # `# must-have` marker; the parser ignores comments so the file
-        # round-trips cleanly if anyone pastes lines back into a campaign's
-        # species_list.txt.
-        species_list_txt = write_species_list_files(
+        # asked to consider. Must-have entries are tagged with a `# must-have`
+        # marker. The parser ignores comments so the file round-trips cleanly
+        # if anyone pastes lines back into a campaign's species_list.txt. The
+        # written path is rediscovered on demand (AnalysisInventoryEntry), so
+        # the run result does not need to carry it.
+        write_species_list_files(
             output_dir, resolved.per_week_allowed, resolved.must_haves
         )
 
@@ -235,16 +236,13 @@ class BaseAnalysisRunner(ABC):
                 files_total=0,
                 phase="done",
             )
-            return CampaignResult(
+            return CampaignRunResult(
                 campaign_name=campaign_name,
-                output_dir=output_dir,
                 detections_csv=detections_csv,
-                species_list_txt=species_list_txt,
                 detection_count=0,
                 wav_count=0,
                 aru_count=0,
                 elapsed=time.monotonic() - t0,
-                model_key=self.model_key,
             )
 
         emit_progress(
@@ -460,16 +458,13 @@ class BaseAnalysisRunner(ABC):
             phase="done",
         )
 
-        return CampaignResult(
+        return CampaignRunResult(
             campaign_name=campaign_name,
-            output_dir=output_dir,
             detections_csv=detections_csv,
-            species_list_txt=species_list_txt,
             detection_count=detection_count,
             wav_count=wav_count,
             aru_count=len(aru_set),
             elapsed=time.monotonic() - t0,
-            model_key=self.model_key,
         )
 
     def _birdnet_session_log_path(self, session: Any) -> Path | None:

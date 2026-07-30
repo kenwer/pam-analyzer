@@ -1,10 +1,12 @@
 """The result of one analysis run: how it ended and what it produced.
 
-A AnalysisRunResult is the transient event of one run invocation. It is distinct
-from AnalysisInventory (in `inventory`), which is the persistent on-disk view
-of every result discovery finds, independent of any single run. They share
-CampaignResult as their element but answer different questions ("how did the
-run go?" vs "what results exist?").
+An AnalysisRunResult is the transient event of one run invocation. It is
+distinct from AnalysisInventory (in `inventory`), the persistent on-disk view
+of every result discovery finds, independent of any single run. The two answer
+different questions ("how did the run go?" vs "what results exist?") and no
+longer share an element type: a run produces CampaignRunResult, discovery
+produces AnalysisInventoryEntry. The fields overlap only where the two views
+genuinely agree (campaign_name, detections_csv, detection_count).
 """
 
 from dataclasses import dataclass
@@ -13,17 +15,24 @@ from pathlib import Path
 
 
 @dataclass(frozen=True, slots=True)
-class CampaignResult:
+class CampaignRunResult:
+    """One campaign's outcome within a single run.
+
+    Every field here is run-event data the CLI summary reports: how many files
+    and ARUs were seen, how long the campaign took, how many detections it
+    produced, and any warnings. The paths that outlive the run (output_dir,
+    species_list_txt) and the model tag are not carried here: only the on-disk
+    view (AnalysisInventoryEntry) reads them, so keeping them here would just be
+    write-only noise.
+    """
+
     campaign_name: str
-    output_dir: Path
     detections_csv: Path
-    species_list_txt: Path | None  # location mode only
     detection_count: int
     wav_count: int
     aru_count: int
     elapsed: float
     warnings: tuple[str, ...] = ()
-    model_key: str = "" # Model that produced this row (allows the BirdNET panel to add hints)
 
 
 class RunStatus(Enum):
@@ -50,6 +59,6 @@ class AnalysisRunResult:
     """
 
     status: RunStatus
-    campaigns: tuple[CampaignResult, ...] = ()
+    campaigns: tuple[CampaignRunResult, ...] = ()
     elapsed: float = 0.0
     error: str | None = None

@@ -19,7 +19,7 @@ from pam_analyzer.domain import (
     FilterMode,
     RunStatus,
 )
-from pam_analyzer.domain.analysis_run_result import CampaignResult
+from pam_analyzer.domain.analysis_run_result import CampaignRunResult
 from pam_analyzer.infrastructure.base_analysis_runner import BaseAnalysisRunner
 
 
@@ -62,20 +62,17 @@ class _StubRunner(BaseAnalysisRunner):
     def _parse_row(self, *args: Any, **kwargs: Any) -> Any:  # pragma: no cover
         raise AssertionError("_run_campaign is stubbed, so no row is parsed")
 
-    def _run_campaign(self, campaign: Campaign, *_a: Any, **_k: Any) -> CampaignResult:
+    def _run_campaign(self, campaign: Campaign, *_a: Any, **_k: Any) -> CampaignRunResult:
         if campaign.name == self._fail_on:
             raise RuntimeError(f"boom in {campaign.name}")
         self.ran.append(campaign.name)
-        return CampaignResult(
+        return CampaignRunResult(
             campaign_name=campaign.name,
-            output_dir=campaign.folder,
             detections_csv=campaign.folder / "detections-Stub-1.0.csv",
-            species_list_txt=None,
             detection_count=0,
             wav_count=0,
             aru_count=0,
             elapsed=0.0,
-            model_key=self.model_key,
         )
 
 

@@ -8,7 +8,7 @@ not a run event, so it carries no outcome.
 
 from pathlib import Path
 
-from ..domain import AnalysisInventory, CampaignResult, paths
+from ..domain import AnalysisInventory, AnalysisInventoryEntry, paths
 from ..domain import detection_schema as schema
 
 
@@ -19,11 +19,11 @@ def discover_analysis_inventory(project_folder: Path) -> AnalysisInventory | Non
     one where analysis has never been run). A missing species-list file is
     not an error. It is recorded as None.
 
-    One CampaignResult is emitted per CSV so multiple model runs of the
+    One AnalysisInventoryEntry is emitted per CSV so multiple model runs of the
     same campaign coexist as sibling rows tagged with model_key. The panel
     filters by the active model_key to show just the matching run.
     """
-    campaigns: list[CampaignResult] = []
+    campaigns: list[AnalysisInventoryEntry] = []
     for folder in paths.campaign_folders(project_folder):
         for csv_path in schema.campaign_csvs(folder):
             campaigns.append(_synthesize_campaign(folder, csv_path))
@@ -34,20 +34,17 @@ def discover_analysis_inventory(project_folder: Path) -> AnalysisInventory | Non
     return AnalysisInventory(campaigns=tuple(campaigns))
 
 
-def _synthesize_campaign(campaign_folder: Path, csv_path: Path) -> CampaignResult:
-    """Build a CampaignResult for one on-disk detection CSV.
+def _synthesize_campaign(campaign_folder: Path, csv_path: Path) -> AnalysisInventoryEntry:
+    """Build an AnalysisInventoryEntry for one on-disk detection CSV.
 
     model_key is inferred from the filename: detections-<key>.csv.
     """
-    return CampaignResult(
+    return AnalysisInventoryEntry(
         campaign_name=campaign_folder.name,
         output_dir=campaign_folder,
         detections_csv=csv_path,
         species_list_txt=_optional(paths.applied_species_list_file(campaign_folder)),
         detection_count=_count_csv_rows(csv_path),
-        wav_count=0,
-        aru_count=0,
-        elapsed=0.0,
         model_key=schema.model_key_from_csv_name(csv_path.name) or "",
     )
 

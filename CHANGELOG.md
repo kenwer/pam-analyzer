@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+### Changed
+- [Dev] Split the per-campaign result element into `CampaignRunResult` and `AnalysisInventoryEntry`.
+
 ## [0.5.4] - 2026-07-28
 ### Fixed
 - Cancelling or failing an analysis run now shows the campaigns that already finished, instead of a blank results panel.

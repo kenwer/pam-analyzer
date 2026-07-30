@@ -4,7 +4,7 @@ from .analysis import (
     AnalysisRunner,
     CancelledError,
 )
-from .analysis_run_result import AnalysisRunResult, CampaignResult, RunStatus
+from .analysis_run_result import AnalysisRunResult, CampaignRunResult, RunStatus
 from .audio_import import (
     CardImportResult,
     CardQueue,
@@ -26,6 +26,7 @@ from .detections import filter_top_per_aru_species
 from .enums import FilterMode, VerifiedState
 from .inventory import (
     AnalysisInventory,
+    AnalysisInventoryEntry,
     AudioInventory,
     CampaignInventory,
     CardInventory,
@@ -39,13 +40,14 @@ __all__ = [
     "AnalysisProgress",
     "AnalysisProgressSnapshot",
     "AnalysisInventory",
+    "AnalysisInventoryEntry",
     "AnalysisRunner",
     "AnalysisSettings",
     "AudioInventory",
     "CancelledError",
     "Campaign",
     "CampaignInventory",
-    "CampaignResult",
+    "CampaignRunResult",
     "CardImportResult",
     "CardInventory",
     "CardQueue",
