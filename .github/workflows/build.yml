@@ -14,12 +14,8 @@ permissions:
   contents: write
 
 jobs:
-  test:
-    uses: ./.github/workflows/test.yml
-
   build:
     name: Build (${{ matrix.name }})
-    needs: test
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -69,52 +65,18 @@ jobs:
           fi
           echo "ARCHIVE_NAME=PAM-Analyzer-${{ matrix.os_name }}-${{ matrix.arch }}.${{ matrix.archive_ext }}" >> $GITHUB_ENV
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v9.0.0
+      - name: Setup environment
+        uses: ./.github/actions/setup-env
 
-      - name: Install system dependencies
-        # On Linux Qt requires libEGL.so.1, libpulse.so.0, the X11, and gstreamer libs
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y libegl1 libpulse0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-util1 libxcb-render-util0 libxcb-image0 libxcb-shape0 libxcb-xkb1 libxcb-icccm4 libxcb-keysyms1 libtiff6 libminizip1t64 libgstreamer-plugins-base1.0-0 libgstreamer-plugins-good1.0-0 libgstreamer-plugins-bad1.0-0 libgstreamer-gl1.0-0
-
-      - name: Cache BirdNET models
-        uses: actions/cache@v6
-        with:
-          path: dist/.birdnet-models
-          key: birdnet-models-${{ hashFiles('uv.lock', 'src/pam_analyzer/infrastructure/model_versions.py') }}
-
-      - name: Prewarm models
-        run: uv run --script scripts/build.py --prewarm-only
+      - name: Run tests
+        timeout-minutes: 15
+        uses: ./.github/actions/run-tests
 
       - name: Build distributable
-        run: uv run --script scripts/build.py
-
-      - name: Package archive
-        shell: bash
-        run: |
-          cd dist
-          versioned="pam-analyzer-${VERSION}-${{ matrix.os_name }}-${{ matrix.arch }}"
-          case "${{ matrix.os_name }}" in
-            macos)
-              mv pam-analyzer.app "${versioned}.app"
-              # -y stores the bundle's ~2000 internal symlinks as symlinks.
-              # Without it zip dereferences them, duplicating gigabytes of
-              # Frameworks/Resources content and blowing past the 2 GiB
-              # GitHub release asset limit.
-              zip -r -9 -y "$ARCHIVE_NAME" "${versioned}.app"
-              rm -rf "${versioned}.app"
-              ;;
-            windows)
-              mv pam-analyzer.exe "${versioned}.exe"
-              7z a -mx=9 "$ARCHIVE_NAME" "${versioned}.exe"
-              ;;
-            linux)
-              mv pam-analyzer "$versioned"
-              tar -czf "$ARCHIVE_NAME" "$versioned"
-              ;;
-          esac
+        uses: ./.github/actions/build-dist
+        with:
+          os_name: ${{ matrix.os_name }}
+          arch: ${{ matrix.arch }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7

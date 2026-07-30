@@ -1,0 +1,28 @@
+name: Setup environment
+description: Install uv, system dependencies, and prewarm the BirdNET models cache. Assumes the repo is already checked out.
+
+runs:
+  using: composite
+  steps:
+    - name: Install uv
+      uses: astral-sh/setup-uv@v9.0.0
+
+    - name: Install system dependencies
+      # On Linux Qt requires libEGL.so.1, libpulse.so.0, the X11, and gstreamer libs
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update -q
+        sudo apt-get install -y libegl1 libpulse0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-util1 libxcb-render-util0 libxcb-image0 libxcb-shape0 libxcb-xkb1 libxcb-icccm4 libxcb-keysyms1 libtiff6 libminizip1t64 libgstreamer-plugins-base1.0-0 libgstreamer-plugins-good1.0-0 libgstreamer-plugins-bad1.0-0 libgstreamer-gl1.0-0
+
+    - name: Cache BirdNET models
+      uses: actions/cache@v6
+      with:
+        path: dist/.birdnet-models
+        key: birdnet-models-${{ hashFiles('uv.lock', 'src/pam_analyzer/infrastructure/model_versions.py') }}
+
+    # Populates the cache (with retry-on-failure) up front, so a cold cache
+    # never triggers a bare, un-retried download from inside pytest or the build.
+    - name: Prewarm models
+      shell: bash
+      run: uv run --script scripts/build.py --prewarm-only

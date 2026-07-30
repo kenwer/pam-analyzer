@@ -4,6 +4,7 @@
 ### Changed
 - [Dev] CI runs the test suite on every commit but only builds distributables on manual dispatch or release.
 - [Dev] Bump GitHub Actions `checkout`, `cache`, `upload-artifact`, `action-gh-release`, `setup-uv`.
+- [Dev] Extract the shared CI setup, test, and build steps into local composite actions `setup-env`, `run-tests`, `build-dist`.
 
 ## [0.5.5] - 2026-07-30
 ### Changed
