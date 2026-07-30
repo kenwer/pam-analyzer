@@ -124,13 +124,13 @@ def scanner() -> _FakeScanner:
 
 
 @pytest.fixture
-def panel(qtbot, project_with_campaign, scanner: _FakeScanner) -> CampaignsPanel:
+def panel(qtbot, project_with_campaign, scanner: _FakeScanner, load_project) -> CampaignsPanel:
     proj, _ = project_with_campaign
     state = AppState()
     orchestrator = ImportOrchestrator(AudioImporter(), scanner)
     p = CampaignsPanel(state, orchestrator, AppSettings())
     qtbot.addWidget(p)
-    state.load_project(proj.folder)
+    load_project(state, proj.folder)
     return p
 
 

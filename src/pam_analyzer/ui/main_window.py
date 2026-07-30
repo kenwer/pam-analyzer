@@ -517,6 +517,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802  Qt API
         self._birdnet_panel.request_shutdown()
         self._campaigns_panel.request_shutdown()
+        self._app_state.request_shutdown()
         self._shutdown_project_load()
         self._settings.window_geometry = self.saveGeometry()
         super().closeEvent(event)

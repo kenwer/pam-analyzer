@@ -2,11 +2,11 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal, Slot
 
-from ..infrastructure import load_project_bundle
+from ..infrastructure import load_project
 
 
 class ProjectLoadWorker(QObject):
-    """Runs load_project_bundle() on a worker thread.
+    """Runs load_project() on a worker thread.
 
     Reading project.toml, discovering campaigns, and walking the audio tree
     are each a filesystem pass over the project folder, which can be slow on
@@ -24,7 +24,7 @@ class ProjectLoadWorker(QObject):
     @Slot()
     def run(self) -> None:
         try:
-            result = load_project_bundle(self._folder)
+            result = load_project(self._folder)
         except Exception as exc:  # noqa: BLE001
             self.failed.emit(f"Failed to open {self._folder.name}: {exc}")
             return

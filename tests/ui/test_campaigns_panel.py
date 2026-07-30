@@ -8,17 +8,18 @@ from pathlib import Path
 
 import pytest
 
-from pam_analyzer.domain import Campaign, FilterMode, LatLon, Project
+from pam_analyzer.domain import AudioInventory, Campaign, FilterMode, LatLon, Project
 from pam_analyzer.domain.audio_import import DetectedCard, ImportSource
 from pam_analyzer.infrastructure import AudioImporter
 from pam_analyzer.ui.app_state import AppState
+from pam_analyzer.ui.models.audio_inventory_tree_model import SIZE_PENDING
 from pam_analyzer.ui.panels.campaigns_panel import (
     SORT_ORDER_LABELS,
     CampaignSortOrder,
     CampaignsPanel,
 )
 from pam_analyzer.ui.settings import AppSettings
-from pam_analyzer.workers import ImportOrchestrator
+from pam_analyzer.workers import AudioInventoryRefresher, ImportOrchestrator
 
 
 class _FakeScanner:
@@ -34,6 +35,19 @@ class _FakeScanner:
         return list(self._cards)
 
     def eject(self, card: DetectedCard) -> None:  # pragma: no cover - test helper
+        pass
+
+
+class _NeverResolvingRefresher(AudioInventoryRefresher):
+    """A refresher stand-in whose refresh() never emits inventoryReady.
+
+    Lets a test observe the transient size-less state deterministically:
+    apply_loaded_project now kicks off the real size pass automatically, and
+    for tiny test fixtures it can finish fast enough to race qtbot's
+    event-pumping waitUntil and flip a "still pending" assertion mid-test.
+    """
+
+    def refresh(self, folder: Path, inventory: AudioInventory | None = None) -> None:
         pass
 
 
@@ -86,7 +100,25 @@ def project_with_campaign(tmp_path: Path) -> tuple[Project, Campaign]:
 
 @pytest.fixture
 def state(project_with_campaign) -> AppState:
-    return AppState()
+    s = AppState()
+    yield s
+    # refresh_audio_inventory now rebuilds on a worker thread. Drain any in-flight
+    # rebuild so a worker cannot outlive the test and segfault during teardown.
+    s.request_shutdown()
+
+
+def _wait_campaign_files(qtbot, state: AppState, name: str, count: int) -> None:
+    """Wait for an async refresh to land a campaign with the expected file count.
+
+    refresh_audio_inventory rebuilds off the UI thread and hands back the size-less
+    tree first, so the file count (which the structure walk already knows) is visible
+    before per-file sizes resolve. Every assertion here is structure-level, so waiting
+    on the count is enough."""
+    qtbot.waitUntil(
+        lambda: (inv := state.audio_inventory.for_campaign(name)) is not None
+        and inv.file_count == count,
+        timeout=2000,
+    )
 
 
 @pytest.fixture
@@ -96,13 +128,13 @@ def scanner() -> _FakeScanner:
 
 @pytest.fixture
 def panel(
-    qtbot, state: AppState, project_with_campaign, scanner: _FakeScanner
+    qtbot, state: AppState, project_with_campaign, scanner: _FakeScanner, load_project
 ) -> CampaignsPanel:
     proj, _ = project_with_campaign
     orchestrator = ImportOrchestrator(AudioImporter(), scanner)
     p = CampaignsPanel(state, orchestrator, AppSettings())
     qtbot.addWidget(p)
-    state.load_project(proj.folder)
+    load_project(state, proj.folder)
     return p
 
 
@@ -130,6 +162,42 @@ def test_selecting_campaign_opens_view_page(qtbot, panel: CampaignsPanel):
     assert panel._detail.ui.view_name_label.text() == "alpha"
     # Filter summary should describe the location-mode campaign.
     assert "Location" in panel._detail.ui.view_filter_label.text()
+
+
+def test_selecting_campaign_with_pending_sizes_does_not_crash(
+    qtbot, project_with_campaign, scanner: _FakeScanner, load_project
+):
+    """Opening a project applies a size-less inventory (total_bytes None) until
+    the AudioInventoryRefresher's size pass finishes. Selecting a campaign with
+    audio in that window must render the size placeholder, not crash on
+    format_bytes(None).
+
+    Uses a refresher stand-in that never resolves rather than the shared
+    `state` fixture's real one, so the pending window is deterministic instead
+    of racing the real background worker (see _NeverResolvingRefresher).
+    """
+    proj, campaign = project_with_campaign
+    card = campaign.folder / "MSD-TEST" / "week_01"
+    card.mkdir(parents=True)
+    (card / "20240101_120000.WAV").write_bytes(b"\x00" * 2048)
+
+    state = AppState(audio_refresher=_NeverResolvingRefresher())
+    orchestrator = ImportOrchestrator(AudioImporter(), scanner)
+    panel = CampaignsPanel(state, orchestrator, AppSettings())
+    qtbot.addWidget(panel)
+    load_project(state, proj.folder)  # structure-only pass: sizes stay pending
+    assert state.audio_inventory.sizes_pending is True
+
+    index = panel._model.index(0, 0)
+    panel.ui.campaign_list.setCurrentIndex(index)
+    qtbot.waitUntil(
+        lambda: panel._detail.ui.stack.currentWidget() is panel._detail.ui.view_page,
+        timeout=1000,
+    )
+
+    text = panel._detail.ui.inventory_label.text()
+    assert "1 files" in text  # count renders immediately
+    assert SIZE_PENDING in text  # summary shows the pending placeholder, not bytes
 
 
 def test_edit_button_switches_to_form(qtbot, panel: CampaignsPanel):
@@ -168,6 +236,7 @@ def test_inventory_tree_reflects_imported_files(
     (card / "week_01" / "20240101_120000.WAV").write_bytes(b"\x00" * 2048)
     (card / "week_01" / "20240102_120000.WAV").write_bytes(b"\x00" * 1024)
     state.refresh_audio_inventory()
+    _wait_campaign_files(qtbot, state, "alpha", 2)
 
     # Select the campaign so the detail lands on the view page.
     index = panel._model.index(0, 0)
@@ -457,17 +526,18 @@ def test_open_campaign_folder_uses_desktop_services(
 
 
 def test_inventory_clears_when_project_switches(
-    qtbot, panel: CampaignsPanel, state: AppState, project_with_campaign, tmp_path: Path
+    qtbot, panel: CampaignsPanel, state: AppState, project_with_campaign, tmp_path: Path,
+    load_project,
 ):
     _proj, campaign = project_with_campaign
     (campaign.folder / "MSD-X" / "week_01").mkdir(parents=True)
     (campaign.folder / "MSD-X" / "week_01" / "a.WAV").write_bytes(b"\x00" * 16)
     state.refresh_audio_inventory()
-    assert state.audio_inventory.for_campaign("alpha") is not None
+    _wait_campaign_files(qtbot, state, "alpha", 1)
 
     other = Project(folder=tmp_path / "other")
     other.save()
-    state.load_project(other.folder)
+    load_project(state, other.folder)
 
     assert state.audio_inventory.campaigns == ()
 
@@ -586,24 +656,28 @@ def test_rename_rejects_windows_hostile_name(
 
 
 def test_rename_campaign_rekeys_audio_inventory(
-    state: AppState, project_with_campaign
+    qtbot, state: AppState, project_with_campaign, load_project
 ):
     """Renaming rebuilds the audio inventory, not just the campaign list.
 
     The inventory is keyed by campaign name, so a rename that refreshed only
     the list would strand the renamed campaign's file count under its old name
     (the same class of stale-count bug as a delete or create). Guards that
-    rename_campaign goes through the shared derived-state rebuild.
+    rename_campaign goes through the shared derived-state rebuild. The rebuild is
+    async, and it replaces the inventory whole, so once "beta" appears "alpha" is
+    already gone.
     """
     _proj, campaign = project_with_campaign
     (campaign.folder / "20240101_120000.WAV").write_bytes(b"\x00" * 2048)
-    state.load_project(_proj.folder)
+    load_project(state, _proj.folder)
     assert state.audio_inventory.for_campaign("alpha") is not None
 
     state.rename_campaign(campaign, "beta")
 
+    qtbot.waitUntil(
+        lambda: state.audio_inventory.for_campaign("beta") is not None, timeout=2000
+    )
     assert state.audio_inventory.for_campaign("alpha") is None
-    assert state.audio_inventory.for_campaign("beta") is not None
 
 
 def test_duplicate_name_check_ignores_unicode_normalization(panel: CampaignsPanel):

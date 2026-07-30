@@ -44,7 +44,7 @@ class AudioInventoryTreeModel(QStandardItemModel):
         name = QStandardItem(card.name)
         name.setData(card.folder, _ROLE_PATH)
         files = QStandardItem(str(card.file_count))
-        size = QStandardItem(format_bytes(card.total_bytes))
+        size = QStandardItem(format_size(card.total_bytes))
         for item in (name, files, size):
             item.setEditable(False)
         return [name, files, size]
@@ -55,21 +55,34 @@ class AudioInventoryTreeModel(QStandardItemModel):
         # Week itself has no folder of its own here (files live under
         # card/week_NN/), but children get their per-file paths.
         files = QStandardItem(str(len(week.files)))
-        size = QStandardItem(format_bytes(week.total_bytes))
+        size = QStandardItem(format_size(week.total_bytes))
         for item in (name, files, size):
             item.setEditable(False)
-        for path, sz in zip(week.files, week.file_sizes, strict=True):
+        # file_sizes is None until the size pass runs, but show the files either way.
+        file_sizes = week.file_sizes if week.file_sizes is not None else (None,) * len(week.files)
+        for path, sz in zip(week.files, file_sizes, strict=True):
             name.appendRow(self._file_row(path, sz))
         return [name, files, size]
 
-    def _file_row(self, path: Path, size: int) -> list[QStandardItem]:
+    def _file_row(self, path: Path, size: int | None) -> list[QStandardItem]:
         name = QStandardItem(path.name)
         name.setData(path, _ROLE_PATH)
         empty = QStandardItem("")
-        size_item = QStandardItem(format_bytes(size))
+        size_item = QStandardItem(format_size(size))
         for item in (name, empty, size_item):
             item.setEditable(False)
         return [name, empty, size_item]
+
+
+# Placeholder shown wherever a byte total is not yet known: the tree's Size
+# column and the overview/detail summary lines both render it until the size
+# pass fills their totals in.
+SIZE_PENDING = "computing..."
+
+
+def format_size(n: int | None) -> str:
+    """Human-readable bytes, or a placeholder while the size pass is pending."""
+    return SIZE_PENDING if n is None else format_bytes(n)
 
 
 def format_bytes(n: int) -> str:

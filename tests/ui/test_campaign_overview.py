@@ -9,6 +9,7 @@ from pam_analyzer.domain import (
     date_range_from_stems,
     merge_date_ranges,
 )
+from pam_analyzer.ui.models.audio_inventory_tree_model import SIZE_PENDING
 from pam_analyzer.ui.models.campaign_overview import CampaignOverviewEntry, render_overview
 
 
@@ -80,6 +81,57 @@ def test_format_blank_dates_without_timestamps():
 
 def test_format_empty_list_is_blank():
     assert render_overview([]) == ("", "")
+
+
+def _pending_campaign(name: str, stamps: list[str]) -> CampaignInventory:
+    """A campaign as it looks after the structure walk but before sizes land."""
+    files = tuple(Path(f"{s}.WAV") for s in stamps)
+    date_range = date_range_from_stems(stamps)
+    week = WeekInventory(week=1, files=files, total_bytes=None, file_sizes=None, date_range=date_range)
+    card = CardInventory(
+        name="ARU_01", folder=Path("ARU_01"), weeks=(week,), file_count=len(files),
+        total_bytes=None, date_range=date_range,
+    )
+    return CampaignInventory(
+        name=name, folder=Path(name), cards=(card,), file_count=len(files),
+        total_bytes=None, date_range=date_range,
+    )
+
+
+def test_pending_sizes_show_placeholder_and_omit_inline_bytes():
+    entry = CampaignOverviewEntry(
+        name="Meadow", filter_text="", inventory=_pending_campaign("Meadow", ["20240501_060000"])
+    )
+    summary, html = render_overview([entry])
+
+    assert SIZE_PENDING in summary  # Disk usage row while the size pass runs
+    assert "1 file" in html  # counts render immediately
+    assert " B" not in html and "KB" not in html and "MB" not in html  # no byte figure yet
+
+
+def _empty_campaign(name: str) -> CampaignInventory:
+    """A created-but-not-yet-imported campaign: no files, size known to be 0.
+
+    Discovery gives an empty campaign total_bytes=0 (not the pending None), since
+    there is nothing to stat. See discover_audio_structure._build_campaign_inventory.
+    """
+    return CampaignInventory(
+        name=name, folder=Path(name), cards=(), file_count=0, total_bytes=0, date_range=None
+    )
+
+
+def test_all_empty_project_totals_zero_not_pending():
+    """An empty campaign is not size-pending, so a project whose campaigns are all
+    empty shows a real 0 in the Disk usage row, never a stuck "computing..."
+    (that project never runs a size pass, so a pending marker would be permanent)."""
+    entries = [
+        CampaignOverviewEntry(name=n, filter_text="", inventory=_empty_campaign(n))
+        for n in ("alpha", "beta")
+    ]
+    summary, _html = render_overview(entries)
+
+    assert SIZE_PENDING not in summary
+    assert "0 B" in summary  # Disk usage rolls up to a known zero
 
 
 def test_project_summary_merges_campaign_ranges():

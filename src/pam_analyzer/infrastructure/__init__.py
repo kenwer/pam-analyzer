@@ -1,7 +1,11 @@
 from .analysis_inventory_discovery import discover_analysis_inventory
 from .audio_extractor import SoundfileAudioExtractor
 from .audio_import import AudioImporter
-from .audio_inventory_discovery import discover_audio_inventory
+from .audio_inventory_discovery import (
+    discover_audio_inventory,
+    discover_audio_structure,
+    resolve_audio_sizes,
+)
 from .birdnet_runner import BirdnetRunner
 from .pamproj_migration import (
     AudioRootNotFound,
@@ -12,7 +16,7 @@ from .pamproj_migration import (
     migrate,
 )
 from .perch_runner import PerchRunner
-from .project_loader import ProjectLoadResult, load_project_bundle
+from .project_loader import ProjectLoadResult, load_project
 from .psutil_sdcard_scanner import PsutilSdCardScanner
 
 __all__ = [
@@ -27,8 +31,10 @@ __all__ = [
     "SoundfileAudioExtractor",
     "discover_analysis_inventory",
     "discover_audio_inventory",
+    "discover_audio_structure",
+    "resolve_audio_sizes",
     "find_legacy_pamproj",
     "load_legacy",
-    "load_project_bundle",
+    "load_project",
     "migrate",
 ]

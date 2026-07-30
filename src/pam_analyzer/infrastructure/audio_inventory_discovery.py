@@ -21,6 +21,7 @@ from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Event
 
 from ..domain import AudioInventory, CampaignInventory, CardInventory, WeekInventory, paths
 from ..domain.audio_import import WEEK_YEAR_ROUND, date_range_from_stems, merge_date_ranges
@@ -47,14 +48,28 @@ class _CardStructure:
 
 
 def discover_audio_inventory(project_folder: Path) -> AudioInventory:
-    """Build an AudioInventory from the filesystem under the project folder.
+    """Build a fully sized AudioInventory from the filesystem under a project.
 
-    Directory structure and file sizes are both resolved with a bounded
-    thread pool: on local disks the per-entry type/size checks are
-    effectively free, but on network filesystems like SMB each one can be
-    its own round trip, so doing thousands of them one at a time serializes
-    on latency rather than throughput. Safe to call synchronously from the
-    UI thread on project load and after each import.
+    Runs both discovery phases back to back:
+      - the structure walk
+      - followed by the per-file size stat
+    """
+    return resolve_audio_sizes(discover_audio_structure(project_folder))
+
+
+def discover_audio_structure(project_folder: Path) -> AudioInventory:
+    """Build an AudioInventory with counts, tree, and date ranges but no sizes.
+
+    This is the first of two phases. It walks the campaign/card/week/file tree
+    and reads everything that a directory listing provides: file counts, the
+    card/week structure, and date ranges parsed from filenames. It does not
+    stat any file, so every total_bytes comes back None (see
+    inventory.AudioInventory.sizes_pending). resolve_audio_sizes fills those in.
+
+    The walk still uses a bounded thread pool: on local disks the per-entry
+    type checks are effectively free, but on network filesystems like SMB each
+    one can be its own round trip, so doing thousands one at a time serializes
+    on latency rather than throughput.
     """
     dbg = _log.isEnabledFor(logging.DEBUG)
     t0 = time.perf_counter() if dbg else 0.0
@@ -63,29 +78,53 @@ def discover_audio_inventory(project_folder: Path) -> AudioInventory:
     if not campaign_dirs:
         return AudioInventory()
     if dbg:
-        _log.debug("audio_inventory: %d campaign dirs, candidate scan %.2fs", len(campaign_dirs), time.perf_counter() - t0)
+        _log.debug("audio_structure: %d campaign dirs, candidate scan %.2fs", len(campaign_dirs), time.perf_counter() - t0)
 
     with ThreadPoolExecutor(max_workers=_MAX_STAT_WORKERS) as pool:
         t1 = time.perf_counter() if dbg else 0.0
         structures = _walk_campaigns(campaign_dirs, pool)
         if dbg:
-            _log.debug("audio_inventory: structure walk %.2fs", time.perf_counter() - t1)
+            _log.debug("audio_structure: structure walk %.2fs", time.perf_counter() - t1)
 
-        all_files = [
-            path
-            for cards in structures.values()
-            for card in cards
-            for files in card.by_week.values()
-            for path in files
-        ]
-        t2 = time.perf_counter() if dbg else 0.0
-        sizes = _resolve_sizes(all_files, pool)
-        if dbg:
-            _log.debug("audio_inventory: stat %d files %.2fs", len(all_files), time.perf_counter() - t2)
-            _log.debug("audio_inventory: total %.2fs", time.perf_counter() - t0)
-
-    campaigns = tuple(_build_campaign_inventory(d, structures[d], sizes) for d in campaign_dirs)
+    campaigns = tuple(_build_campaign_inventory(d, structures[d]) for d in campaign_dirs)
     return AudioInventory(campaigns=campaigns)
+
+
+def resolve_audio_sizes(inventory: AudioInventory, cancel: Event | None = None) -> AudioInventory:
+    """Return a copy of inventory with every file's byte size stat'd and summed.
+
+    The second of two phases. It reads the file paths already discovered by the
+    structure walk and stats each one, so it does no directory listing, only the
+    per-file round trips that carry size. On a network mount that is the slow
+    part, which is why project open runs it off the load critical path.
+
+    cancel lets a caller abandon a long stat pass (e.g. the user switched
+    projects). When it is set the original, still-pending inventory is returned
+    unchanged rather than a half-stat'd one. Safe because the caller discards a
+    pending inventory the same as never having called this at all.
+
+    The inventory owns both halves of the pure work: it enumerates its own files
+    (iter_files) and rebuilds itself from the resulting size map (with_sizes).
+    This function is just the I/O between them: statting each file, concurrently,
+    because on a network mount that is the slow part.
+    """
+    all_files = list(inventory.iter_files())
+    if cancel is not None and cancel.is_set():
+        return inventory
+
+    dbg = _log.isEnabledFor(logging.DEBUG)
+    t0 = time.perf_counter() if dbg else 0.0
+    if all_files:
+        with ThreadPoolExecutor(max_workers=_MAX_STAT_WORKERS) as pool:
+            sizes = _resolve_sizes(all_files, pool, cancel)
+    else:
+        sizes = {}
+    if dbg:
+        _log.debug("audio_sizes: stat %d files %.2fs", len(all_files), time.perf_counter() - t0)
+
+    if cancel is not None and cancel.is_set():
+        return inventory
+    return inventory.with_sizes(sizes)
 
 
 def _walk_campaigns(campaign_dirs: list[Path], pool: ThreadPoolExecutor) -> dict[Path, list[_CardStructure]]:
@@ -164,10 +203,19 @@ def _classify[T](pool: ThreadPoolExecutor, fn: Callable[[T], bool], entries: Ite
     return dict(zip(entries, pool.map(fn, entries), strict=True))
 
 
-def _resolve_sizes(file_paths: list[Path], pool: ThreadPoolExecutor) -> dict[Path, int]:
+def _resolve_sizes(
+    file_paths: list[Path], pool: ThreadPoolExecutor, cancel: Event | None = None
+) -> dict[Path, int]:
     if not file_paths:
         return {}
-    return dict(zip(file_paths, pool.map(_path_size, file_paths), strict=True))
+    if cancel is None:
+        sizes = pool.map(_path_size, file_paths)
+    else:
+        # Once cancel is set, short-circuit the remaining files to skip their
+        # stat round trip so the pool drains fast. The caller checks cancel
+        # afterwards and discards this partial map, so the zeros never surface.
+        sizes = pool.map(lambda p: 0 if cancel.is_set() else _path_size(p), file_paths)
+    return dict(zip(file_paths, sizes, strict=True))
 
 
 def _path_size(path: Path) -> int:
@@ -177,33 +225,35 @@ def _path_size(path: Path) -> int:
         return 0
 
 
-def _build_campaign_inventory(
-    campaign_dir: Path, cards: list[_CardStructure], sizes: dict[Path, int]
-) -> CampaignInventory:
-    built = [_build_card_inventory(card, sizes) for card in cards]
+def _build_campaign_inventory(campaign_dir: Path, cards: list[_CardStructure]) -> CampaignInventory:
+    """Assemble a campaign's structure with sizes left unresolved (total_bytes=None).
+
+    Counts, the card/week tree, and date ranges (parsed from filenames) all come
+    from the walk. Byte totals are filled in later by resolve_audio_sizes.
+    """
+    built = [_build_card_inventory(card) for card in cards]
     built = [card for card in built if card.file_count > 0]
     return CampaignInventory(
         name=campaign_dir.name,
         folder=campaign_dir,
         cards=tuple(built),
         file_count=sum(c.file_count for c in built),
-        total_bytes=sum(c.total_bytes for c in built),
+        total_bytes=None if built else 0,
         date_range=merge_date_ranges(c.date_range for c in built),
     )
 
 
-def _build_card_inventory(card: _CardStructure, sizes: dict[Path, int]) -> CardInventory:
+def _build_card_inventory(card: _CardStructure) -> CardInventory:
     weeks: list[WeekInventory] = []
     for week_num in sorted(card.by_week):
         files = tuple(card.by_week[week_num])
-        file_sizes = tuple(sizes[p] for p in files)
         date_range = date_range_from_stems(p.stem for p in files)
         weeks.append(
             WeekInventory(
                 week=week_num,
                 files=files,
-                file_sizes=file_sizes,
-                total_bytes=sum(file_sizes),
+                file_sizes=None,
+                total_bytes=None,
                 date_range=date_range,
             )
         )
@@ -212,10 +262,10 @@ def _build_card_inventory(card: _CardStructure, sizes: dict[Path, int]) -> CardI
         folder=card.folder,
         weeks=tuple(weeks),
         file_count=sum(len(w.files) for w in weeks),
-        total_bytes=sum(w.total_bytes for w in weeks),
+        total_bytes=None if weeks else 0,
         date_range=merge_date_ranges(w.date_range for w in weeks),
     )
 
 
 def _is_audio_entry(entry: os.DirEntry) -> bool:
-    return entry.is_file() and os.path.splitext(entry.name)[1].lower() in _AUDIO_SUFFIXES
+    return os.path.splitext(entry.name)[1].lower() in _AUDIO_SUFFIXES and entry.is_file()

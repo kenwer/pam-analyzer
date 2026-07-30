@@ -38,11 +38,11 @@ def test_settings_disabled_without_project(qtbot, state: AppState):
     assert not p._locale_checks["de"].isEnabled()
 
 
-def test_controls_reflect_loaded_project(qtbot, state: AppState, tmp_path: Path):
+def test_controls_reflect_loaded_project(qtbot, state: AppState, tmp_path: Path, load_project):
     proj = Project(folder=tmp_path / "p", min_conf=0.6, overlap=1.2, locales=("fr",))
     proj.save()
     p = _panel(qtbot, state)
-    state.load_project(proj.folder)
+    load_project(state, proj.folder)
 
     assert p.ui.min_conf_slider.value() == 60
     assert p.ui.overlap_slider.value() == 12
@@ -51,9 +51,11 @@ def test_controls_reflect_loaded_project(qtbot, state: AppState, tmp_path: Path)
     assert not p._locale_checks["de"].isChecked()
 
 
-def test_slider_autosave_persists_to_project(qtbot, state: AppState, loaded_project: Project):
+def test_slider_autosave_persists_to_project(
+    qtbot, state: AppState, loaded_project: Project, load_project
+):
     p = _panel(qtbot, state)
-    state.load_project(loaded_project.folder)
+    load_project(state, loaded_project.folder)
 
     p.ui.min_conf_slider.setValue(60)
     assert state.project is not None
@@ -62,22 +64,24 @@ def test_slider_autosave_persists_to_project(qtbot, state: AppState, loaded_proj
     assert abs(Project.load(loaded_project.folder).min_conf - 0.60) < 1e-9
 
 
-def test_locale_selection_persists_to_project(qtbot, state: AppState, loaded_project: Project):
+def test_locale_selection_persists_to_project(
+    qtbot, state: AppState, loaded_project: Project, load_project
+):
     p = _panel(qtbot, state)
-    state.load_project(loaded_project.folder)
+    load_project(state, loaded_project.folder)
 
     p._locale_checks["de"].setChecked(True)
     assert state.project is not None
     assert state.project.locales == ("de",)
 
 
-def test_main_combo_uses_model_locales(qtbot, state: AppState, tmp_path: Path):
+def test_main_combo_uses_model_locales(qtbot, state: AppState, tmp_path: Path, load_project):
     """Main and Extra draw from the same model locale list: no bare 'en', and a
     legacy stored 'en' displays as its canonical 'en_us'."""
     proj = Project(folder=tmp_path / "p", preferred_species_lang="en")
     proj.save()
     p = _panel(qtbot, state)
-    state.load_project(proj.folder)
+    load_project(state, proj.folder)
 
     combo = p.ui.species_lang_combo
     items = [combo.itemText(i) for i in range(combo.count())]
@@ -86,10 +90,12 @@ def test_main_combo_uses_model_locales(qtbot, state: AppState, tmp_path: Path):
     assert combo.currentText() == "en_us"
 
 
-def test_overlap_slider_capped_at_max(qtbot, state: AppState, loaded_project: Project):
+def test_overlap_slider_capped_at_max(
+    qtbot, state: AppState, loaded_project: Project, load_project
+):
     """The conservative cross-model cap (2.9 s) bounds the slider."""
     p = _panel(qtbot, state)
-    state.load_project(loaded_project.folder)
+    load_project(state, loaded_project.folder)
 
     p.ui.overlap_slider.setValue(999)  # clamps to the slider maximum
     assert state.project is not None

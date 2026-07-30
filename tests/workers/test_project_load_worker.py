@@ -1,7 +1,7 @@
-"""Verify ProjectLoadWorker maps load_project_bundle's outcome to signals.
+"""Verify ProjectLoadWorker maps load_project's outcome to signals.
 
 Runs worker.run() directly, no QThread: the worker's only job is the
-try/except around load_project_bundle, so that's what's under test here.
+try/except around load_project, so that's what's under test here.
 The bundle's own composition logic is covered by
 tests/infrastructure/test_project_loader.py.
 """
@@ -18,7 +18,7 @@ def test_run_emits_succeeded_with_bundle_result(monkeypatch, tmp_path: Path, qtb
         project=object(), campaigns=[], audio_inventory=object(), analysis_inventory=None
     )
     monkeypatch.setattr(
-        project_load_worker_module, "load_project_bundle", lambda *_args, **_kwargs: sentinel
+        project_load_worker_module, "load_project", lambda *_args, **_kwargs: sentinel
     )
     worker = ProjectLoadWorker(tmp_path)
 
@@ -33,7 +33,7 @@ def test_run_emits_failed_with_message_on_exception(monkeypatch, tmp_path: Path,
     def _raise(*_args, **_kwargs):
         raise OSError("share unavailable")
 
-    monkeypatch.setattr(project_load_worker_module, "load_project_bundle", _raise)
+    monkeypatch.setattr(project_load_worker_module, "load_project", _raise)
     worker = ProjectLoadWorker(tmp_path)
 
     received: list[str] = []

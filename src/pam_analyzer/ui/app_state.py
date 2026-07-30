@@ -19,11 +19,8 @@ from ..domain import (
     LatLon,
     Project,
 )
-from ..infrastructure import (
-    discover_analysis_inventory,
-    discover_audio_inventory,
-    load_project_bundle,
-)
+from ..infrastructure import discover_analysis_inventory
+from ..workers import AudioInventoryRefresher
 
 _log = logging.getLogger(__name__)
 
@@ -43,7 +40,12 @@ class AppState(QObject):
     importResultsChanged = Signal(list)  # list[CardImportResult]
     audioInventoryChanged = Signal(object)  # AudioInventory
 
-    def __init__(self, parent: QObject | None = None) -> None:
+    def __init__(
+        self,
+        parent: QObject | None = None,
+        *,
+        audio_refresher: AudioInventoryRefresher | None = None,
+    ) -> None:
         super().__init__(parent)
         self._project: Project | None = None
         self._campaigns: list[Campaign] = []
@@ -51,6 +53,8 @@ class AppState(QObject):
         self._analysis_inventory: AnalysisInventory | None = None
         self._import_results: list[CardImportResult] = []
         self._audio_inventory: AudioInventory = AudioInventory()
+        self._audio_refresher = audio_refresher or AudioInventoryRefresher(self)
+        self._audio_refresher.inventoryReady.connect(self.apply_resolved_audio_sizes)
 
     @property
     def project(self) -> Project | None:
@@ -76,23 +80,6 @@ class AppState(QObject):
     def audio_inventory(self) -> AudioInventory:
         return self._audio_inventory
 
-    def load_project(self, folder: Path) -> None:
-        """Load a project folder synchronously on the calling thread.
-
-        For the UI, prefer routing folder opens through a ProjectLoadWorker
-        and apply_loaded_project() instead: this blocks the caller for as
-        long as the filesystem takes, which is a problem on slow or
-        network-mounted (e.g. CIFS) folders.
-        """
-        try:
-            result = load_project_bundle(folder)
-        except Exception as exc:
-            self.errorOccurred.emit(f"Failed to open {folder.name}: {exc}")
-            return
-        self.apply_loaded_project(
-            result.project, result.campaigns, result.audio_inventory, result.analysis_inventory
-        )
-
     def apply_loaded_project(
         self,
         project: Project,
@@ -102,15 +89,27 @@ class AppState(QObject):
     ) -> None:
         """Apply an already-loaded project bundle.
 
-        Split out of load_project so a ProjectLoadWorker can do the
-        filesystem work on a background thread and hand the results here to
-        be applied on the UI thread.
+        The only entry point for a loaded project: a ProjectLoadWorker does
+        the filesystem work (load_project) on a background thread and
+        hands the results here to be applied on the UI thread. There is no
+        synchronous alternative, so opening a project always goes through a
+        real worker, in the UI and in tests alike.
+
+        The infrastructure load_project's audio pass is structure-only (see
+        project_loader), so a bundle with audio arrives with sizes_pending
+        true. apply_loaded_project is the single funnel every caller (the UI
+        via ProjectLoadWorker, tests via the same worker) goes through, so it
+        is where the follow-up size resolution is triggered, rather than
+        leaving each caller to remember to call resolve_pending_audio_sizes
+        itself.
         """
         self._apply_project(project)
         self._apply_campaigns(campaigns)
         self._set_audio_inventory(audio_inventory)
         self.set_analysis_inventory(analysis_inventory)
         self.statusMessage.emit(f"Opened {project.name}")
+        if audio_inventory.sizes_pending:
+            self.resolve_pending_audio_sizes(project.folder, audio_inventory)
 
     def create_project(self, folder: Path) -> None:
         try:
@@ -195,16 +194,28 @@ class AppState(QObject):
         self.refresh_audio_inventory()
 
     def refresh_audio_inventory(self) -> None:
+        """Rebuild the audio inventory from disk after the file set may have changed.
+
+        The rebuild (structure walk plus per-file size stat) runs off the UI thread
+        via the refresher, which walks the tree and stats every file. It hands the
+        size-less tree back first, then the fully sized inventory, through
+        apply_resolved_audio_sizes.
+        """
         if self._project is None:
             self._set_audio_inventory(AudioInventory())
             return
-        inventory = discover_audio_inventory(self._project.folder)
-        _log.debug(
-            "refresh_audio_inventory: folder=%s -> %s",
-            self._project.folder,
-            {c.name: c.file_count for c in inventory.campaigns},
-        )
-        self._set_audio_inventory(inventory)
+        self._audio_refresher.refresh(self._project.folder)
+
+    def resolve_pending_audio_sizes(self, folder: Path, inventory: AudioInventory) -> None:
+        """Resolve per-file sizes for an inventory whose structure is already known.
+
+        Used right after a project opens: load_project has already walked
+        the tree (see project_loader), so the caller hands that size-less
+        inventory back here rather than paying for a second walk. Runs off the
+        UI thread through the same refresher as refresh_audio_inventory(). The
+        result lands in apply_resolved_audio_sizes.
+        """
+        self._audio_refresher.refresh(folder, inventory)
 
     def create_campaign(
         self, campaign: Campaign, species_text: str, must_have_text: str
@@ -274,6 +285,29 @@ class AppState(QObject):
         """
         self.refresh_campaigns()
         self.refresh_audio_inventory()
+
+    def apply_resolved_audio_sizes(self, folder: Path, inventory: AudioInventory) -> None:
+        """Swap in an audio inventory a worker rebuilt off the UI thread.
+
+        Two callers feed this slot, both through AudioInventoryRefresher. Project
+        open applies a size-less inventory first (see load_project), and
+        apply_loaded_project automatically calls resolve_pending_audio_sizes(),
+        which resolves its sizes and hands them here. A post-import or
+        post-mutation refresh_audio_inventory() call walks the tree from
+        scratch and hands over the size-less tree and then the fully sized
+        inventory.
+        """
+        if self._project is None or self._project.folder != folder:
+            return
+        self._set_audio_inventory(inventory)
+
+    def request_shutdown(self) -> None:
+        """Cancel an in-flight audio-inventory rebuild, e.g. on app close.
+
+        Called from MainWindow.closeEvent alongside the other worker shutdowns so
+        a rebuild running on a slow mount cannot outlive the window.
+        """
+        self._audio_refresher.request_shutdown()
 
     def _set_audio_inventory(self, inventory: AudioInventory) -> None:
         self._audio_inventory = inventory

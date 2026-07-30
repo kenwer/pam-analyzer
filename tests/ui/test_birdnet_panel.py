@@ -89,11 +89,11 @@ def state(project_and_campaigns) -> AppState:
 
 
 @pytest.fixture
-def panel(qtbot, state: AppState, project_and_campaigns) -> BirdNetPanel:
+def panel(qtbot, state: AppState, project_and_campaigns, load_project) -> BirdNetPanel:
     proj, _ = project_and_campaigns
     p = BirdNetPanel(state, {"BirdNET-2.4": _FakeRunner()})
     qtbot.addWidget(p)
-    state.load_project(proj.folder)
+    load_project(state, proj.folder)
     return p
 
 
@@ -196,7 +196,7 @@ def test_cancelled_before_any_csv_returns_to_idle(
     assert panel.ui.status_stack.currentIndex() == 0  # page_idle
 
 
-def test_loads_previous_results_from_disk(qtbot, tmp_path: Path):
+def test_loads_previous_results_from_disk(qtbot, tmp_path: Path, load_project):
     """Opening a project that already has detection CSVs should surface them
     in the BirdNET panel without the user re-running analysis."""
     proj = Project(folder=tmp_path / "loaded")
@@ -218,7 +218,7 @@ def test_loads_previous_results_from_disk(qtbot, tmp_path: Path):
     panel = BirdNetPanel(state, {"BirdNET-2.4": _FakeRunner()})
     qtbot.addWidget(panel)
 
-    state.load_project(proj.folder)
+    load_project(state, proj.folder)
 
     assert panel.ui.status_stack.currentIndex() == 2  # page_results
     assert state.analysis_inventory is not None
@@ -228,7 +228,7 @@ def test_loads_previous_results_from_disk(qtbot, tmp_path: Path):
     assert "[" not in panel.ui.summary_label.text()
 
 
-def test_panel_shows_all_csvs_regardless_of_model_selection(qtbot, tmp_path: Path):
+def test_panel_shows_all_csvs_regardless_of_model_selection(qtbot, tmp_path: Path, load_project):
     """All CSVs in a project are listed at once. The model combo picks what
     to run next; it does not filter the result view, because the filename
     suffix already tells the user which model each row belongs to.
@@ -253,7 +253,7 @@ def test_panel_shows_all_csvs_regardless_of_model_selection(qtbot, tmp_path: Pat
         {"BirdNET-2.4": bn_runner, "Perch-2.0": perch_runner},
     )
     qtbot.addWidget(panel)
-    state.load_project(proj.folder)
+    load_project(state, proj.folder)
 
     # Both rows visible from the start: 1 (birdnet) + 2 (perch) = 3 detections.
     assert "3 detections" in panel.ui.summary_label.text()
@@ -266,7 +266,7 @@ def test_panel_shows_all_csvs_regardless_of_model_selection(qtbot, tmp_path: Pat
     assert panel._results_model.rowCount() == 2
 
 
-def test_panel_keeps_birdnet_after_perch_run(qtbot, tmp_path: Path):
+def test_panel_keeps_birdnet_after_perch_run(qtbot, tmp_path: Path, load_project):
     """After running BirdNET then Perch, both CSVs are visible. Regression
     test: previously the in-memory result was replaced with only the fresh
     run's rows, so the earlier sibling-model CSV vanished from the view.
@@ -293,7 +293,7 @@ def test_panel_keeps_birdnet_after_perch_run(qtbot, tmp_path: Path):
         {"BirdNET-2.4": bn_runner, "Perch-2.0": perch_runner},
     )
     qtbot.addWidget(panel)
-    state.load_project(proj.folder)
+    load_project(state, proj.folder)
 
     # Simulate Perch finishing: the runner has already written its CSV, and
     # _on_finished triggers a fresh on-disk discovery.
@@ -324,7 +324,7 @@ def test_panel_keeps_birdnet_after_perch_run(qtbot, tmp_path: Path):
 
 
 def test_project_switch_clears_stale_results(
-    panel: BirdNetPanel, state: AppState, tmp_path: Path
+    panel: BirdNetPanel, state: AppState, tmp_path: Path, load_project
 ):
     """Opening a different project must drop the previous project's results.
 
@@ -338,7 +338,7 @@ def test_project_switch_clears_stale_results(
     # Build a second project on disk and switch to it.
     other = Project(folder=tmp_path / "other")
     other.save()
-    state.load_project(other.folder)
+    load_project(state, other.folder)
 
     assert state.analysis_inventory is None
     assert panel.ui.status_stack.currentIndex() == 0  # page_idle

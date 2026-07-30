@@ -110,11 +110,11 @@ def _isolated_qsettings(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def panel(qtbot, project: Project) -> ExaminePanel:
+def panel(qtbot, project: Project, load_project) -> ExaminePanel:
     state = AppState()
     panel = ExaminePanel(state, AppSettings(), SoundfileAudioExtractor())
     qtbot.addWidget(panel)
-    state.load_project(project.folder)
+    load_project(state, project.folder)
     # ExaminePanel coalesces its campaign reload onto a single-shot timer, so pump
     # the event loop once to let the detections load before the test inspects them.
     QCoreApplication.processEvents()
@@ -304,7 +304,7 @@ def test_combo_delegate_choices_for_verified(panel: ExaminePanel) -> None:
     ]
 
 
-def test_padding_spinboxes_init_from_project(qtbot, project: Project) -> None:
+def test_padding_spinboxes_init_from_project(qtbot, project: Project, load_project) -> None:
     """Loading a project populates the padding spinboxes from its TOML values."""
     # Bake non-zero padding into the project file.
     from dataclasses import replace
@@ -316,7 +316,7 @@ def test_padding_spinboxes_init_from_project(qtbot, project: Project) -> None:
     state = AppState()
     panel = ExaminePanel(state, AppSettings(), SoundfileAudioExtractor())
     qtbot.addWidget(panel)
-    state.load_project(p.folder)
+    load_project(state, p.folder)
 
     assert panel.pad_before_spin.value() == pytest.approx(1.5)
     assert panel.pad_after_spin.value() == pytest.approx(2.0)
@@ -333,7 +333,9 @@ def test_changing_padding_persists_to_project_toml(panel: ExaminePanel, project:
     assert reloaded.snippet_padding_after == pytest.approx(0.5)
 
 
-def test_project_toml_without_padding_loads_with_zero(qtbot, tmp_path: Path) -> None:
+def test_project_toml_without_padding_loads_with_zero(
+    qtbot, tmp_path: Path, load_project
+) -> None:
     """A pam-analyzer.toml written before snippet_padding_* existed must still load."""
     from pam_analyzer.domain import paths
 
@@ -345,19 +347,21 @@ def test_project_toml_without_padding_loads_with_zero(qtbot, tmp_path: Path) -> 
     state = AppState()
     panel = ExaminePanel(state, AppSettings(), SoundfileAudioExtractor())
     qtbot.addWidget(panel)
-    state.load_project(tmp_path)
+    load_project(state, tmp_path)
 
     assert panel.pad_before_spin.value() == 0.0
     assert panel.pad_after_spin.value() == 0.0
 
 
-def test_hidden_columns_persist_across_panel_instances(qtbot, project: Project) -> None:
+def test_hidden_columns_persist_across_panel_instances(
+    qtbot, project: Project, load_project
+) -> None:
     """Toggling a column off and rebuilding the panel restores the hidden state."""
     state = AppState()
     settings = AppSettings()
     panel = ExaminePanel(state, settings, SoundfileAudioExtractor())
     qtbot.addWidget(panel)
-    state.load_project(project.folder)
+    load_project(state, project.folder)
 
     rank_col = COLUMNS_BY_NAME["Rank"]
     panel.ui.detections_table._toggle_column(rank_col, False)
@@ -367,7 +371,7 @@ def test_hidden_columns_persist_across_panel_instances(qtbot, project: Project) 
     state2 = AppState()
     panel2 = ExaminePanel(state2, AppSettings(), SoundfileAudioExtractor())
     qtbot.addWidget(panel2)
-    state2.load_project(project.folder)
+    load_project(state2, project.folder)
     assert panel2.ui.detections_table._table.isColumnHidden(rank_col)
 
 
@@ -472,7 +476,9 @@ def test_combo_delegate_species_choices_reflect_data(panel: ExaminePanel) -> Non
     assert "Robin" in items
 
 
-def test_filter_inputs_visible_when_mounted_in_hidden_tab(qtbot, project: Project) -> None:
+def test_filter_inputs_visible_when_mounted_in_hidden_tab(
+    qtbot, project: Project, load_project
+) -> None:
     """All filter inputs must be visible after switching to a tab that was hidden at setModel time."""
     state = AppState()
 
@@ -487,7 +493,7 @@ def test_filter_inputs_visible_when_mounted_in_hidden_tab(qtbot, project: Projec
     tabs.setCurrentIndex(0)  # Examine tab is hidden
 
     # Load project while ExaminePanel is not visible. This triggers setModel.
-    state.load_project(project.folder)
+    load_project(state, project.folder)
     qtbot.waitExposed(tabs)
 
     # Switch to Examine tab and let Qt settle geometry.

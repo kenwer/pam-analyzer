@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 ### Changed
+- Projects open faster, and importing audio or managing campaigns no longer freezes the UI while the audio inventory updates in the background.
+- [Dev] Add `AudioInventoryRefresher` that resolves or rebuilds sizes for the audio inventory off the UI thread.
 - [Dev] Split the per-campaign result element into `CampaignRunResult` and `AnalysisInventoryEntry`.
 
 ## [0.5.4] - 2026-07-28

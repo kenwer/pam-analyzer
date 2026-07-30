@@ -2,10 +2,15 @@
 
 from datetime import datetime
 from pathlib import Path
+from threading import Event
 
 import pytest
 
-from pam_analyzer.infrastructure import discover_audio_inventory
+from pam_analyzer.infrastructure import (
+    discover_audio_inventory,
+    discover_audio_structure,
+    resolve_audio_sizes,
+)
 
 
 @pytest.fixture
@@ -116,3 +121,71 @@ def test_date_range_merges_bottom_up_from_filenames(project_dir: Path):
     assert msd_y.date_range is None
 
     assert alpha.date_range == msd_x.date_range
+
+
+def test_structure_has_counts_and_dates_but_no_sizes(project_dir: Path):
+    """The structure phase reads everything a directory listing gives (counts,
+    tree, date ranges) but leaves every byte total None for the size phase."""
+    inv = discover_audio_structure(project_dir)
+    alpha = inv.for_campaign("alpha")
+    assert alpha is not None
+
+    assert alpha.total_bytes is None
+    assert alpha.file_count == 4  # counts do not need a stat
+    assert alpha.date_range == (datetime(2024, 1, 1, 12), datetime(2024, 1, 8, 12))
+
+    msd_x = alpha.cards[0]
+    assert msd_x.total_bytes is None
+    assert msd_x.file_count == 3
+    assert msd_x.weeks[0].total_bytes is None
+    assert msd_x.weeks[0].file_sizes is None
+
+    assert inv.sizes_pending is True
+
+
+def test_resolve_sizes_matches_full_discovery(project_dir: Path):
+    """resolve_audio_sizes(structure) reproduces the one-shot discovery result."""
+    resolved = resolve_audio_sizes(discover_audio_structure(project_dir))
+    full = discover_audio_inventory(project_dir)
+
+    assert resolved == full
+    assert resolved.sizes_pending is False
+
+    alpha = resolved.for_campaign("alpha")
+    assert alpha is not None
+    assert alpha.cards[0].total_bytes == 1024 + 2048 + 4096
+    assert alpha.cards[0].weeks[0].file_sizes == (1024, 2048)
+
+
+def test_resolve_sizes_cancelled_returns_pending_unchanged(project_dir: Path):
+    """A cancelled stat pass returns the still-pending inventory, not a half-stat'd
+    one, so a caller that switched projects can safely discard it."""
+    structure = discover_audio_structure(project_dir)
+    cancel = Event()
+    cancel.set()
+
+    result = resolve_audio_sizes(structure, cancel)
+
+    assert result is structure  # unchanged, still pending
+    assert result.sizes_pending is True
+
+
+def test_only_empty_campaigns_are_not_pending(tmp_path: Path):
+    """A project whose campaigns hold no audio has nothing to stat, so the
+    structure phase gives each empty campaign a known byte total of 0 (not the
+    pending None) and the project reads not pending, so no size worker runs.
+
+    The 0 is what keeps None meaning exactly "pending": without it, an all-empty
+    project would never run the size pass and would render "computing..." forever.
+    """
+    audio = tmp_path / "audio"
+    (audio / "beta").mkdir(parents=True)
+    (audio / "beta" / "campaign.toml").write_text("", encoding="utf-8")
+
+    inv = discover_audio_structure(audio)
+
+    beta = inv.for_campaign("beta")
+    assert beta is not None
+    assert beta.total_bytes == 0
+    assert beta.size_pending is False
+    assert inv.sizes_pending is False

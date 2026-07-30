@@ -1,12 +1,13 @@
-"""Tests for load_project_bundle: the single read sequence shared by AppState's
-synchronous load_project and the async ProjectLoadWorker."""
+"""Tests for load_project: the read sequence ProjectLoadWorker runs on its
+background thread. Exercised directly here, without a QThread, since it is
+plain Qt-free composition (see project_loader.py)."""
 
 from pathlib import Path
 
 import pytest
 
 from pam_analyzer.domain import Project
-from pam_analyzer.infrastructure import load_project_bundle
+from pam_analyzer.infrastructure import load_project
 
 
 def test_bundles_project_campaigns_and_inventory(tmp_path: Path) -> None:
@@ -15,7 +16,7 @@ def test_bundles_project_campaigns_and_inventory(tmp_path: Path) -> None:
     campaign_dir.mkdir()
     (campaign_dir / "campaign.toml").write_text('species_filter_mode = "location"\n', encoding="utf-8")
 
-    result = load_project_bundle(tmp_path)
+    result = load_project(tmp_path)
 
     assert result.project.folder == tmp_path
     assert [c.name for c in result.campaigns] == ["alpha"]
@@ -27,4 +28,4 @@ def test_bundles_project_campaigns_and_inventory(tmp_path: Path) -> None:
 
 def test_missing_project_toml_raises(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
-        load_project_bundle(tmp_path)
+        load_project(tmp_path)
