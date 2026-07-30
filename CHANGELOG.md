@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+### Changed
+- [Dev] CI runs the test suite on every commit but only builds distributables on manual dispatch or release.
+
 ## [0.5.5] - 2026-07-30
 ### Changed
 - Projects open faster, and importing audio or managing campaigns no longer freezes the UI while the audio inventory updates in the background.

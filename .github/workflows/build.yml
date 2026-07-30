@@ -1,10 +1,6 @@
 name: Build Distributable
 
 on:
-  push:
-    branches: [ "master" ]
-  pull_request:
-    branches: [ "master" ]
   workflow_dispatch:
     inputs:
       upload_release_assets:
@@ -18,8 +14,12 @@ permissions:
   contents: write
 
 jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
   build:
     name: Build (${{ matrix.name }})
+    needs: test
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -77,7 +77,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y libegl1 libpulse0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-util1 libxcb-render-util0 libxcb-image0 libxcb-shape0 libxcb-xkb1 libxcb-icccm4 libxcb-keysyms1 libtiff6 libminizip1t64 libgstreamer-plugins-base1.0-0 libgstreamer-plugins-good1.0-0 libgstreamer-plugins-bad1.0-0 libgstreamer-gl1.0-0 
+          sudo apt-get install -y libegl1 libpulse0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-util1 libxcb-render-util0 libxcb-image0 libxcb-shape0 libxcb-xkb1 libxcb-icccm4 libxcb-keysyms1 libtiff6 libminizip1t64 libgstreamer-plugins-base1.0-0 libgstreamer-plugins-good1.0-0 libgstreamer-plugins-bad1.0-0 libgstreamer-gl1.0-0
 
       - name: Cache BirdNET models
         uses: actions/cache@v5
@@ -86,30 +86,7 @@ jobs:
           key: birdnet-models-${{ hashFiles('uv.lock', 'src/pam_analyzer/infrastructure/model_versions.py') }}
 
       - name: Prewarm models
-        # Populates the cache (with retry-on-failure) before tests run, so a cold
-        # cache never triggers a bare, un-retried download from inside pytest.
         run: uv run --script scripts/build.py --prewarm-only
-
-      # Fast and slow tests run as separate pytest processes so the Qt/UI
-      # tests never share an address space with leftover state from the model
-      # tests (the birdnet session can leak worker processes and feeder
-      # threads, https://github.com/birdnet-team/birdnet/issues/51).
-      # Each step normally finishes in about a minute per platform; the
-      # timeout makes a hung test fail the job quickly instead of occupying
-      # a runner for the 6 hour default limit.
-      - name: Run fast tests
-        timeout-minutes: 15
-        env:
-          BIRDNET_APP_DATA: ${{ github.workspace }}/dist/.birdnet-models/birdnet-app-data
-          KAGGLEHUB_CACHE: ${{ github.workspace }}/dist/.birdnet-models/kagglehub
-        run: uv run poe test-fast
-
-      - name: Run slow tests
-        timeout-minutes: 15
-        env:
-          BIRDNET_APP_DATA: ${{ github.workspace }}/dist/.birdnet-models/birdnet-app-data
-          KAGGLEHUB_CACHE: ${{ github.workspace }}/dist/.birdnet-models/kagglehub
-        run: uv run poe test-slow
 
       - name: Build distributable
         run: uv run --script scripts/build.py
