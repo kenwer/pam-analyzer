@@ -5,7 +5,7 @@ from pathlib import Path
 import tomli_w
 
 from . import paths
-from .values import MAX_OVERLAP_S, AnalysisSettings
+from .values import DEFAULT_TAXONOMY, MAX_OVERLAP_S, AnalysisSettings
 
 
 @dataclass
@@ -21,6 +21,7 @@ class _ProjectToml:
 
     sdcard_name_pattern: str = "^(MSD-|2MM)"
     analysis_model: str = "BirdNET-2.4"
+    analysis_taxonomy: str = DEFAULT_TAXONOMY
     birdnet_min_conf: float = 0.25
     birdnet_overlap: float = 0.0
     birdnet_locales: list[str] = field(default_factory=list)
@@ -40,6 +41,7 @@ class Project:
     folder: Path
     sdcard_name_pattern: str = "^(MSD-|2MM)"  # AudioMoth (MSD-) and Song Meter (2MM serials)
     analysis_model: str = "BirdNET-2.4"
+    analysis_taxonomy: str = DEFAULT_TAXONOMY  # scientific-name axis all model output is normalized to
     min_conf: float = 0.25
     overlap: float = 0.0
     locales: tuple[str, ...] = ()
@@ -63,6 +65,7 @@ class Project:
             min_conf=self.min_conf,
             overlap=min(self.overlap, MAX_OVERLAP_S),
             locales=self.locales,
+            canonical_taxonomy=self.analysis_taxonomy,
         )
 
     @classmethod
@@ -79,6 +82,7 @@ class Project:
             folder=folder,
             sdcard_name_pattern=raw.sdcard_name_pattern,
             analysis_model=raw.analysis_model,
+            analysis_taxonomy=raw.analysis_taxonomy,
             min_conf=raw.birdnet_min_conf,
             overlap=raw.birdnet_overlap,
             locales=tuple(raw.birdnet_locales),
@@ -97,6 +101,7 @@ class Project:
         raw = _ProjectToml(
             sdcard_name_pattern=self.sdcard_name_pattern,
             analysis_model=self.analysis_model,
+            analysis_taxonomy=self.analysis_taxonomy,
             birdnet_min_conf=self.min_conf,
             birdnet_overlap=self.overlap,
             birdnet_locales=list(self.locales),

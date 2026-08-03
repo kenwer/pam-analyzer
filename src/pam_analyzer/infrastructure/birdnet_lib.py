@@ -33,27 +33,21 @@ from typing import Any
 from .model_versions import PERCH_V2_KAGGLE_VERSION
 
 
-def load_perch_v2_pinned() -> Any:
-    """Load Perch v2 (CPU) pinned to PERCH_V2_KAGGLE_VERSION.
+def _perch_model_dir_and_labels() -> tuple[Path, list[str]]:
+    """Resolve the pinned Perch v2 model directory and its class labels.
 
-    Mirrors birdnet.load_perch_v2() but requests a versioned Kaggle handle.
-    The lib's own loader uses an unversioned handle, which makes kagglehub
-    ask the Kaggle API for the current version number before it consults
-    its on-disk cache, so loading an already-downloaded (or bundled) model
-    still requires network access. A versioned handle resolves entirely
-    from the local cache; kagglehub only downloads when that exact version
-    is missing.
+    Requests a versioned Kaggle handle (PERCH_V2_KAGGLE_VERSION). The lib's
+    own loader uses an unversioned handle, which makes kagglehub ask the
+    Kaggle API for the current version number before it consults its on-disk
+    cache, so loading an already-downloaded (or bundled) model still requires
+    network access. A versioned handle resolves entirely from the local cache;
+    kagglehub only downloads when that exact version is missing.
 
-    scripts/build.py prewarms the build cache through this same function,
-    so the packaged app always finds the version it asks for in the bundle
-    and never touches the network.
+    Single source of truth for the pinned handle, shared by the model loader
+    and the scientific-name axis accessor.
     """
     import kagglehub
-    from birdnet.acoustic.models.perch_v2.model import AcousticModelPerchV2
-    from birdnet.acoustic.models.perch_v2.pb import (
-        AcousticPBBackendFP32PerchV2,
-        AcousticPBDownloaderPerchV2,
-    )
+    from birdnet.acoustic.models.perch_v2.pb import AcousticPBDownloaderPerchV2
     from birdnet.utils.helper import check_is_intel_macos, get_species_from_file
 
     # Same guard as birdnet.load_perch_v2: the SavedModel's XlaCallModule
@@ -67,12 +61,40 @@ def load_perch_v2_pinned() -> Any:
     labels.remove(AcousticPBDownloaderPerchV2.LABELS_HEADER)
     if len(labels) != 14795:
         raise ValueError(f"Expected 14795 Perch v2 species, got {len(labels)}")
+    return model_dir, labels
+
+
+def load_perch_v2_pinned() -> Any:
+    """Load Perch v2 (CPU) pinned to PERCH_V2_KAGGLE_VERSION.
+
+    Mirrors birdnet.load_perch_v2() but resolves from the local cache via a
+    versioned handle (see _perch_model_dir_and_labels).
+
+    scripts/build.py prewarms the build cache through this same function,
+    so the packaged app always finds the version it asks for in the bundle
+    and never touches the network.
+    """
+    from birdnet.acoustic.models.perch_v2.model import AcousticModelPerchV2
+    from birdnet.acoustic.models.perch_v2.pb import AcousticPBBackendFP32PerchV2
+
+    model_dir, labels = _perch_model_dir_and_labels()
     return AcousticModelPerchV2.load(
         model_dir,
         labels,
         backend_type=AcousticPBBackendFP32PerchV2,
         backend_kwargs={},
     )
+
+
+def perch_species_scientific() -> frozenset[str]:
+    """Every scientific name on Perch v2's label axis (iNat 2024 + FSD50K).
+
+    The counterpart to birdnet_species_scientific(). Used by the offline
+    taxonomy-crosswalk generator to diff the two axes. It downloads the Perch
+    model on a cold cache, so it is not called on the app's runtime path.
+    """
+    _, labels = _perch_model_dir_and_labels()
+    return frozenset(_split_sci_common(name)[0] for name in labels)
 
 
 def _split_sci_common(line: str) -> tuple[str, str]:

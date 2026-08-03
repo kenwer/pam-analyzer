@@ -73,6 +73,12 @@ MODULES: tuple[str, ...] = (
 DATA: tuple[tuple[Path, str], ...] = (
     (ROOT_DIR / 'CHANGELOG.md', '.'),
     (ROOT_DIR / 'src' / 'pam_analyzer' / 'widgets' / 'map_picker.qml', 'widgets'),
+    # taxonomy_crosswalk.py reads this via importlib.resources.files(__package__),
+    # so it must land at its real package path, not a bespoke top-level folder.
+    (
+        ROOT_DIR / 'src' / 'pam_analyzer' / 'infrastructure' / 'data' / 'taxonomy_crosswalk.tsv',
+        'pam_analyzer/infrastructure/data',
+    ),
 )
 
 

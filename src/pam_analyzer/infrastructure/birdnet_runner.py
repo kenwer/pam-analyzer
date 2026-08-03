@@ -23,6 +23,7 @@ from typing import Any
 
 from ..domain import AnalysisSettings
 from .base_analysis_runner import BaseAnalysisRunner, ParsedRow
+from .taxonomy_crosswalk import to_axis
 
 
 def _split_sci_common(species_name: str) -> tuple[str, str]:
@@ -93,10 +94,15 @@ class BirdnetRunner(BaseAnalysisRunner):
         species_name = str(raw_row["species_name"])
         sci, common_en = _split_sci_common(species_name)
 
+        # BirdNET emits names on its own axis, so lookups (and the filter's
+        # match_name) use sci verbatim. Only the written scientific name is
+        # rewritten to the project's canonical taxonomy.
+        out_name = to_axis(sci, settings.canonical_taxonomy)
+
         # Preferred-language common name. Fall back to the lib's en_us
         # common name if the locale lookup misses (e.g. a recently added
         # species not yet translated in the user's lang).
-        preferred = preferred_lang_map.get(sci, common_en or sci)
+        preferred = preferred_lang_map.get(sci, common_en or out_name)
 
         # For the en_us column we reuse the lib-provided common name
         # directly to avoid a redundant locale_map lookup that would return
@@ -114,7 +120,8 @@ class BirdnetRunner(BaseAnalysisRunner):
             file_path=Path(str(raw_row["input"])),
             start_time=float(raw_row["start_time"]),
             end_time=float(raw_row["end_time"]),
-            scientific_name=sci,
+            scientific_name=out_name,
+            match_name=sci,
             confidence=float(raw_row["confidence"]),
             preferred_common=preferred,
             locale_commons=locale_commons,

@@ -64,6 +64,7 @@ from .birdnet_lib import (
     normalize_lang_code,
     region_species_scientific,
 )
+from .taxonomy_crosswalk import expand_species
 
 
 @dataclass(frozen=True)
@@ -78,7 +79,8 @@ class ParsedRow:
     file_path: Path
     start_time: float
     end_time: float
-    scientific_name: str
+    scientific_name: str  # normalized to the project's canonical taxonomy, for output
+    match_name: str  # the model's native spelling, for the species-filter check
     confidence: float  # probability 0-1, after any per-model calibration
     preferred_common: str  # for the "Species" CSV column
     # Keyed by locale code without the "Species_" prefix (e.g. "en_us").
@@ -207,7 +209,9 @@ class BaseAnalysisRunner(ABC):
         # Resolve the species filter before opening the inference session:
         # in LOCATION mode this pre-warms the geo model and computes per-
         # week whitelists, so any geo lookup cost is paid during 'preparing'.
-        resolved = campaign.load_species_filter().resolve(wav_files, region_species_scientific)
+        resolved = campaign.load_species_filter().resolve(
+            wav_files, region_species_scientific, expand_synonyms=expand_species
+        )
         lat = resolved.location.latitude if resolved.location else None
         lon = resolved.location.longitude if resolved.location else None
 
@@ -370,12 +374,12 @@ class BaseAnalysisRunner(ABC):
                 )
 
                 allowed = resolved.allowed_for(parsed.file_path)
-                if allowed is not None and parsed.scientific_name not in allowed:
+                if allowed is not None and parsed.match_name not in allowed:
                     # birdnet_species_scientific() is called lazily here, in
                     # the drop path, so a species-only run (allowed is always
                     # None) never forces the en_us label download just to
                     # classify drops it will not make.
-                    if parsed.scientific_name in birdnet_species_scientific():
+                    if parsed.match_name in birdnet_species_scientific():
                         out_of_region_count += 1
                     else:
                         unknown_species_count += 1

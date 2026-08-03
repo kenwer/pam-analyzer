@@ -6,6 +6,9 @@ from dataclasses import dataclass
 # the more conservative BirdNET limit to every run.
 MAX_OVERLAP_S = 2.5
 
+# Default scientific-name axis a project normalizes output to
+DEFAULT_TAXONOMY = "BirdNET-2.4"
+
 
 @dataclass(frozen=True, slots=True)
 class LatLon:
@@ -26,3 +29,4 @@ class AnalysisSettings:
     min_conf: float = 0.25
     overlap: float = 0.0
     locales: tuple[str, ...] = ()  # frozen for hashability
+    canonical_taxonomy: str = DEFAULT_TAXONOMY  # axis every model's output is written under

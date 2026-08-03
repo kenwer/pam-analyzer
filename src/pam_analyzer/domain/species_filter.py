@@ -26,6 +26,13 @@ from .values import LatLon
 RegionSpecies = Callable[[float, float, int], frozenset[str]]
 """Given (latitude, longitude, birdnet week), the scientific names that occur there."""
 
+ExpandSynonyms = Callable[[frozenset[str]], frozenset[str]]
+"""Expand a set of scientific names to include their cross-taxonomy equivalents."""
+
+
+def _identity_synonyms(names: frozenset[str]) -> frozenset[str]:
+    return names
+
 
 def parse_species_lines(text: str) -> frozenset[str]:
     """Parse a user-supplied species blob into a set of scientific names.
@@ -102,7 +109,12 @@ class SpeciesFilter:
         elif self.mode == FilterMode.LOCATION:
             paths.must_have_species_file(folder).write_text(self.must_have_text, encoding="utf-8")
 
-    def resolve(self, wav_files: list[Path], region_species: RegionSpecies) -> ResolvedSpeciesFilter:
+    def resolve(
+        self,
+        wav_files: list[Path],
+        region_species: RegionSpecies,
+        expand_synonyms: ExpandSynonyms = _identity_synonyms,
+    ) -> ResolvedSpeciesFilter:
         """Compute the allow-list this filter applies to a run's audio files.
 
         LIST mode yields one fixed set for every file. LOCATION mode computes a
@@ -113,12 +125,19 @@ class SpeciesFilter:
 
         The per-week sets are computed eagerly here so a geo download happens
         during the runner's 'preparing' phase, not mid-inference.
+
+        expand_synonyms bridges the two model taxonomies for the user-authored
+        names only (the LIST text and the must-have text): each name is expanded
+        to include its cross-taxonomy equivalent, so a bird typed in either
+        spelling matches whichever model runs. The region_species output is left
+        as-is, so LOCATION mode's regional list stays on BirdNET's axis.
         """
         if self.mode == FilterMode.LIST and self.list_text:
-            return ResolvedSpeciesFilter(None, parse_species_lines(self.list_text), {}, frozenset())
+            fixed = expand_synonyms(parse_species_lines(self.list_text))
+            return ResolvedSpeciesFilter(None, fixed, {}, frozenset())
         if self.mode == FilterMode.LOCATION and self.location is not None:
             lat, lon = self.location.latitude, self.location.longitude
-            must_haves = parse_species_lines(self.must_have_text)
+            must_haves = expand_synonyms(parse_species_lines(self.must_have_text))
             weeks_present: set[int] = set()
             for f in wav_files:
                 week = week_from_path(f)

@@ -22,6 +22,7 @@ from typing import Any
 from ..domain import AnalysisSettings
 from .base_analysis_runner import BaseAnalysisRunner, ParsedRow
 from .birdnet_lib import load_perch_v2_pinned
+from .taxonomy_crosswalk import BIRDNET_2_4, to_axis
 
 # Perch v2's class head emits positive logits everywhere: pure silence
 # sits around +4.5, and real ambient noise (wind, distant traffic) sits
@@ -142,16 +143,26 @@ class PerchRunner(BaseAnalysisRunner):
         # BirdNET runner's units. See _PERCH_LOGIT_OFFSET.
         conf = _perch_logit_to_prob(float(raw_row["confidence"]))
 
-        preferred = preferred_lang_map.get(sci, sci)
+        # Perch names live on the iNaturalist axis. Look common names up on the
+        # BirdNET-axis equivalent, because the common-name maps are keyed on
+        # BirdNET names, so a renamed bird like Astur gentilis resolves via
+        # Accipiter gentilis instead of coming back blank. The written
+        # scientific name follows the project's canonical taxonomy, while the
+        # filter matches on the native name (match_name).
+        bn_name = to_axis(sci, BIRDNET_2_4)
+        out_name = to_axis(sci, settings.canonical_taxonomy)
+
+        preferred = preferred_lang_map.get(bn_name, out_name)
         locale_commons = {
-            loc: locale_maps[loc].get(sci, "") for loc in settings.locales
+            loc: locale_maps[loc].get(bn_name, "") for loc in settings.locales
         }
 
         return ParsedRow(
             file_path=Path(str(raw_row["input"])),
             start_time=float(raw_row["start_time"]),
             end_time=float(raw_row["end_time"]),
-            scientific_name=sci,
+            scientific_name=out_name,
+            match_name=sci,
             confidence=conf,
             preferred_common=preferred,
             locale_commons=locale_commons,
