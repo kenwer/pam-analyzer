@@ -31,7 +31,7 @@ class AppState(QObject):
     currentCampaignChanged = Signal(object)  # Campaign | None
     statusMessage = Signal(str)
     errorOccurred = Signal(str)
-    analysisStarted = Signal()
+    analysisStarted = Signal(str)  # model key of the runner that started
     analysisProgress = Signal(object)  # AnalysisProgressSnapshot
     analysisFinished = Signal(object)  # AnalysisRunResult
     analysisInventoryChanged = Signal(object)  # AnalysisInventory | None

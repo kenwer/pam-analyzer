@@ -4,6 +4,8 @@
 ### Added
 - New project setting that allows to choose the taxonomy for species names.
 - [Dev] `taxonomy_crosswalk` module and `scripts/build_taxonomy_crosswalk.py` for the bundled BirdNET/Perch rename table.
+### Fixed
+- The status bar now names the model that is actually running instead of always saying BirdNET.
 ### Changed
 - Species lists accept either the BirdNET or Perch spelling of renamed birds (e.g. `Accipiter gentilis` / `Astur gentilis`), and a project Species taxonomy setting normalizes model output to one scientific-name axis.
 - [Dev] CI runs the test suite on every commit but only builds distributables on manual dispatch or release.

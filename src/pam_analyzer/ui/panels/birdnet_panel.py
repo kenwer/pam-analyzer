@@ -262,7 +262,7 @@ class BirdNetPanel(QWidget):
         self.ui.run_button.setChecked(True)
         self._set_settings_enabled(False)
         self.ui.run_button.setEnabled(True)  # keep Stop enabled
-        self._app_state.analysisStarted.emit()
+        self._app_state.analysisStarted.emit(self._runner_key)
         self._thread.start()
 
     def _request_cancel(self) -> None:

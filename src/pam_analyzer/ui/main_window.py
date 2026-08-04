@@ -137,10 +137,10 @@ class MainWindow(QMainWindow):
         self._app_state.importStarted.connect(self._on_import_started)
         self._app_state.importFinished.connect(self._on_import_finished)
 
-    def _on_analysis_started(self) -> None:
+    def _on_analysis_started(self, model_key: str) -> None:
         self._analysis_running = True
         self._update_tab_lock()
-        self.ui.status_bar.showMessage("BirdNET running…", 0)
+        self.ui.status_bar.showMessage(f"Species detection running using {model_key}…", 0)
 
     def _on_analysis_finished(self, _outcome: object) -> None:
         self._analysis_running = False
