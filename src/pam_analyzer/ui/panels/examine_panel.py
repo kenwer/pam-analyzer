@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QShowEvent
 from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
@@ -108,6 +108,16 @@ class ExaminePanel(QWidget):
 
         self._set_controls_enabled(False)
         self._wire_signals()
+
+    def showEvent(self, event: QShowEvent) -> None:  # noqa: N802, Qt API
+        """Arm the table shortcuts when the user navigates to this panel.
+
+        Loading a project pre-selects a row and primes the player, but the
+        selection carries no focus (see DetectionTable._sync_player), so
+        Space would go to whatever widget the tab switch left focused.
+        """
+        super().showEvent(event)
+        self.ui.detections_table.focusTable()
 
     def _wire_signals(self) -> None:
         self._app_state.projectChanged.connect(self._on_project_changed)

@@ -709,3 +709,59 @@ def test_column_menu_no_qaction_error(panel: ExaminePanel) -> None:
     QTimer.singleShot(0, lambda: (w := QApplication.activePopupWidget()) and w.close())
     detection_table._show_column_menu(QPoint(100, 10))
     assert detection_table._model.columnCount() > 1
+
+
+def test_showing_the_panel_focuses_the_table(qtbot, panel: ExaminePanel) -> None:
+    """Navigating to the panel must hand focus to the table.
+
+    The single-key shortcuts (Space, T/F/U, ...) are WidgetShortcut-scoped to
+    the inner table, so a pre-selected row alone leaves Space going nowhere.
+    """
+    from PySide6.QtWidgets import QApplication
+
+    table = panel.ui.detections_table.table()
+    panel.show()
+    qtbot.waitExposed(panel)
+
+    qtbot.waitUntil(lambda: QApplication.focusWidget() in (table, table.viewport()))
+    # Drain the deferred player prepare armed by the row auto-select.
+    QCoreApplication.processEvents()
+
+
+def test_space_toggles_the_player_after_navigating_to_the_panel(qtbot, panel: ExaminePanel, monkeypatch) -> None:
+    """End to end: the pre-selected row is playable with Space, no click first."""
+    from PySide6.QtWidgets import QApplication
+
+    detection_table = panel.ui.detections_table
+    monkeypatch.setattr(detection_table, "_present", lambda *a, **k: None)
+    toggled: list[bool] = []
+    monkeypatch.setattr(detection_table._player, "isVisible", lambda: True)
+    monkeypatch.setattr(detection_table._player, "toggle", lambda: toggled.append(True))
+
+    panel.show()
+    qtbot.waitExposed(panel)
+    table = detection_table.table()
+    qtbot.waitUntil(lambda: QApplication.focusWidget() in (table, table.viewport()))
+
+    qtbot.keyClick(table, Qt.Key.Key_Space)
+    assert toggled == [True]
+    QCoreApplication.processEvents()
+
+
+def test_reload_does_not_steal_focus_from_a_filter_input(qtbot, panel: ExaminePanel, monkeypatch) -> None:
+    """A campaign switch reloads rows, but focus belongs to whatever the user
+    is typing in, not the table."""
+    from PySide6.QtWidgets import QApplication
+
+    monkeypatch.setattr(panel.ui.detections_table, "_present", lambda *a, **k: None)
+    panel.show()
+    qtbot.waitExposed(panel)
+    edit = panel.ui.detections_table._filter_row._slots[panel._model.index_of("ARU")].edit
+    edit.setFocus()
+    qtbot.waitUntil(lambda: QApplication.focusWidget() is edit)
+
+    panel.ui.campaign_combo.setCurrentIndex(1)
+    qtbot.waitUntil(lambda: panel._model.rowCount() == 3)
+
+    assert QApplication.focusWidget() is edit
+    QCoreApplication.processEvents()

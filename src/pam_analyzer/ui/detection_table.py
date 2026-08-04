@@ -312,6 +312,16 @@ class DetectionTable(QWidget):
         """Expose the inner table for callers that need to set delegates, edit triggers, etc."""
         return self._table
 
+    def focusTable(self) -> bool:  # noqa: N802, Qt-style camelCase
+        """Move focus to the inner table so the single-key shortcuts are armed."""
+        if self._table.model().rowCount() == 0:
+            return False
+        focused = self.window().focusWidget() if self.window() else None
+        if focused is not None and self.isAncestorOf(focused):
+            return False
+        self._table.setFocus(Qt.FocusReason.OtherFocusReason)
+        return True
+
     # keyboard shortcuts
     def _setup_shortcuts(self) -> None:
         """Bind table-level shortcuts via QShortcut.
