@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.6.0] - 2026-08-04
 ### Added
 - New project setting that allows to choose the taxonomy for species names.
 - [Dev] `taxonomy_crosswalk` module and `scripts/build_taxonomy_crosswalk.py` for the bundled BirdNET/Perch rename table.
