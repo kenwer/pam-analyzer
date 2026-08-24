@@ -25,7 +25,6 @@ Automated bird species detection from acoustic recordings.
 - [Models](#models)
   - [Species names](#species-names)
   - [Region filtering](#region-filtering)
-  - [Running on a GPU](#running-on-a-gpu)
 - [Troubleshooting](#troubleshooting)
 - [Changelog](#changelog)
 - [Acknowledgements](#acknowledgements)
@@ -290,12 +289,6 @@ In location mode the runner filters detections against a per-week species list f
 
 To keep those detections, run in species-list mode, which applies no regional filter, or add the specific names to the must-have box in location mode. The debug log reports the split per campaign, for example `birdnet: per-week species filter dropped 412 row(s): 190 out-of-region, 222 not on the model's axis (legacy name or non-bird). 1391 kept`. A large second number points at the acoustic/geographic gap rather than at geography.
 
-### Running on a GPU
-The bundled build is CPU-only. In a development checkout you can swap the runtime for the CUDA build without any code change:
-
-```bash
-uv pip uninstall onnxruntime && uv pip install onnxruntime-gpu
-```
 
 ## Troubleshooting
 The application writes a rotating debug log (`pam-analyzer.log`, capped at 1 MB with one backup) to the platform's standard log directory:

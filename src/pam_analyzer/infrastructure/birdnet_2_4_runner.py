@@ -40,7 +40,7 @@ MODEL_KEY = "BirdNET-2.4"
 
 # v2.4 seems to run fastest on half as many workers as the machine has cores, with
 # two onnxruntime threads each, rather than one single-threaded worker per core.
-# 
+#
 # v3.0 seems the other way around and keeps one worker per core, so the two
 # runners set this independently. Whichever way it goes, SESSION_THREADS and
 # the n_workers below are one decision and have to move together.
