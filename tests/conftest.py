@@ -10,17 +10,21 @@ import os
 import pytest
 from PySide6.QtCore import QThread
 
-from pam_analyzer.infrastructure.birdnet_runner import MODEL_KEY
+from pam_analyzer.infrastructure.birdnet_2_4_runner import MODEL_KEY as MODEL_KEY_V2_4
+from pam_analyzer.infrastructure.birdnet_runner import MODEL_KEY as MODEL_KEY_V3_0
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-# The model key a run writes today, derived from the shipped runner rather
-# than copied. Tests that only need "a detections CSV" should use this.
-CURRENT_MODEL_KEY = MODEL_KEY
+# The model key a run writes by default
+DEFAULT_MODEL_KEY = MODEL_KEY_V2_4
+
+# The other engine the app ships. Tests whose subject is the model selector
+# or cross-engine CSV coexistence should name this one.
+ALT_MODEL_KEY = MODEL_KEY_V3_0
 
 # Keys the app can still read but no longer writes. Only tests whose subject
 # is that continuity should name one of these, and they should say so.
-RETIRED_MODEL_KEYS = ("BirdNET-2.4", "Perch-2.0")
+RETIRED_MODEL_KEYS = ("Perch-2.0",)
 
 
 @pytest.fixture(autouse=True)

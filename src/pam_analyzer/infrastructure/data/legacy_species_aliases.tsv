@@ -1,6 +1,7 @@
 # Legacy scientific-name aliases: names from BirdNET v2.4's eBird-based
-# axis mapped to their BirdNET v3.0 spelling. Applied to user-authored
-# species lists only, so a list written before the upgrade keeps matching.
+# axis mapped to their BirdNET v3.0 spelling. Read both directions: to
+# rewrite model output onto the project's chosen axis, and to match
+# user-authored species lists written under either axis.
 #
 # Columns: legacy_name<TAB>current_name
 #

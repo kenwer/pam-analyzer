@@ -6,7 +6,7 @@ import pytest
 from pam_analyzer.domain import DetectionSet, VerifiedState
 from pam_analyzer.domain.detection_schema import campaign_csv_for_model
 from pam_analyzer.domain.paths import campaign_toml
-from tests.conftest import CURRENT_MODEL_KEY, RETIRED_MODEL_KEYS
+from tests.conftest import DEFAULT_MODEL_KEY, RETIRED_MODEL_KEYS
 
 _HEADERS = [
     "Campaign",
@@ -26,7 +26,7 @@ _HEADERS = [
 ]
 
 
-@pytest.fixture(params=[CURRENT_MODEL_KEY, RETIRED_MODEL_KEYS[0]], ids=["current", "retired"])
+@pytest.fixture(params=[DEFAULT_MODEL_KEY, RETIRED_MODEL_KEYS[0]], ids=["current", "retired"])
 def model_key(request) -> str:
     """Run every case against both a current and a retired model key.
 
@@ -132,7 +132,7 @@ def test_load_combined_reads_several_models_in_one_campaign(tmp_path: Path) -> N
     is what a campaign carrying a pre-upgrade run looks like on disk.
     """
     folder = _campaign_dir(tmp_path, "east")
-    _write_csv(folder, CURRENT_MODEL_KEY, [_sample("east")])
+    _write_csv(folder, DEFAULT_MODEL_KEY, [_sample("east")])
     for retired in RETIRED_MODEL_KEYS:
         _write_csv(folder, retired, [_sample("east")])
 

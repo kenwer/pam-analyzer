@@ -1,7 +1,13 @@
 import tomllib
 from pathlib import Path
 
-from pam_analyzer.domain import Project, paths
+from pam_analyzer.domain import (
+    DEFAULT_ANALYSIS_MODEL,
+    DEFAULT_MIN_CONF,
+    DEFAULT_TAXONOMY,
+    Project,
+    paths,
+)
 
 
 def test_round_trip_preserves_all_fields(tmp_path: Path) -> None:
@@ -12,6 +18,7 @@ def test_round_trip_preserves_all_fields(tmp_path: Path) -> None:
         overlap=0.5,
         locales=("de", "en"),
         preferred_species_lang="de",
+        analysis_taxonomy="BirdNET-2.4",
         snippet_padding_before=1.5,
         snippet_padding_after=2.5,
     )
@@ -25,8 +32,34 @@ def test_load_falls_back_to_defaults_for_missing_keys(tmp_path: Path) -> None:
     paths.project_toml(tmp_path).write_text('[project]\nsdcard_name_pattern = "^X-"\n')
     project = Project.load(tmp_path)
     assert project.sdcard_name_pattern == "^X-"
-    assert project.min_conf == 0.5  # default
+    assert project.min_conf == DEFAULT_MIN_CONF
+    assert project.analysis_model == DEFAULT_ANALYSIS_MODEL
+    assert project.analysis_taxonomy == DEFAULT_TAXONOMY
     assert project.locales == ()
+
+
+def test_taxonomy_survives_a_round_trip(tmp_path: Path) -> None:
+    """The chosen axis is what makes a re-run keep a study's existing spellings.
+
+    It has to reach disk, since the next run reads it from project.toml
+    rather than from whatever the panel last displayed.
+    """
+    project = Project(folder=tmp_path / "p", analysis_taxonomy="BirdNET-2.4")
+    project.save()
+    with open(paths.project_toml(project.folder), "rb") as f:
+        assert tomllib.load(f)["project"]["analysis_taxonomy"] == "BirdNET-2.4"
+    assert Project.load(project.folder).analysis_taxonomy == "BirdNET-2.4"
+
+
+def test_load_keeps_an_axis_this_build_no_longer_offers(tmp_path: Path) -> None:
+    """A pre-0.6 file can name Perch-2.0. Loading must not fail on it.
+
+    The value is carried through rather than corrected here: the domain does
+    not know the axis list (it lives in infrastructure), so ProjectPanel is
+    what replaces it with the default on first render.
+    """
+    paths.project_toml(tmp_path).write_text('[project]\nanalysis_taxonomy = "Perch-2.0"\n')
+    assert Project.load(tmp_path).analysis_taxonomy == "Perch-2.0"
 
 
 def test_load_ignores_legacy_path_keys(tmp_path: Path) -> None:

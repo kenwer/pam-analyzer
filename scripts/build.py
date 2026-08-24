@@ -13,8 +13,9 @@ binary.
 One environment variable controls where the model files land during the
 download phase:
 
-- BIRDNET_APP_DATA -> acoustic v3.0 + geo v3.0 ONNX weights, plus the
-  per-locale label files. Honored by the birdnet>=1.1 library.
+- BIRDNET_APP_DATA -> acoustic + geo weights for both shipped engines
+  (v3.0 on ONNX, v2.4 on TFLite), plus the per-locale label files. Honored
+  by the birdnet>=1.1 library.
 
 That directory sits inside the MODEL_CACHE root and ships as a single
 --add-data entry. At runtime app/__main__.py points the same env var at the
@@ -94,30 +95,44 @@ def _load_dependencies() -> list[str]:
 MODEL_PREWARM = textwrap.dedent("""
     import sys
     import birdnet
+    from birdnet.acoustic.models.v2_4.model import AcousticDownloaderBaseV2_4
     from birdnet.acoustic.models.v3_0.model import AcousticDownloaderBaseV3_0
+    from birdnet.geo.models.v2_4.model import GeoDownloaderBaseV2_4
     from birdnet.geo.models.v3_0.model import GeoDownloaderBaseV3_0
     from birdnet.utils.local_data import get_lang_dir
 
-    print('Pre-downloading birdnet acoustic v3.0 onnx (en_us)...', file=sys.stderr)
-    birdnet.load('acoustic', '3.0', 'onnx', lang='en_us', precision='fp32')
-    print('Pre-downloading birdnet geo v3.0 onnx (en_us)...', file=sys.stderr)
-    birdnet.load('geo', '3.0', 'onnx', lang='en_us', precision='fp32')
+    # Both engines, each paired with the geo model of its own generation.
+    # v2.4 loads through the 'tf' backend on ai-edge-litert, matching what
+    # birdnet_lib._BACKENDS asks for at runtime, so the bundled weights are
+    # the ones the app actually opens.
+    for kind, version, backend, kwargs in (
+        ('acoustic', '3.0', 'onnx', {}),
+        ('geo', '3.0', 'onnx', {}),
+        ('acoustic', '2.4', 'tf', {'library': 'litert'}),
+        ('geo', '2.4', 'tf', {'library': 'litert'}),
+    ):
+        print(f'Pre-downloading birdnet {kind} v{version} {backend} (en_us)...', file=sys.stderr)
+        birdnet.load(kind, version, backend, lang='en_us', precision='fp32', **kwargs)
 
     # Loading one locale generates the label files for every locale, so the
     # bundled app can switch species language offline. Asserted against the
     # lib's own language set because a partial label set is invisible here
-    # and only surfaces as a download on an end user's machine.
-    for kind, downloader in (
-        ('acoustic', AcousticDownloaderBaseV3_0),
-        ('geo', GeoDownloaderBaseV3_0),
+    # and only surfaces as a download on an end user's machine. The two
+    # engines ship different language sets, so each is checked against its
+    # own downloader.
+    for kind, version, backend, downloader in (
+        ('acoustic', '3.0', 'onnx', AcousticDownloaderBaseV3_0),
+        ('geo', '3.0', 'onnx', GeoDownloaderBaseV3_0),
+        ('acoustic', '2.4', 'tf', AcousticDownloaderBaseV2_4),
+        ('geo', '2.4', 'tf', GeoDownloaderBaseV2_4),
     ):
-        lang_dir = get_lang_dir(kind, '3.0', 'onnx')
+        lang_dir = get_lang_dir(kind, version, backend)
         missing = sorted(
             lang for lang in downloader.AVAILABLE_LANGUAGES
             if not (lang_dir / (lang + '.txt')).is_file()
         )
         if missing:
-            raise SystemExit(f'{kind} v3.0 labels missing for: {missing}')
+            raise SystemExit(f'{kind} v{version} labels missing for: {missing}')
     print('All models cached.')
 """).strip()
 
@@ -143,7 +158,7 @@ def _prewarm_models(download_env: dict, uv_run_prefix: list) -> None:
     """
     BIRDNET_APP_DATA_CACHE.mkdir(parents=True, exist_ok=True)
 
-    print('  Pre-downloading model checkpoints (BirdNET acoustic + geo, v3.0 onnx)')
+    print('  Pre-downloading model checkpoints (BirdNET acoustic + geo, v3.0 onnx and v2.4 tflite)')
     max_attempts = 3
     for attempt in range(1, max_attempts + 1):
         try:
@@ -166,6 +181,8 @@ def _prewarm_models(download_env: dict, uv_run_prefix: list) -> None:
 REQUIRED_MODEL_FILES: tuple[str, ...] = (
     'acoustic-models/v3.0/onnx/model-fp32.onnx',
     'geo-models/v3.0/onnx/model-fp32.onnx',
+    'acoustic-models/v2.4/tf/model-fp32.tflite',
+    'geo-models/v2.4/tf/model-fp32.tflite',
 )
 
 
@@ -173,7 +190,7 @@ def _verify_bundle(is_onefile: bool) -> None:
     """Fail the build if the model tree did not make it into the output.
 
     A frozen app whose models are missing still starts and still runs: it
-    just re-downloads ~557 MB on the user's first Analyze click, with the
+    just re-downloads ~640 MB on the user's first Analyze click, with the
     lib's progress bar going to a stderr that a windowed build sends to
     devnull. That failure has shipped before, from a malformed --add-data
     separator, and it is invisible from the build log. So it is checked here.

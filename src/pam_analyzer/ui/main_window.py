@@ -43,7 +43,7 @@ class MainWindow(QMainWindow):
     def __init__(
         self,
         app_state: AppState,
-        analysis_runner: AnalysisRunner,
+        analysis_runners: dict[str, AnalysisRunner],
         import_orchestrator: ImportOrchestrator,
         settings: AppSettings,
         audio_extractor: SoundfileAudioExtractor,
@@ -79,7 +79,12 @@ class MainWindow(QMainWindow):
         # The output-language list comes straight off the runner, so the
         # the same set), so read it once here from any runner and hand it to
         # the Project panel rather than injecting the whole runners dict.
-        available_locales = tuple(analysis_runner.available_locales())
+        # Union across engines: the project's language setting is
+        # model-independent, and each run localizes whatever its own model
+        # ships labels for. See birdnet_lib.all_available_locales.
+        available_locales = tuple(
+            sorted({loc for r in analysis_runners.values() for loc in r.available_locales()})
+        )
         self._project_panel = ProjectPanel(app_state, available_locales, self.ui.project_tab)
         self._mount_tab(self.ui.project_tab, self._project_panel, "Project")
 
@@ -89,7 +94,7 @@ class MainWindow(QMainWindow):
         if import_idx != -1:
             self.ui.tab_widget.removeTab(import_idx)
 
-        self._birdnet_panel = BirdNetPanel(app_state, analysis_runner, self.ui.birdnet_tab)
+        self._birdnet_panel = BirdNetPanel(app_state, analysis_runners, self.ui.birdnet_tab)
         self._mount_tab(self.ui.birdnet_tab, self._birdnet_panel, "BirdNET")
 
         self._examine_panel = ExaminePanel(

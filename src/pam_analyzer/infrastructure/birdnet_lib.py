@@ -1,18 +1,29 @@
 """Adapter helpers wrapping the birdnet>=1.1 library.
 
-BirdnetRunner needs three pieces from this library:
+An AnalysisRunner needs three pieces of taxonomy data from this library:
 
-- A geographic species whitelist for a (lat, lon, week) triplet, to filter
+- A geographic species allowlist for a (lat, lon, week) triplet, to filter
   out predictions that are biologically implausible at the recording site.
 - A {scientific_name: localized_common_name} mapping per requested locale,
   used to fill the per-locale common-name columns in the detections CSV.
 - The list of locales the model has labels for, to populate the language
   picker in the UI.
 
+All three are model-version specific: v2.4 and v3.0 label different class
+sets, under different taxonomies, in different language sets. TaxonomyServices
+binds one version's answers together so a runner can hold the services for
+its own model rather than reaching for a hardcoded version. TAXONOMY_V2_4 and
+TAXONOMY_V3_0 are the two instances. The caches behind them are keyed by
+version, so the two engines never evict each other's label maps.
+
+Each version pairs its acoustic model with the geo model of the same
+generation, because the geo model supplies the allow-list that model output
+is matched against and the two axes have to agree.
+
 We deliberately do not import `birdnet` at module load. Importing the lib
-triggers logging setup, and the ONNX runtime import further down the call
-chain is not free. Every public function below imports lazily so app
-startup does not pay that cost.
+triggers logging setup, and the runtime import further down the call chain
+is not free. Every public function below imports lazily so app startup does
+not pay that cost.
 
 Label entries arrive as 'Scientific name_Common name' (one species per
 line). The split happens here so callers see a plain {sci: common} dict.
@@ -20,46 +31,65 @@ line). The split happens here so callers see a plain {sci: common} dict.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import cache, lru_cache
+from typing import Any
 
 # FP32 over FP16: onnxruntime's CPU provider upcasts FP16 per-op, so the
 # smaller download would cost throughput on the hardware this app targets.
-# Defined here and imported by BirdnetRunner: the acoustic model it loads and
-# the label maps read below have to resolve the same model files.
+# Imported by the runners: the acoustic model each loads and the label maps
+# read below have to resolve the same model files.
 MODEL_PRECISION = "fp32"
+
+ACOUSTIC_V2_4 = "2.4"
+ACOUSTIC_V3_0 = "3.0"
+
+# Backend per version, as (backend, extra load kwargs). v2.4 has no ONNX
+# export, so it runs the TFLite weights on ai-edge-litert. Passing
+# library='litert' is what keeps the lib from importing TensorFlow, which
+# the app does not depend on.
+_BACKENDS: dict[str, tuple[str, dict[str, Any]]] = {
+    ACOUSTIC_V2_4: ("tf", {"library": "litert"}),
+    ACOUSTIC_V3_0: ("onnx", {}),
+}
+
+
+def _label_downloader(version: str) -> tuple[Any, Any]:
+    """(base downloader, backend downloader) classes for one version.
+
+    The base class answers which languages exist without downloading
+    anything. The backend class resolves the label file itself, which does
+    trigger a download on a cold cache.
+    """
+    if version == ACOUSTIC_V2_4:
+        from birdnet.acoustic.models.v2_4.model import AcousticDownloaderBaseV2_4
+        from birdnet.acoustic.models.v2_4.tf import AcousticTFDownloaderV2_4
+
+        return AcousticDownloaderBaseV2_4, AcousticTFDownloaderV2_4
+
+    from birdnet.acoustic.models.v3_0.model import AcousticDownloaderBaseV3_0
+    from birdnet.acoustic.models.v3_0.onnx import AcousticOnnxDownloaderV3_0
+
+    return AcousticDownloaderBaseV3_0, AcousticOnnxDownloaderV3_0
 
 
 @cache
-def _geo_model_cached():  # noqa: ANN202
-    """Load the geo model once per process.
+def _geo_model_cached(version: str):  # noqa: ANN202
+    """Load one version's geo model once per process.
 
     Loading triggers a one-time download into the lib's app-data directory
     (default ~/Library/Application Support/birdnet on macOS, overridable
     via BIRDNET_APP_DATA). Subsequent calls reuse the model.
 
     Language is fixed to en_us because we never surface the geo model's
-    own common-name output; we only consume its scientific-name axis.
+    own common-name output. We only consume its scientific-name axis.
     """
     import birdnet
 
-    return birdnet.load("geo", "3.0", "onnx", lang="en_us", precision=MODEL_PRECISION)
-
-
-def region_species_scientific(lat: float, lon: float, week: int) -> frozenset[str]:
-    """Scientific names BirdNET considers possible at (lat, lon, week).
-
-    A `week` of -1 means 'no week filter' and is translated to the lib's
-    `week=None`. Threshold 0.03 matches the lib's own default for the
-    species-filter step.
-    """
-    geo = _geo_model_cached()
-    result = geo.predict(
-        float(lat),
-        float(lon),
-        week=(None if week == -1 else week),
-        min_confidence=0.03,
+    backend, kwargs = _BACKENDS[version]
+    return birdnet.load(
+        "geo", version, backend, lang="en_us", precision=MODEL_PRECISION, **kwargs
     )
-    return frozenset(_split_sci_common(name)[0] for name in result.to_set())
 
 
 def _split_sci_common(line: str) -> tuple[str, str]:
@@ -84,62 +114,104 @@ def normalize_lang_code(code: str) -> str:
 
 
 @cache
-def available_locales() -> tuple[str, ...]:
-    """Locale codes the v3.0 model ships labels for.
-
-    Returned as a sorted tuple of canonical codes (e.g. 'de', 'en_us',
-    'fr'). Used by the UI's language picker. Reading AVAILABLE_LANGUAGES
-    off the downloader avoids downloading anything to answer the question.
-
-    v3.0 dropped Estonian ('et') when it moved to the shared taxonomy, so
-    a project that stored 'et' now falls through locale_label_map's
-    unknown-locale path and simply gets no localization.
-    """
-    from birdnet.acoustic.models.v3_0.model import AcousticDownloaderBaseV3_0
-
-    return tuple(sorted(AcousticDownloaderBaseV3_0.AVAILABLE_LANGUAGES))
+def _available_locales(version: str) -> tuple[str, ...]:
+    base, _ = _label_downloader(version)
+    return tuple(sorted(base.AVAILABLE_LANGUAGES))
 
 
-@cache
-def known_species_scientific() -> frozenset[str]:
-    """Every scientific name on the model's label axis, ignoring region.
-
-    Lets a caller tell two kinds of filter drop apart: a species the model
-    knows but does not expect at a given location/week (a geography drop),
-    versus a name the axis does not carry at all (a user typo, or a name
-    from an older taxonomy).
-
-    Sourced from the en_us label map, whose keys are the full species set.
-    en_us is always present in the shipped locale set, so this never
-    degrades to an empty set the way an arbitrary locale could.
-    """
-    return frozenset(locale_label_map("en_us"))
-
-
-@lru_cache(maxsize=8)
-def locale_label_map(lang: str) -> dict[str, str]:
-    """{scientific_name: localized_common_name} for one language.
-
-    Sourced from the acoustic model's own label files, so the keys are
-    exactly the axis result rows carry. The geo model has a wider class
-    set (it covers insects, amphibians and mammals the acoustic model does
-    not emit), which makes it the wrong side to key common names on.
-
-    Returns {} for unknown locales rather than raising, so a stale code in
-    a project file degrades to no localization rather than an exception.
-    """
+@lru_cache(maxsize=16)
+def _locale_label_map(version: str, lang: str) -> dict[str, str]:
     lang = normalize_lang_code(lang)
-    from birdnet.acoustic.models.v3_0.model import AcousticDownloaderBaseV3_0
-    from birdnet.acoustic.models.v3_0.onnx import AcousticOnnxDownloaderV3_0
-
-    if lang not in AcousticDownloaderBaseV3_0.AVAILABLE_LANGUAGES:
+    base, backend = _label_downloader(version)
+    if lang not in base.AVAILABLE_LANGUAGES:
         return {}
     # Triggers the model download on first call if absent. Subsequent calls
     # just read the label file.
-    _, species = AcousticOnnxDownloaderV3_0.get_model_path_and_labels(lang, MODEL_PRECISION)
+    _, species = backend.get_model_path_and_labels(lang, MODEL_PRECISION)
     mapping: dict[str, str] = {}
     for entry in species:
         sci, common = _split_sci_common(entry)
         if sci:
             mapping[sci] = common
     return mapping
+
+
+@dataclass(frozen=True, slots=True)
+class TaxonomyServices:
+    """One model version's species axis, label maps and geo filter.
+
+    A runner holds the instance matching the model it loads, so the shared
+    pipeline in BaseAnalysisRunner can resolve species filters and common
+    names without knowing which version is running.
+    """
+
+    version: str
+
+    def region_species_scientific(self, lat: float, lon: float, week: int) -> frozenset[str]:
+        """Scientific names the geo model considers possible at (lat, lon, week).
+
+        A `week` of -1 means 'no week filter' and is translated to the lib's
+        `week=None`. Threshold 0.03 matches the lib's own default for the
+        species-filter step.
+        """
+        geo = _geo_model_cached(self.version)
+        result = geo.predict(
+            float(lat),
+            float(lon),
+            week=(None if week == -1 else week),
+            min_confidence=0.03,
+        )
+        return frozenset(_split_sci_common(name)[0] for name in result.to_set())
+
+    def known_species_scientific(self) -> frozenset[str]:
+        """Every scientific name on this model's label axis, ignoring region.
+
+        Lets a caller tell two kinds of filter drop apart: a species the
+        model knows but does not expect at a given location/week (a geography
+        drop), versus a name the axis does not carry at all (a user typo, or
+        a name from the other model's taxonomy).
+
+        Sourced from the en_us label map, whose keys are the full species
+        set. en_us is present in both versions' locale sets, so this never
+        degrades to an empty set the way an arbitrary locale could.
+        """
+        return frozenset(self.locale_label_map("en_us"))
+
+    def locale_label_map(self, lang: str) -> dict[str, str]:
+        """{scientific_name: localized_common_name} for one language.
+
+        Sourced from the acoustic model's own label files, so the keys are
+        exactly the axis result rows carry. The geo model has a wider class
+        set (it covers insects, amphibians and mammals the acoustic model
+        does not emit), which makes it the wrong side to key common names on.
+
+        Returns {} for a locale this version has no labels for rather than
+        raising, so a project whose language only one engine ships degrades
+        to no localization on the other rather than failing the run.
+        """
+        return _locale_label_map(self.version, lang)
+
+    def available_locales(self) -> tuple[str, ...]:
+        """Locale codes this model version ships labels for.
+
+        Reading AVAILABLE_LANGUAGES off the downloader answers the question
+        without downloading anything.
+        """
+        return _available_locales(self.version)
+
+
+TAXONOMY_V2_4 = TaxonomyServices(ACOUSTIC_V2_4)
+TAXONOMY_V3_0 = TaxonomyServices(ACOUSTIC_V3_0)
+
+
+@cache
+def all_available_locales() -> tuple[str, ...]:
+    """Every locale either engine can localize into.
+
+    The project's language setting is model-independent, so the picker
+    offers the union and each run localizes what its own model has labels
+    for. The sets overlap but neither contains the other: v2.4 alone ships
+    Italian and Korean, v3.0 alone ships Catalan and the regional Spanish
+    variants.
+    """
+    return tuple(sorted(set(_available_locales(ACOUSTIC_V2_4)) | set(_available_locales(ACOUSTIC_V3_0))))

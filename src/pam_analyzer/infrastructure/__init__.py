@@ -6,6 +6,7 @@ from .audio_inventory_discovery import (
     discover_audio_structure,
     resolve_audio_sizes,
 )
+from .birdnet_2_4_runner import Birdnet24Runner
 from .birdnet_runner import BirdnetRunner
 from .pamproj_migration import (
     AudioRootNotFound,
@@ -21,6 +22,7 @@ from .psutil_sdcard_scanner import PsutilSdCardScanner
 __all__ = [
     "AudioImporter",
     "AudioRootNotFound",
+    "Birdnet24Runner",
     "BirdnetRunner",
     "LegacyProject",
     "MigrationReport",

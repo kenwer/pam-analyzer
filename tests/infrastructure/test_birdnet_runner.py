@@ -31,8 +31,8 @@ from pam_analyzer.domain import (
     FilterMode,
     RunStatus,
 )
-from pam_analyzer.infrastructure.birdnet_runner import BirdnetRunner
-from tests.conftest import CURRENT_MODEL_KEY
+from pam_analyzer.infrastructure.birdnet_runner import MODEL_KEY, BirdnetRunner
+from pam_analyzer.infrastructure.legacy_names import BIRDNET_2_4, BIRDNET_3_0
 
 
 class _RecordingProgress:
@@ -122,6 +122,47 @@ def test_scientific_name_is_the_last_resort() -> None:
     assert _parse_one("Parus major_", {"Parus major": ""}) == "Parus major"
 
 
+def _parse_row_on_axis(species_name: str, taxonomy: str):
+    """Run _parse_row on a synthetic row under a given output taxonomy."""
+    return BirdnetRunner()._parse_row(
+        {
+            "species_name": species_name,
+            "input": "/tmp/x.WAV",
+            "start_time": 0.0,
+            "end_time": 3.0,
+            "confidence": 0.9,
+        },
+        preferred_lang_map={},
+        locale_maps={"en_us": {}},
+        settings=AnalysisSettings(
+            min_conf=0.5, overlap=0.0, locales=("en_us",), canonical_taxonomy=taxonomy
+        ),
+    )
+
+
+def test_v3_output_is_untouched_on_its_own_axis() -> None:
+    """The default axis is v3.0's, so the rewrite must cost this runner nothing."""
+    parsed = _parse_row_on_axis("Astur gentilis_Eurasian Goshawk", BIRDNET_3_0)
+    assert parsed.scientific_name == "Astur gentilis"
+
+
+def test_v3_output_is_rewritten_down_to_the_v2_4_axis() -> None:
+    """A project pinned to v2.4 names gets them from the v3.0 engine too.
+
+    Otherwise pinning the axis would only half work: v2.4 runs would land on
+    the chosen axis and v3.0 runs would not, splitting the same bird across
+    two spellings inside one project.
+    """
+    parsed = _parse_row_on_axis("Astur gentilis_Eurasian Goshawk", BIRDNET_2_4)
+    assert parsed.scientific_name == "Accipiter gentilis"
+
+
+def test_v3_match_name_stays_on_the_v3_axis() -> None:
+    """v3.0's geo allow-list speaks v3.0, so the filter must not see the rewrite."""
+    parsed = _parse_row_on_axis("Astur gentilis_Eurasian Goshawk", BIRDNET_2_4)
+    assert parsed.match_name == "Astur gentilis"
+
+
 @pytest.mark.slow
 def test_writes_detections_csv(campaign_with_minute_wav: Path) -> None:
     camp_dir = campaign_with_minute_wav
@@ -140,7 +181,7 @@ def test_writes_detections_csv(campaign_with_minute_wav: Path) -> None:
     camp = result.campaigns[0]
     assert camp.campaign_name == "c1"
     assert camp.wav_count == 1
-    assert camp.detections_csv == camp_dir / f"detections-{CURRENT_MODEL_KEY}.csv"
+    assert camp.detections_csv == camp_dir / f"detections-{MODEL_KEY}.csv"
     assert camp.detections_csv.exists()
 
     header = camp.detections_csv.read_text(encoding="utf-8").splitlines()[0]
@@ -162,7 +203,7 @@ def test_written_rows_are_on_the_v3_axis(campaign_with_minute_wav: Path) -> None
     Guards the upgrade: rows carrying legacy (v2.4-era) spellings would mean
     the runner is normalizing names it should be passing through.
     """
-    from pam_analyzer.infrastructure.birdnet_lib import known_species_scientific
+    from pam_analyzer.infrastructure.birdnet_lib import TAXONOMY_V3_0
 
     settings = AnalysisSettings(min_conf=0.001, overlap=0.0, locales=("en_us",))
     campaign = Campaign(
@@ -178,7 +219,7 @@ def test_written_rows_are_on_the_v3_axis(campaign_with_minute_wav: Path) -> None
     with open(result.campaigns[0].detections_csv, newline="", encoding="utf-8") as f:
         names = {r["Scientific_Name"] for r in _csv.DictReader(f)}
     assert names, "expected at least one row at min_conf=0.001"
-    assert names <= known_species_scientific()
+    assert names <= TAXONOMY_V3_0.known_species_scientific()
 
 
 @pytest.mark.slow

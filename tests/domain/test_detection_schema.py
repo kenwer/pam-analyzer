@@ -5,7 +5,7 @@ from dataclasses import fields
 
 from pam_analyzer.domain import Detection, VerifiedState
 from pam_analyzer.domain import detection_schema as schema
-from tests.conftest import CURRENT_MODEL_KEY
+from tests.conftest import DEFAULT_MODEL_KEY
 
 
 def _sample_detection() -> Detection:
@@ -25,7 +25,7 @@ def _sample_detection() -> Detection:
         lon=9.32,
         species_list="",
         min_conf=0.25,
-        model=CURRENT_MODEL_KEY,
+        model=DEFAULT_MODEL_KEY,
         verified=VerifiedState.TRUE,
         corrected_species="",
         comment="clear song",

@@ -1,10 +1,22 @@
 from dataclasses import dataclass
 
-# Largest overlap (seconds) the model accepts. BirdNET v3.0 frames audio in
-# 3 s windows (96,000 samples at 32 kHz), so consecutive windows must advance
-# by at least 0.5 s.
+# Largest overlap (seconds) the models accept. Both BirdNET v2.4 and v3.0
+# frame audio in 3 s windows, so consecutive windows must advance by at
+# least 0.5 s.
 MAX_OVERLAP_S = 2.5
-DEFAULT_MIN_CONF = 0.5
+DEFAULT_MIN_CONF = 0.25
+
+# Model key a new project starts on. A literal rather than an import from
+# the runner, because the domain layer must not depend on infrastructure.
+# The panel falls back to its first runner if a project names a key that no
+# longer ships, so this string going stale degrades gracefully.
+DEFAULT_ANALYSIS_MODEL = "BirdNET-2.4"
+
+# Scientific-name axis a new project writes its detections under. Also a
+# literal, for the same layering reason, and matching the axis identifiers
+# in infrastructure.legacy_names.TAXONOMIES. A project naming an axis this
+# build no longer offers leaves names un-normalized rather than failing.
+DEFAULT_TAXONOMY = "BirdNET-3.0"
 
 @dataclass(frozen=True, slots=True)
 class LatLon:
@@ -25,3 +37,4 @@ class AnalysisSettings:
     min_conf: float = DEFAULT_MIN_CONF
     overlap: float = 0.0
     locales: tuple[str, ...] = ()  # frozen for hashability
+    canonical_taxonomy: str = DEFAULT_TAXONOMY  # axis every model's output is written under

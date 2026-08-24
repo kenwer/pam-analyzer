@@ -1,17 +1,28 @@
-"""BirdNET v3.0 infrastructure adapter.
+"""BirdNET v2.4 infrastructure adapter.
 
-BirdnetRunner is the AnalysisRunner implementation, backed by BirdNET v3.0
-on the ONNX backend via the birdnet>=1.1 library. Audio I/O, 3 s window
-framing, batched inference, sigmoid scoring, and the confidence threshold
-all live inside the lib's predict_session pipeline. Per-campaign
-sequencing, progress reporting, species filtering, and CSV writing come
-from BaseAnalysisRunner. This module supplies only the three model-specific
-hooks.
+Birdnet24Runner is the AnalysisRunner backed by BirdNET v2.4, kept
+alongside the v3.0 runner so a monitoring study that started under v2.4 can
+keep extending its time series under the same model, and so there is a
+non-preview engine available while v3.0 ships as a preview build.
+
+The model has no ONNX export, so it runs its TFLite weights on
+ai-edge-litert. That interpreter is part of the base birdnet install and
+imports no TensorFlow, which is why keeping this engine costs no
+dependency.
+
+v2.4 labels its classes on the older eBird-based axis. The species filter
+matches on that axis (the allow-list comes from the geo model of the same
+generation, via TAXONOMY_V2_4), but the name written to CSV is rewritten to
+the project's chosen axis by legacy_names.to_axis(), so both engines' rows
+line up in the Examine grid. On the default v3.0 axis that turns Accipiter
+gentilis into Astur gentilis. On the v2.4 axis it is a no-op, which is what
+a study with years of v2.4 CSVs behind it wants. The Model column records
+which engine actually produced each row.
 
 The lib's `species_name` in result rows is in 'Scientific_Common' format
 because we load the model with lang='en_us'. We split each entry to get the
-scientific name (the axis for the allow-list check) and the English common
-name. Other locales come from locale_label_map().
+scientific name and the English common name. Other locales come from the
+taxonomy's locale_label_map().
 """
 
 from __future__ import annotations
@@ -23,13 +34,10 @@ from typing import Any, ClassVar
 
 from ..domain import AnalysisSettings
 from .base_analysis_runner import BaseAnalysisRunner, ParsedRow
-from .birdnet_lib import MODEL_PRECISION, TAXONOMY_V3_0
+from .birdnet_lib import MODEL_PRECISION, TAXONOMY_V2_4
 from .legacy_names import to_axis
 
-# Hardcoded rather than derived from the library because this string is part of
-# the CSV filename on the user's disk. The version suffix has to name the release
-# the library ships, which test_model_identity.py checks.
-MODEL_KEY = "BirdNET-3.0-preview3.1"
+MODEL_KEY = "BirdNET-2.4"
 
 
 def _split_sci_common(species_name: str) -> tuple[str, str]:
@@ -38,28 +46,35 @@ def _split_sci_common(species_name: str) -> tuple[str, str]:
     return sci, common
 
 
-class BirdnetRunner(BaseAnalysisRunner):
-    """AnalysisRunner implementation backed by BirdNET v3.0 (ONNX).
+class Birdnet24Runner(BaseAnalysisRunner):
+    """AnalysisRunner implementation backed by BirdNET v2.4 (TFLite/litert).
 
-    Loads the model once per run and reuses it across campaigns. Writes
-    <campaign>/detections-<MODEL_KEY>.csv plus the per-week species-list
-    TXT files.
+    Loads the model once per run and reuses it across campaigns. The lib
+    handles audio I/O, 3 s window framing, batched inference, sigmoid
+    scoring, and the confidence threshold. Writes
+    <campaign>/detections-BirdNET-2.4.csv plus the per-week species-list
+    TXT files via the base class.
     """
 
     model_key: ClassVar[str] = MODEL_KEY
-    log_prefix: ClassVar[str] = "birdnet"
-    taxonomy = TAXONOMY_V3_0
+    log_prefix: ClassVar[str] = "birdnet2.4"
+    taxonomy = TAXONOMY_V2_4
 
     def _load_model(self) -> Any:
-        """Load BirdNET v3.0 on the ONNX backend.
+        """Load BirdNET v2.4's TFLite weights on the litert interpreter.
+
+        library='litert' selects ai-edge-litert over the tflite interpreter
+        bundled inside TensorFlow. Without it the lib would try to import
+        TensorFlow, which this app deliberately does not depend on.
 
         Loaded with en_us so result rows carry English common names in the
-        'Sci_Common' species_name string. Other locales come from
-        locale_label_map() lookups inside _parse_row.
+        'Sci_Common' species_name string.
         """
         import birdnet
 
-        return birdnet.load("acoustic", "3.0", "onnx", lang="en_us", precision=MODEL_PRECISION)
+        return birdnet.load(
+            "acoustic", "2.4", "tf", library="litert", lang="en_us", precision=MODEL_PRECISION
+        )
 
     def _open_predict_session(
         self,
@@ -73,15 +88,16 @@ class BirdnetRunner(BaseAnalysisRunner):
 
         custom_species_list is intentionally None: the per-week allow-list is
         applied as a post-filter on result rows instead. The lib's mask is
-        session-bound and cannot change between weeks, so a single session plus
-        row-level checks yields the same filtered output as one session per
-        week without the per-week model warmup.
+        session-bound and cannot change between weeks, so a single session
+        plus row-level checks yields the same filtered output as one session
+        per week without the per-week model warmup.
 
-        v3.0 bakes the sigmoid into the ONNX graph, so apply_sigmoid=True is
-        the lib's documented way of saying 'return those probabilities
-        unchanged' rather than a request for a second squashing. For the same
-        reason sigmoid_sensitivity must stay 1.0 and apply_softmax is rejected
-        outright. The raw logits a softmax would need are not exported.
+        Unlike v3.0, v2.4 emits raw logits, so apply_sigmoid=True is a real
+        squashing step rather than a pass-through. sigmoid_sensitivity=1.0 is
+        the neutral setting and keeps confidences comparable with what
+        earlier releases of this app wrote. top_k=None (the lib defaults to
+        5) returns every class above the threshold, matching v3.0's
+        behaviour so the two engines' row counts stay comparable.
         """
         return model.predict_session(
             default_confidence_threshold=settings.min_conf,
@@ -109,22 +125,12 @@ class BirdnetRunner(BaseAnalysisRunner):
     ) -> ParsedRow:
         """Convert one raw lib result row into a ParsedRow.
 
-        Common-name lookups key on the v3.0 spelling because the label maps
-        come from v3.0's own label files. Only the written scientific name
+        Common-name lookups key on the v2.4 spelling because the label maps
+        come from v2.4's own label files. Only the written scientific name
         moves to the project's axis.
         """
         sci, common_en = _split_sci_common(str(raw_row["species_name"]))
-        # v3.0 already emits current-axis names, so this is a no-op on the
-        # default axis and rewrites down to the v2.4 spelling only when the
-        # project asks for that axis. match_name keeps v3.0's own spelling
-        # either way, because the geo allow-list speaks v3.0's taxonomy.
         out_name = to_axis(sci, settings.canonical_taxonomy)
-
-        # Fall back to the lib's en_us common name if the locale lookup misses
-        # (e.g. a species not yet translated in the user's language). `or`
-        # rather than a .get default because locale_label_map keeps entries
-        # whose common name is blank, and a blank translation has to degrade
-        # the same way a missing key does.
         preferred = preferred_lang_map.get(sci) or common_en or out_name
 
         # For the en_us column reuse the lib-provided common name directly,

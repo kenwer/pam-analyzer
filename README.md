@@ -3,41 +3,40 @@ Automated bird species detection from acoustic recordings.
 
 <!--TOC-->
 
-- [PAM Analyzer](#pam-analyzer)
-  - [About](#about)
-  - [Download](#download)
-  - [Features](#features)
-  - [Usage](#usage)
-    - [Migrating legacy projects](#migrating-legacy-projects)
-  - [Workflow](#workflow)
-    - [Project Settings](#project-settings)
-    - [Campaigns](#campaigns)
-    - [Run bird species detection](#run-bird-species-detection)
-    - [Output files](#output-files)
-    - [Examine Detections](#examine-detections)
-  - [Keyboard shortcuts](#keyboard-shortcuts)
-    - [Global](#global)
-    - [Campaigns panel](#campaigns-panel)
-    - [Examine panel: detection row selected](#examine-panel-detection-row-selected)
-  - [Core Concepts](#core-concepts)
-    - [Project](#project)
-    - [Campaign](#campaign)
-    - [ARU (Autonomous Recording Unit)](#aru-autonomous-recording-unit)
-  - [Model](#model)
-    - [Species names](#species-names)
-    - [Region filtering](#region-filtering)
-    - [Running on a GPU](#running-on-a-gpu)
-  - [Troubleshooting](#troubleshooting)
-  - [Changelog](#changelog)
-  - [Acknowledgements](#acknowledgements)
-  - [Citation](#citation)
-  - [License](#license)
+- [About](#about)
+- [Download](#download)
+- [Features](#features)
+- [Usage](#usage)
+  - [Migrating legacy projects](#migrating-legacy-projects)
+- [Workflow](#workflow)
+  - [Project Settings](#project-settings)
+  - [Campaigns](#campaigns)
+  - [Run bird species detection](#run-bird-species-detection)
+  - [Output files](#output-files)
+  - [Examine Detections](#examine-detections)
+- [Keyboard shortcuts](#keyboard-shortcuts)
+  - [Global](#global)
+  - [Campaigns panel](#campaigns-panel)
+  - [Examine panel: detection row selected](#examine-panel-detection-row-selected)
+- [Core Concepts](#core-concepts)
+  - [Project](#project)
+  - [Campaign](#campaign)
+  - [ARU (Autonomous Recording Unit)](#aru-autonomous-recording-unit)
+- [Models](#models)
+  - [Species names](#species-names)
+  - [Region filtering](#region-filtering)
+  - [Running on a GPU](#running-on-a-gpu)
+- [Troubleshooting](#troubleshooting)
+- [Changelog](#changelog)
+- [Acknowledgements](#acknowledgements)
+- [Citation](#citation)
+- [License](#license)
 
 <!--TOC-->
 
 
 ## About
-PAM Analyzer is a cross-platform desktop application designed to help researchers performing Passive Acoustic Monitoring (PAM). It provides a complete workflow for processing Autonomous Recording Unit (ARU) field recordings: from importing SD card contents and running automated species detection (using BirdNET-3.0-preview3.1), to reviewing, annotating, and exporting detections. The application organizes data into a hierarchical structure of projects and campaigns, making it easy to manage large-scale monitoring studies.
+PAM Analyzer is a cross-platform desktop application designed to help researchers performing Passive Acoustic Monitoring (PAM). It provides a complete workflow for processing Autonomous Recording Unit (ARU) field recordings: from importing SD card contents and running automated species detection (using BirdNET v2.4 or v3.0), to reviewing, annotating, and exporting detections. The application organizes data into a hierarchical structure of projects and campaigns, making it easy to manage large-scale monitoring studies.
 
 ![Examine panel of the application interface](https://github.com/user-attachments/assets/613c7c67-abaf-4425-b2dc-15d194037eee)
 
@@ -54,7 +53,7 @@ Note: On any supported OS you can also easily run PAM Analyzer from source using
 ## Features
 * **Project & campaign management**: Organizes monitoring deployments into self-contained project folders. A project folder contains the campaigns, each supporting independent species filters (via geographic coordinates and/or custom species lists). Projects and campaigns store no absolute paths, so they are relocatable.
 * **SD card import**: Automatically detects ARU SD cards matching a configured volume name pattern and imports audio into a structured `campaign/ARU/week` directory layout. Both AudioMoth and Wildlife Acoustics Song Meter Micro cards are supported, including Song Meter's `Data/` subfolder layout. WAV recordings are transcoded to FLAC (lossless, 16-bit PCM) on import to save disk space.
-* **Species detection**: Run BirdNET-3.0-preview3.1 per-campaign or batched across campaigns, with a configurable confidence threshold and segment overlap. Detections are written to one CSV per campaign, named after the model that produced them, so results from earlier model versions stay readable side by side (see [Output files](#output-files)).
+* **Species detection**: Run BirdNET-2.4 or BirdNET-3.0-preview3.1, picked from a model dropdown, per-campaign or batched across campaigns, with a configurable confidence threshold and segment overlap. Each model writes its own CSV per campaign, so runs of both coexist and are reviewed side by side (see [Output files](#output-files)).
 * **Detection review**: Provides a tabular interface for detections with multi-column sorting, filtering, inline annotation (verification status, species correction, comments), and integrated audio playback.
 * **Data export**: Supports exporting filtered detections to CSV format and extracting annotated audio snippets with metadata embedded in filenames.
 
@@ -105,16 +104,18 @@ Create and manage the campaigns that belong to this project. The panel on the le
 
     Lists written before the move to BirdNET v3.0 keep working: names the older v2.4 taxonomy spelled differently (e.g. `Accipiter gentilis` for what v3.0 calls `Astur gentilis`) are matched against both spellings. See [Species names](#species-names).
 
-The label files BirdNET v3.0 ships (one per language, each listing every detectable class as `Scientific name_Common name`) come with the model, so any single language's file doubles as the full scientific-name reference. In the macOS app they sit inside the bundle under `Contents/Resources/birdnet-models/`. In a development checkout they land in the library cache at `~/Library/Application Support/birdnet/acoustic-models/v3.0/`.
+The label files each model ships (one per language, each listing every detectable class as `Scientific name_Common name`) come with the model, so any single language's file doubles as the full scientific-name reference. In the macOS app they sit inside the bundle under `Contents/Resources/birdnet-models/`. In a development checkout they land in the library cache at `~/Library/Application Support/birdnet/acoustic-models/v3.0/` and `.../v2.4/`.
 - **Delete** a campaign via the trash icon on its list card, with an inline confirmation step.
 - **Import audio** from SD cards directly within a campaign's detail view. Click the import button to start monitoring for SD card volumes matching the configured name pattern. When a matching card is inserted, files are imported into the `campaign/ARU/week` directory structure with deduplication and conflict resolution. WAV recordings are transcoded to FLAC (lossless, 16-bit PCM) to save disk space, and any GUANO metadata (timestamp, location, device) is carried across into the FLAC. The encode is verified against the source before a card is cleared, so a recording is never lost to a bad transcode; FLAC sources and the device's provenance file are copied through untouched. The device family is recognised from the card layout: AudioMoth keeps recordings and a `CONFIG.TXT` at the card root, while Song Meter keeps recordings under `Data/` and a `<serial>_Summary.txt` log at the root.
 
 Campaigns are discovered automatically from the project folder: any subdirectory containing a `campaign.toml` sidecar is treated as a campaign.
 
 ### Run bird species detection
-Choose which campaign(s) to run against. The min confidence, overlap, and species language settings come from [Project Settings](#project-settings). See [Model](#model) for what the model detects and how its scores are produced.
+Choose the model and which campaign(s) to run against. The min confidence, overlap, and species language settings come from [Project Settings](#project-settings). See [Models](#models) for what each model detects, how its scores are produced, and which to pick.
 
-The downloadable builds ship with the acoustic model, the geographic model, and the label files for every language already inside them, so analysis runs fully offline and the first run starts straight away. Only a development checkout downloads them, on first use, into the `birdnet` library's own cache.
+The model choice is saved in the project file, so it travels with the study folder. Running a second model on a campaign does not replace the first model's results: each writes its own CSV and the Examine panel shows both.
+
+The downloadable builds ship with both acoustic models, both geographic models, and the label files for every language already inside them, so analysis runs fully offline and the first run starts straight away. Only a development checkout downloads them, on first use, into the `birdnet` library's own cache.
 
 Each detection is assigned a within-segment `Rank` (1 = highest-confidence species in that window), useful for deprioritising detections that are consistently outcompeted by other species in the same clip. Analyses can be run per-campaign or across all campaigns. See [Output files](#output-files) for what is written to disk.
 
@@ -128,7 +129,7 @@ Analysis results are written directly into each campaign folder, next to the aud
     └── applied-species-list-week-NN.txt  # per BirdNET week, when the audio is organised in week_NN folders
 ```
 
-- For each campaign **`detections-{model_key}.csv`** is the file where the species detections are stored. The `{model_key}` suffix identifies the model (`BirdNET-3.0-preview3.1`). CSVs written by earlier versions of the app (`detections-BirdNET-2.4.csv`, `detections-Perch-2.0.csv`) remain readable alongside new runs. Every row carries a `Model` column identifying its source, plus the annotation columns (`Verified`, `Corrected_Species`, `Comment`). The Examine panel loads every model file it finds for the campaign and concatenates them. Annotations are written back to the file the row came from. The `File` column is stored relative to the campaign folder, so renaming or moving a campaign never breaks its CSVs.
+- For each campaign **`detections-{model_key}.csv`** is the file where the species detections are stored. The `{model_key}` suffix identifies the model (`BirdNET-2.4`, `BirdNET-3.0-preview3.1`). CSVs written by models no longer shipped (`detections-Perch-2.0.csv`) remain readable alongside new runs. Every row carries a `Model` column identifying its source, plus the annotation columns (`Verified`, `Corrected_Species`, `Comment`). The Examine panel loads every model file it finds for the campaign and concatenates them. Annotations are written back to the file the row came from. The `File` column is stored relative to the campaign folder, so renaming or moving a campaign never breaks its CSVs.
 - **`applied-species-list*.txt`** is the merged list (geographic list plus an optional must-have species list, the latter tagged `# must-have`) the run actually filtered against, exported in location mode for reference.
 
 No combined, summary, or per-week CSVs are produced: the "All campaigns" view in the Examine panel concatenates the per-campaign CSVs in memory, so it always reflects the current per-campaign files.
@@ -248,32 +249,44 @@ Example:
 ```
 
 
-## Model
-PAM Analyzer runs the BirdNET-3.0-preview3.1 model locally on the CPU through the [`birdnet`](https://github.com/birdnet-team/birdnet) library, using the ONNX backend. TensorFlow is not installed.
+## Models
+PAM Analyzer runs two BirdNET models locally on the CPU through the [`birdnet`](https://github.com/birdnet-team/birdnet) library.
 
-| | **BirdNET v3.0** |
-|---|---|
-| Release | `BirdNET+_V3.0-preview3.1_Global_11K` ([Zenodo](https://zenodo.org/records/20703646)) |
-| Backend | ONNX Runtime (FP32) via the `birdnet` library |
-| Audio window | 3 s |
-| Sample rate | 32 kHz (the library resamples other rates) |
-| Classes | 11,560 (birds, plus amphibians, insects and mammals) |
-| Taxonomy | shared with the v3.0 geographic model |
-| Size | ~542 MB acoustic + ~16 MB geographic, bundled in the distributables |
-| Speed (Apple M4 Pro, CPU) | ~60x real-time, about 1 minute per hour of audio |
-| Confidence units in CSV | Probability (0-1) |
+| | **BirdNET v2.4** | **BirdNET v3.0** |
+|---|---|---|
+| Release | `BirdNET_GLOBAL_6K_V2.4` ([Zenodo](https://zenodo.org/records/15050749)) | `BirdNET+_V3.0-preview3.1_Global_11K` ([Zenodo](https://zenodo.org/records/20703646)) |
+| Backend | TFLite on `ai-edge-litert` (FP32) | ONNX Runtime (FP32) |
+| Audio window | 3 s | 3 s |
+| Sample rate | 48 kHz (the library resamples other rates) | 32 kHz (the library resamples other rates) |
+| Classes | 6,522 (birds, plus a few amphibians and insects) | 11,560 (birds, plus amphibians, insects and mammals) |
+| Taxonomy | older eBird-based axis | shared with the v3.0 geographic model |
+| Species languages | 27 | 29 |
+| Size | ~49 MB acoustic + ~28 MB geographic | ~542 MB acoustic + ~16 MB geographic |
+| Speed (Apple M4 Pro, CPU) | ~1050x real-time, about 3 seconds per hour of audio | ~60x real-time, about 1 minute per hour of audio |
 
-**This is a preview model.** The `birdnet` library currently ships `V3.0-preview3.1`, not a final v3.0 release, so scores and label set may still change. When a final v3.0 ships, it gets its own model key and its own CSV, so preview and release detections never mix and it stays clear which produced what.
+Both models are bundled in the distributables. Each is paired with the geographic model of its own generation for [region filtering](#region-filtering).
+
+**v3.0 is a preview model** not a final v3.0 release, so scores and label set may still change. When a final v3.0 ships, it gets its own model key and its own CSV, so preview and release detections never mix and it stays clear which produced what.
+**BirdNET v2.4** is the default. It is an older but established release. It analyzes roughly 17x faster than the Birdnet-3.0 preview but is also not as good.
 
 ### Species names
 BirdNET v3.0 names species under a newer taxonomy than v2.4 did, so a handful of birds changed genus: the Northern Goshawk is `Astur gentilis` where v2.4 called it `Accipiter gentilis`, and the same applies to `Charadrius`/`Anarhynchus` plovers, `Ciccaba`/`Strix` owls, `Ixobrychus`/`Botaurus` bitterns, and others.
 
-Species lists you wrote against the old names keep working. A bundled alias table (`infrastructure/data/legacy_species_aliases.tsv`, 175 pairs) expands each name you type to include its current spelling, so `Accipiter gentilis` matches the `Astur gentilis` the model emits. This applies only to names you type: the species-list file and the must-have list.
+**Detections are written under one taxonomy, whichever model produced them.** Both engines' output is mapped through a bundled alias table (`infrastructure/data/legacy_species_aliases.tsv`, 175 pairs) before it reaches the CSV, so the same bird appears under one spelling across both engines and sorts together in the Examine grid. The `Model` column still records which engine produced each row.
 
-Detection CSVs written by earlier versions of the app are not rewritten. A campaign analyzed before the upgrade keeps its `detections-BirdNET-2.4.csv` and `detections-Perch-2.0.csv` under their original names, and the Examine panel still loads them.
+Which taxonomy that is, is a project setting: **Project > Species taxonomy**. It applies to the next run, not to CSVs already written.
+
+- **BirdNET-3.0** (default) is the right choice for a new study as it matches current ornithological taxonomy standards. A v2.4 run is rewritten up to the current spellings.
+- **BirdNET-2.4** is for a study whose earlier CSVs already use the older names. Picking it keeps a re-run on the same spellings the existing time series uses, instead of splitting one bird across two names partway through. A v3.0 run is rewritten down to match.
+
+The setting changes only what is written, never what is matched. Each run still filters detections against the geographic model of its own generation, on that model's own axis, so the chosen output taxonomy cannot change which detections survive region filtering.
+
+Species lists work under either taxonomy regardless of the setting. Each name you type is expanded to cover both spellings, so `Accipiter gentilis` and `Astur gentilis` both match whichever model runs. This applies only to names you type: the species-list file and the must-have list.
+
+Detection CSVs written by earlier versions of the app are not rewritten. A campaign analyzed before the upgrade keeps its `detections-Perch-2.0.csv` under its original name, and the Examine panel still loads it.
 
 ### Region filtering
-In location mode the runner filters detections against a per-week species list from the v3.0 geographic model, which carries 14,082 classes to the acoustic model's 11,560. The overlap is 10,653 names, so **907 acoustic classes have no geographic entry and are always dropped in location mode**: mostly narrowly-distributed birds, genus-level entries such as `Acris`, and insects and frogs.
+In location mode the runner filters detections against a per-week species list from the geographic model of the same generation as the acoustic model, so both sides speak the same taxonomy. For v3.0 that model carries 14,082 classes to the acoustic model's 11,560. The overlap is 10,653 names, so **907 acoustic classes have no geographic entry and are always dropped in location mode**: mostly narrowly-distributed birds, genus-level entries such as `Acris`, and insects and frogs.
 
 To keep those detections, run in species-list mode, which applies no regional filter, or add the specific names to the must-have box in location mode. The debug log reports the split per campaign, for example `birdnet: per-week species filter dropped 412 row(s): 190 out-of-region, 222 not on the model's axis (legacy name or non-bird). 1391 kept`. A large second number points at the acoustic/geographic gap rather than at geography.
 

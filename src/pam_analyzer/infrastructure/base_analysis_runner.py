@@ -3,9 +3,9 @@
 BaseAnalysisRunner owns the per-campaign sequencing, progress reporting,
 species-filter resolution, per-week species-list TXT writing, ARU and rank
 computation, and CSV writing. Subclasses fill in the per-model bits via
-three abstract methods: _load_model, _open_predict_session, and _parse_row.
-BirdnetRunner is currently the only subclass. The split is kept so a second
-model can be added back without disturbing the shared pipeline.
+three abstract methods (_load_model, _open_predict_session, _parse_row)
+plus a `taxonomy` binding that supplies their model's species axis, geo
+filter and locale set.
 
 Lifecycle of one run() call:
 
@@ -59,13 +59,7 @@ from ._analysis_helpers import (
     list_audio_files,
     write_species_list_files,
 )
-from .birdnet_lib import available_locales as _available_locales
-from .birdnet_lib import (
-    known_species_scientific,
-    locale_label_map,
-    normalize_lang_code,
-    region_species_scientific,
-)
+from .birdnet_lib import TaxonomyServices, normalize_lang_code
 from .legacy_names import expand_species
 
 
@@ -81,11 +75,16 @@ class ParsedRow:
     file_path: Path
     start_time: float
     end_time: float
-    scientific_name: str
+    scientific_name: str  # The name written to CSV, on the project's canonical_taxonomy axis
     confidence: float  # probability 0-1, after any per-model calibration
     preferred_common: str  # for the "Species" CSV column
-    # Keyed by locale code without the "Species_" prefix (e.g. "en_us").
-    locale_commons: dict[str, str]
+    locale_commons: dict[str, str]  # Keyed by locale code without the "Species_" prefix (e.g. "en_us")
+    # The name the species filter matches on, on the running model's own
+    # axis: what the model emitted before to_axis() rewrote scientific_name
+    # onto the project's axis. Both runners set it, since either can be the
+    # one being rewritten depending on which axis the project chose. None
+    # falls back to scientific_name, for a runner that never rewrites.
+    match_name: str | None = None
 
 
 class BaseAnalysisRunner(ABC):
@@ -99,12 +98,13 @@ class BaseAnalysisRunner(ABC):
 
     model_key: ClassVar[str]
     log_prefix: ClassVar[str]
+    taxonomy: ClassVar[TaxonomyServices]  # The label axis, geo filter and locale set of the model this runner loads
 
     def count_audio_files(self, campaign_dir: Path) -> int:
         return count_audio_files(campaign_dir)
 
     def available_locales(self) -> list[str]:
-        return list(_available_locales())
+        return list(self.taxonomy.available_locales())
 
     def run(
         self,
@@ -211,7 +211,9 @@ class BaseAnalysisRunner(ABC):
         # In LOCATION mode this pre-warms the geo model and computes per-week allowlists,
         # so any geo lookup cost is paid during 'preparing'.
         resolved = campaign.load_species_filter().resolve(
-            wav_files, region_species_scientific, expand_synonyms=expand_species
+            wav_files,
+            self.taxonomy.region_species_scientific,
+            expand_synonyms=expand_species,
         )
         lat = resolved.location.latitude if resolved.location else None
         lon = resolved.location.longitude if resolved.location else None
@@ -337,8 +339,8 @@ class BaseAnalysisRunner(ABC):
             phase="parsing",
         )
 
-        preferred_lang_map = locale_label_map(preferred_lang)
-        locale_maps = {loc: locale_label_map(loc) for loc in settings.locales}
+        preferred_lang_map = self.taxonomy.locale_label_map(preferred_lang)
+        locale_maps = {loc: self.taxonomy.locale_label_map(loc) for loc in settings.locales}
 
         detection_count = 0
         # Two reasons a row can be dropped by the per-week allow-list, tracked
@@ -385,13 +387,18 @@ class BaseAnalysisRunner(ABC):
                     nonfinite_count += 1
                     continue
 
+                # Match on the model's own axis: the allow-list came from the
+                # geo model of the same generation, so both sides speak the
+                # same taxonomy even when scientific_name has been rewritten
+                # onto the project's axis for output.
+                match_name = parsed.match_name or parsed.scientific_name
                 allowed = resolved.allowed_for(parsed.file_path)
-                if allowed is not None and parsed.scientific_name not in allowed:
+                if allowed is not None and match_name not in allowed:
                     # known_species_scientific() is called lazily here, in the
                     # drop path, so a species-only run (allowed is always None)
                     # never forces the en_us label read just to classify drops
                     # it will not make.
-                    if parsed.scientific_name in known_species_scientific():
+                    if match_name in self.taxonomy.known_species_scientific():
                         out_of_region_count += 1
                     else:
                         unknown_species_count += 1

@@ -37,6 +37,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 from ..domain import paths  # noqa: E402
 from ..infrastructure import (  # noqa: E402
     AudioImporter,
+    Birdnet24Runner,
     BirdnetRunner,
     PsutilSdCardScanner,
     SoundfileAudioExtractor,
@@ -50,7 +51,7 @@ from ..workers import ImportOrchestrator  # noqa: E402
 
 def build_main_window() -> MainWindow:
     audio_extractor = SoundfileAudioExtractor()
-    analysis_runner = BirdnetRunner()
+    analysis_runners = {r.model_key: r for r in (Birdnet24Runner(), BirdnetRunner())} # Insertion order is the combo order
     sdcard_scanner = PsutilSdCardScanner()
     audio_importer = AudioImporter()
     import_orchestrator = ImportOrchestrator(audio_importer, sdcard_scanner)
@@ -59,7 +60,7 @@ def build_main_window() -> MainWindow:
     settings = AppSettings()
     return MainWindow(
         app_state,
-        analysis_runner,
+        analysis_runners,
         import_orchestrator,
         settings,
         audio_extractor,

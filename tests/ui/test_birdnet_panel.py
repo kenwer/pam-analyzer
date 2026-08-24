@@ -15,7 +15,7 @@ from pam_analyzer.domain import (
 )
 from pam_analyzer.ui.app_state import AppState
 from pam_analyzer.ui.panels.birdnet_panel import BirdNetPanel
-from tests.conftest import CURRENT_MODEL_KEY
+from tests.conftest import ALT_MODEL_KEY, DEFAULT_MODEL_KEY
 
 
 @pytest.fixture(autouse=True)
@@ -48,7 +48,8 @@ def _isolated_qsettings(tmp_path, monkeypatch):
 
 
 class _FakeRunner:
-    model_key = CURRENT_MODEL_KEY
+    def __init__(self, model_key: str = DEFAULT_MODEL_KEY) -> None:
+        self.model_key = model_key
 
     def count_audio_files(self, _path: Path) -> int:
         return 0
@@ -58,6 +59,19 @@ class _FakeRunner:
 
     def run(self, **kwargs) -> AnalysisRunResult:
         return AnalysisRunResult(status=RunStatus.COMPLETED)
+
+
+def _runners() -> dict[str, object]:
+    """Both shipped engines, in the order the real app registers them.
+
+    The first key is the panel's default selection, so keeping v3.0 first
+    matches production and keeps the single-engine expectations in the tests
+    below valid.
+    """
+    return {
+        DEFAULT_MODEL_KEY: _FakeRunner(DEFAULT_MODEL_KEY),
+        ALT_MODEL_KEY: _FakeRunner(ALT_MODEL_KEY),
+    }
 
 
 @pytest.fixture
@@ -92,7 +106,7 @@ def state(project_and_campaigns) -> AppState:
 @pytest.fixture
 def panel(qtbot, state: AppState, project_and_campaigns, load_project) -> BirdNetPanel:
     proj, _ = project_and_campaigns
-    p = BirdNetPanel(state, _FakeRunner())
+    p = BirdNetPanel(state, _runners())
     qtbot.addWidget(p)
     load_project(state, proj.folder)
     return p
@@ -100,7 +114,7 @@ def panel(qtbot, state: AppState, project_and_campaigns, load_project) -> BirdNe
 
 def test_panel_loads_disabled_without_project(qtbot):
     state = AppState()
-    p = BirdNetPanel(state, _FakeRunner())
+    p = BirdNetPanel(state, _runners())
     qtbot.addWidget(p)
 
     assert not p.ui.run_button.isEnabled()
@@ -139,7 +153,7 @@ def _make_completed_outcome(state: AppState, count: int = 42) -> AnalysisRunResu
     campaign_dir = project.folder / "alpha"
     campaign_dir.mkdir(parents=True, exist_ok=True)
     (campaign_dir / "campaign.toml").touch()
-    csv_path = campaign_dir / f"detections-{CURRENT_MODEL_KEY}.csv"
+    csv_path = campaign_dir / f"detections-{DEFAULT_MODEL_KEY}.csv"
     csv_path.write_text(
         "Species,Confidence\n" + "Robin,0.9\n" * count,
         encoding="utf-8",
@@ -206,7 +220,7 @@ def test_loads_previous_results_from_disk(qtbot, tmp_path: Path, load_project):
     campaign_dir = proj.folder / "alpha"
     campaign_dir.mkdir(parents=True)
     (campaign_dir / "campaign.toml").touch()
-    csv_path = campaign_dir / f"detections-{CURRENT_MODEL_KEY}.csv"
+    csv_path = campaign_dir / f"detections-{DEFAULT_MODEL_KEY}.csv"
     csv_path.write_text(
         "Species,Confidence\n"
         "Robin,0.9\n"
@@ -216,7 +230,7 @@ def test_loads_previous_results_from_disk(qtbot, tmp_path: Path, load_project):
     )
 
     state = AppState()
-    panel = BirdNetPanel(state, _FakeRunner())
+    panel = BirdNetPanel(state, _runners())
     qtbot.addWidget(panel)
 
     load_project(state, proj.folder)
@@ -249,7 +263,7 @@ def test_panel_shows_csvs_from_models_no_longer_shipped(qtbot, tmp_path: Path, l
     pc.write_text("Species,Confidence\nCrow,0.7\nJay,0.6\n", encoding="utf-8")
 
     state = AppState()
-    panel = BirdNetPanel(state, _FakeRunner())
+    panel = BirdNetPanel(state, _runners())
     qtbot.addWidget(panel)
     load_project(state, proj.folder)
 
@@ -281,7 +295,7 @@ def test_fresh_run_keeps_legacy_model_csvs_visible(qtbot, tmp_path: Path, load_p
     perch_csv.write_text("Species,Confidence\nCrow,0.7\n", encoding="utf-8")
 
     state = AppState()
-    panel = BirdNetPanel(state, _FakeRunner())
+    panel = BirdNetPanel(state, _runners())
     qtbot.addWidget(panel)
     load_project(state, proj.folder)
 
@@ -334,3 +348,47 @@ def test_project_switch_clears_stale_results(
     assert panel.ui.status_stack.currentIndex() == 0  # page_idle
     assert panel._results_model.rowCount() == 0
     assert panel.ui.summary_label.text() == ""
+
+
+def test_model_combo_lists_both_engines(panel: BirdNetPanel):
+    combo = panel.ui.model_combo
+    assert [combo.itemData(i) for i in range(combo.count())] == [
+        DEFAULT_MODEL_KEY,
+        ALT_MODEL_KEY,
+    ]
+    # First entry wins for a project that names no model.
+    assert panel.ui.run_button.text() == f"Run {DEFAULT_MODEL_KEY}"
+
+
+def test_selecting_a_model_switches_runner_and_persists(panel: BirdNetPanel, project_and_campaigns):
+    """Picking an engine has to survive reopening the project.
+
+    The panel writes the choice straight to the project TOML rather than to
+    app settings, so the model travels with the study folder.
+    """
+    proj, _ = project_and_campaigns
+    combo = panel.ui.model_combo
+    combo.setCurrentIndex(combo.findData(ALT_MODEL_KEY))
+
+    assert panel._runner.model_key == ALT_MODEL_KEY
+    assert panel.ui.run_button.text() == f"Run {ALT_MODEL_KEY}"
+    assert Project.load(proj.folder).analysis_model == ALT_MODEL_KEY
+
+
+def test_project_saved_with_an_unknown_model_falls_back(qtbot, tmp_path, load_project):
+    """A project naming a retired engine (e.g. Perch) must still open.
+
+    The stored value is left untouched rather than overwritten, so the
+    project keeps its record of what actually produced the existing CSVs.
+    """
+    folder = tmp_path / "retired"
+    folder.mkdir()
+    Project(folder=folder, analysis_model="Perch-2.0").save()
+
+    state = AppState()
+    p = BirdNetPanel(state, _runners())
+    qtbot.addWidget(p)
+    load_project(state, folder)
+
+    assert p._runner.model_key == DEFAULT_MODEL_KEY
+    assert Project.load(folder).analysis_model == "Perch-2.0"

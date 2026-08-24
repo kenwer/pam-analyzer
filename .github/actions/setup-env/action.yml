@@ -19,7 +19,10 @@ runs:
       uses: actions/cache@v6
       with:
         path: dist/.birdnet-models
-        key: birdnet-models-${{ hashFiles('uv.lock') }}
+        # build.py is in the key because it names which models get prewarmed.
+        # Without it, adding an engine keeps hitting a cache that predates it,
+        # and every run re-downloads the new weights without ever saving them.
+        key: birdnet-models-${{ hashFiles('uv.lock', 'scripts/build.py') }}
 
     # Populates the cache (with retry-on-failure) up front, so a cold cache
     # never triggers a bare, un-retried download from inside pytest or the build.

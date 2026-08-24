@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from pam_analyzer.domain import Campaign, FilterMode, LatLon
-from tests.conftest import CURRENT_MODEL_KEY
+from tests.conftest import DEFAULT_MODEL_KEY
 
 
 @pytest.fixture
@@ -66,7 +66,7 @@ def test_rename_keeps_detection_csvs_valid(audio_root):
 
     c = _new_campaign(audio_root, "before")
     c.create()
-    csv_path = schema.campaign_csv_for_model(c.folder, CURRENT_MODEL_KEY)
+    csv_path = schema.campaign_csv_for_model(c.folder, DEFAULT_MODEL_KEY)
     csv_path.write_text(
         "Campaign,Species,Confidence,File\nbefore,Robin,0.9,MSD-1/week_08/r.flac\n",
         encoding="utf-8",

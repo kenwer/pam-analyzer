@@ -2,23 +2,24 @@
 
 ## [Unreleased]
 ### Added
+- BirdNET-3.0-preview3.1 model.
 - Detections with a non-finite confidence are dropped and logged instead of aborting the campaign.
 ### Removed
-- Perch-2.0 and BirdNET-2.4. The app now runs BirdNET v3.0 only, and the model selector is gone.
-- The project Species taxonomy setting, along with the BirdNET/Perch rename crosswalk.
-- TensorFlow and kagglehub dependencies.
+- Perch-2.0 model (its CSVs stay readable in the Examine panel).
+
 ### Changed
-- The default Min confidence is now 0.5, matching BirdNET v3.0's higher confidence scale. Existing projects keep their saved value.
-- Species detection uses BirdNET v3.0 on the ONNX backend, with the v3.0 geographic model for region filtering. The model birdnet 1.1 ships is a preview build (`V3.0-preview3.1`), and the UI and CSVs say so.
-- Detections are written to `detections-BirdNET-3.0-preview3.1.csv`. The model key names the exact model release, so a future final v3.0 writes a separate file. CSVs from earlier model versions stay readable in the Examine panel and are not rewritten.
-- Species lists written under the older BirdNET v2.4 names still match, via a 175-entry legacy alias table.
-- Analysis runs at roughly 60x real-time on CPU, down from BirdNET v2.4's ~1050x.
-- Estonian is no longer available as a species language, as BirdNET v3.0 dropped it.
-- The macOS, Windows and Linux builds bundle the BirdNET v3.0 models and the label files for all 29 languages, so they analyse offline and never download at runtime.
+- The project Species taxonomy setting now chooses between BirdNET-2.4's and v3.0's axis (instead of BirdNET-2.4 and Perch-3.0).
+- BirdNET v2.4 no longer needs TensorFlow. It runs on the litert interpreter from the base install.
+- Species taxonomy:
+  - The project Species taxonomy setting picks the scientific-name axis detections are written under, BirdNET-3.0 (default) or BirdNET-2.4.
+  - Species lists match under either taxonomy. A name written as `Accipiter gentilis` or `Astur gentilis` is accepted whichever engine runs.
+  - The species language list is the union of both engines. A language only one of them ships (Italian and Korean on v2.4, Catalan and regional Spanish on v3.0) is left unlocalized by the other. Estonian is gone from both.
 - [Dev] The build fails if the model tree does not reach the finished bundle, instead of shipping a binary that re-downloads on first use.
-- [Dev] `BirdnetRunner` is the only `BaseAnalysisRunner` subclass now that `PerchRunner` is gone.
-- [Dev] Replace `taxonomy_crosswalk` with the one-directional `legacy_names` module.
+- [Dev] `BaseAnalysisRunner` subclasses now bind a `TaxonomyServices`, so the shared pipeline no longer hardcodes one model version's species axis, geo filter and locale set.
+- [Dev] Replace `taxonomy_crosswalk` with the `legacy_names` module. `to_axis` rewrites output in either direction, `expand_species` matches user input in both at once.
+- [Dev] `ParsedRow.match_name` keeps each model's native spelling, so the output axis cannot affect region filtering.
 - [Dev] Drop the `[tool.uv]` environment pins that existed to route around TensorFlow wheels.
+- [Dev] The CI model cache key includes `scripts/build.py`, so changing the bundled model set invalidates it.
 
 ## [0.6.0] - 2026-08-04
 ### Added
