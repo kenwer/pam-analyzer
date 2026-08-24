@@ -255,7 +255,7 @@ PAM Analyzer runs two BirdNET models locally on the CPU through the [`birdnet`](
 | | **BirdNET v2.4** | **BirdNET v3.0** |
 |---|---|---|
 | Release | `BirdNET_GLOBAL_6K_V2.4` ([Zenodo](https://zenodo.org/records/15050749)) | `BirdNET+_V3.0-preview3.1_Global_11K` ([Zenodo](https://zenodo.org/records/20703646)) |
-| Backend | TFLite on `ai-edge-litert` (FP32) | ONNX Runtime (FP32) |
+| Backend | ONNX Runtime (FP32), converted from upstream's SavedModel at build time | ONNX Runtime (FP32) |
 | Audio window | 3 s | 3 s |
 | Sample rate | 48 kHz (the library resamples other rates) | 32 kHz (the library resamples other rates) |
 | Classes | 6,522 (birds, plus a few amphibians and insects) | 11,560 (birds, plus amphibians, insects and mammals) |
@@ -318,6 +318,7 @@ The author would like to thank the following projects:
 
 * [BirdNET](https://github.com/birdnet-team/birdnet)
 * [ONNX Runtime](https://onnxruntime.ai)
+* [tf2onnx](https://github.com/onnx/tensorflow-onnx)
 * [Qt](https://www.qt.io/) / [PySide6](https://doc.qt.io/qtforpython)
 * [Python](https://www.python.org)
 * [Polars](https://pola.rs)

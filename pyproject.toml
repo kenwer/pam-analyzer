@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13,<3.14"  # onnxruntime ships cp314 wheels everywhere except Intel macOS; revisit once PySide6 follows
 dependencies = [
     "PySide6>=6.11.0",
-    "birdnet>=1.1",  # ONNX/LiteRT base install; the [tf] extra is deliberately unused
+    "birdnet>=1.1,<1.2",  # Pinned as birdnet_2_4_onnx builds on lib internals that are not public API (AcousticModelV2_4.load, OnnxBackend, the backend protocols)
     "platformdirs>=4.3.0",
     "psutil>=6.0.0",
     "guano>=1.0.16",
@@ -29,6 +29,16 @@ dev = [
     "poethepoet>=0.29",
     "py-spy>=0.3",
 ]
+
+[tool.uv]
+# birdnet depends on ai-edge-litert to run TFLite weights but this app runs all 
+# models on ONNX Runtime, so nothing in this app reaches that interpreter.
+# Since ai-edge-litert is a birdnet dep, we can't simply delete it, but we 
+# can rewrite the requirement uv resolves with a marker no platform
+# satisfies drops it from the lock and the venv. birdnet imports it lazily,
+# inside load_lib_litert_model, so its absence is only reachable by asking for
+# a TFLite backend, which this app never does.
+override-dependencies = ["ai-edge-litert; sys_platform == 'never'"]
 
 [build-system]
 requires = ["hatchling"]

@@ -17,7 +17,7 @@ The author would like to thank the following projects:
 
 - [BirdNET](https://github.com/birdnet-team/birdnet)
 - [ONNX Runtime](https://onnxruntime.ai)
-- [LiteRT](https://ai.google.dev/edge/litert)
+- [tf2onnx](https://github.com/onnx/tensorflow-onnx)
 - [Qt](https://www.qt.io/) / [PySide6](https://doc.qt.io/qtforpython)
 - [Python](https://www.python.org)
 - [Polars](https://pola.rs)

@@ -5,10 +5,9 @@ alongside the v3.0 runner so a monitoring study that started under v2.4 can
 keep extending its time series under the same model, and so there is a
 non-preview engine available while v3.0 ships as a preview build.
 
-The model has no ONNX export, so it runs its TFLite weights on
-ai-edge-litert. That interpreter is part of the base birdnet install and
-imports no TensorFlow, which is why keeping this engine costs no
-dependency.
+Upstream publishes no ONNX export for v2.4, so the weights this loads are
+converted from upstream's SavedModel by scripts/convert_birdnet_2_4_onnx.py
+and loaded through birdnet_2_4_onnx.
 
 v2.4 labels its classes on the older eBird-based axis. The species filter
 matches on that axis (the allow-list comes from the geo model of the same
@@ -34,7 +33,7 @@ from typing import Any, ClassVar
 
 from ..domain import AnalysisSettings
 from .base_analysis_runner import BaseAnalysisRunner, ParsedRow
-from .birdnet_lib import MODEL_PRECISION, TAXONOMY_V2_4
+from .birdnet_lib import TAXONOMY_V2_4
 from .legacy_names import to_axis
 
 MODEL_KEY = "BirdNET-2.4"
@@ -47,7 +46,7 @@ def _split_sci_common(species_name: str) -> tuple[str, str]:
 
 
 class Birdnet24Runner(BaseAnalysisRunner):
-    """AnalysisRunner implementation backed by BirdNET v2.4 (TFLite/litert).
+    """AnalysisRunner implementation backed by BirdNET v2.4 (ONNX).
 
     Loads the model once per run and reuses it across campaigns. The lib
     handles audio I/O, 3 s window framing, batched inference, sigmoid
@@ -61,20 +60,19 @@ class Birdnet24Runner(BaseAnalysisRunner):
     taxonomy = TAXONOMY_V2_4
 
     def _load_model(self) -> Any:
-        """Load BirdNET v2.4's TFLite weights on the litert interpreter.
+        """Load BirdNET v2.4's converted weights on onnxruntime.
 
-        library='litert' selects ai-edge-litert over the tflite interpreter
-        bundled inside TensorFlow. Without it the lib would try to import
-        TensorFlow, which this app deliberately does not depend on.
+        birdnet.load cannot express this: the lib has no ONNX backend for
+        v2.4, so birdnet_2_4_onnx pairs one it defines with the lib's own
+        AcousticModelV2_4, which supplies the 48 kHz, 144000-sample
+        preprocessing contract.
 
         Loaded with en_us so result rows carry English common names in the
         'Sci_Common' species_name string.
         """
-        import birdnet
+        from .birdnet_2_4_onnx import load_acoustic
 
-        return birdnet.load(
-            "acoustic", "2.4", "tf", library="litert", lang="en_us", precision=MODEL_PRECISION
-        )
+        return load_acoustic("en_us")
 
     def _open_predict_session(
         self,

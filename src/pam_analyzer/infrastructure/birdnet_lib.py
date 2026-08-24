@@ -44,33 +44,22 @@ MODEL_PRECISION = "fp32"
 ACOUSTIC_V2_4 = "2.4"
 ACOUSTIC_V3_0 = "3.0"
 
-# Backend per version, as (backend, extra load kwargs). v2.4 has no ONNX
-# export, so it runs the TFLite weights on ai-edge-litert. Passing
-# library='litert' is what keeps the lib from importing TensorFlow, which
-# the app does not depend on.
-_BACKENDS: dict[str, tuple[str, dict[str, Any]]] = {
-    ACOUSTIC_V2_4: ("tf", {"library": "litert"}),
-    ACOUSTIC_V3_0: ("onnx", {}),
-}
 
+def _label_base(version: str) -> Any:
+    """Downloader base class naming the locales one version ships labels for.
 
-def _label_downloader(version: str) -> tuple[Any, Any]:
-    """(base downloader, backend downloader) classes for one version.
-
-    The base class answers which languages exist without downloading
-    anything. The backend class resolves the label file itself, which does
-    trigger a download on a cold cache.
+    Only AVAILABLE_LANGUAGES is read off it, which downloads nothing. Where the
+    label files themselves come from differs per version and is resolved in
+    _locale_label_map instead.
     """
     if version == ACOUSTIC_V2_4:
         from birdnet.acoustic.models.v2_4.model import AcousticDownloaderBaseV2_4
-        from birdnet.acoustic.models.v2_4.tf import AcousticTFDownloaderV2_4
 
-        return AcousticDownloaderBaseV2_4, AcousticTFDownloaderV2_4
+        return AcousticDownloaderBaseV2_4
 
     from birdnet.acoustic.models.v3_0.model import AcousticDownloaderBaseV3_0
-    from birdnet.acoustic.models.v3_0.onnx import AcousticOnnxDownloaderV3_0
 
-    return AcousticDownloaderBaseV3_0, AcousticOnnxDownloaderV3_0
+    return AcousticDownloaderBaseV3_0
 
 
 @cache
@@ -83,13 +72,20 @@ def _geo_model_cached(version: str):  # noqa: ANN202
 
     Language is fixed to en_us because we never surface the geo model's
     own common-name output. We only consume its scientific-name axis.
+
+    Both engines run on ONNX, but only v3.0 can say so through birdnet.load:
+    the lib ships no ONNX backend for either v2.4 model, so that call would
+    raise. v2.4 goes through the locally-defined backend instead, against
+    weights converted at build time.
     """
+    if version == ACOUSTIC_V2_4:
+        from . import birdnet_2_4_onnx
+
+        return birdnet_2_4_onnx.load_geo("en_us")
+
     import birdnet
 
-    backend, kwargs = _BACKENDS[version]
-    return birdnet.load(
-        "geo", version, backend, lang="en_us", precision=MODEL_PRECISION, **kwargs
-    )
+    return birdnet.load("geo", ACOUSTIC_V3_0, "onnx", lang="en_us", precision=MODEL_PRECISION)
 
 
 def _split_sci_common(line: str) -> tuple[str, str]:
@@ -115,19 +111,29 @@ def normalize_lang_code(code: str) -> str:
 
 @cache
 def _available_locales(version: str) -> tuple[str, ...]:
-    base, _ = _label_downloader(version)
-    return tuple(sorted(base.AVAILABLE_LANGUAGES))
+    return tuple(sorted(_label_base(version).AVAILABLE_LANGUAGES))
 
 
 @lru_cache(maxsize=16)
 def _locale_label_map(version: str, lang: str) -> dict[str, str]:
     lang = normalize_lang_code(lang)
-    base, backend = _label_downloader(version)
-    if lang not in base.AVAILABLE_LANGUAGES:
+    if lang not in _label_base(version).AVAILABLE_LANGUAGES:
         return {}
-    # Triggers the model download on first call if absent. Subsequent calls
-    # just read the label file.
-    _, species = backend.get_model_path_and_labels(lang, MODEL_PRECISION)
+
+    if version == ACOUSTIC_V2_4:
+        # Read from the converted model's own label directory. Going through
+        # the lib's TFLite downloader instead would fetch 51 MB of weights the
+        # app no longer runs, just to reach the text files beside them.
+        from . import birdnet_2_4_onnx
+
+        species = birdnet_2_4_onnx.labels("acoustic", lang)
+    else:
+        from birdnet.acoustic.models.v3_0.onnx import AcousticOnnxDownloaderV3_0
+
+        # Triggers the model download on first call if absent. Subsequent
+        # calls just read the label file.
+        _, species = AcousticOnnxDownloaderV3_0.get_model_path_and_labels(lang, MODEL_PRECISION)
+
     mapping: dict[str, str] = {}
     for entry in species:
         sci, common = _split_sci_common(entry)

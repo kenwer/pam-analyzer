@@ -13,9 +13,10 @@ binary.
 One environment variable controls where the model files land during the
 download phase:
 
-- BIRDNET_APP_DATA -> acoustic + geo weights for both shipped engines
-  (v3.0 on ONNX, v2.4 on TFLite), plus the per-locale label files. Honored
-  by the birdnet>=1.1 library.
+- BIRDNET_APP_DATA -> acoustic + geo weights for both shipped engines (both
+  on ONNX), plus the per-locale label files. Honored by the birdnet>=1.1
+  library. v3.0 downloads a vendor build; v2.4 has no upstream ONNX export
+  and is converted here by convert_birdnet_2_4_onnx.py.
 
 That directory sits inside the MODEL_CACHE root and ships as a single
 --add-data entry. At runtime app/__main__.py points the same env var at the
@@ -101,15 +102,12 @@ MODEL_PREWARM = textwrap.dedent("""
     from birdnet.geo.models.v3_0.model import GeoDownloaderBaseV3_0
     from birdnet.utils.local_data import get_lang_dir
 
-    # Both engines, each paired with the geo model of its own generation.
-    # v2.4 loads through the 'tf' backend on ai-edge-litert, matching what
-    # birdnet_lib._BACKENDS asks for at runtime, so the bundled weights are
-    # the ones the app actually opens.
+    # Only v3.0 downloads a vendor build. The v2.4 pair has no upstream ONNX
+    # export and is produced by convert_birdnet_2_4_onnx.py, which runs before
+    # this script and writes into the same cache.
     for kind, version, backend, kwargs in (
         ('acoustic', '3.0', 'onnx', {}),
         ('geo', '3.0', 'onnx', {}),
-        ('acoustic', '2.4', 'tf', {'library': 'litert'}),
-        ('geo', '2.4', 'tf', {'library': 'litert'}),
     ):
         print(f'Pre-downloading birdnet {kind} v{version} {backend} (en_us)...', file=sys.stderr)
         birdnet.load(kind, version, backend, lang='en_us', precision='fp32', **kwargs)
@@ -123,8 +121,8 @@ MODEL_PREWARM = textwrap.dedent("""
     for kind, version, backend, downloader in (
         ('acoustic', '3.0', 'onnx', AcousticDownloaderBaseV3_0),
         ('geo', '3.0', 'onnx', GeoDownloaderBaseV3_0),
-        ('acoustic', '2.4', 'tf', AcousticDownloaderBaseV2_4),
-        ('geo', '2.4', 'tf', GeoDownloaderBaseV2_4),
+        ('acoustic', '2.4', 'onnx', AcousticDownloaderBaseV2_4),
+        ('geo', '2.4', 'onnx', GeoDownloaderBaseV2_4),
     ):
         lang_dir = get_lang_dir(kind, version, backend)
         missing = sorted(
@@ -139,6 +137,29 @@ MODEL_PREWARM = textwrap.dedent("""
 
 def run(cmd: list, env: dict | None = None) -> None:
     subprocess.run(cmd, check=True, env=env)
+
+
+def _convert_v2_4_models(download_env: dict) -> None:
+    """Produce the v2.4 ONNX weights, which no upstream release ships.
+
+    Runs before MODEL_PREWARM because the prewarm script asserts the v2.4
+    label files exist, and this is what installs them.
+
+    Invoked with `uv run --script` so it resolves the PEP 723 header at the top
+    of the conversion script: TensorFlow and tf2onnx on their own interpreter,
+    reachable from neither the project venv nor the build venv. Being a
+    separate environment is the point, since the app must never install
+    TensorFlow.
+
+    No retry loop wraps this. The script skips work when its output is already
+    current, so a failure here is a real conversion failure rather than a
+    flaky download, and the download it does make is retried inside birdnet.
+    """
+    print('  Converting BirdNET v2.4 to onnx (downloads the SavedModel on a cold cache)')
+    run(
+        ['uv', 'run', '--script', str(PACKAGING_DIR / 'convert_birdnet_2_4_onnx.py')],
+        env=download_env,
+    )
 
 
 def _prewarm_models(download_env: dict, uv_run_prefix: list) -> None:
@@ -158,7 +179,9 @@ def _prewarm_models(download_env: dict, uv_run_prefix: list) -> None:
     """
     BIRDNET_APP_DATA_CACHE.mkdir(parents=True, exist_ok=True)
 
-    print('  Pre-downloading model checkpoints (BirdNET acoustic + geo, v3.0 onnx and v2.4 tflite)')
+    _convert_v2_4_models(download_env)
+
+    print('  Pre-downloading model checkpoints (BirdNET acoustic + geo, v3.0 onnx)')
     max_attempts = 3
     for attempt in range(1, max_attempts + 1):
         try:
@@ -181,8 +204,8 @@ def _prewarm_models(download_env: dict, uv_run_prefix: list) -> None:
 REQUIRED_MODEL_FILES: tuple[str, ...] = (
     'acoustic-models/v3.0/onnx/model-fp32.onnx',
     'geo-models/v3.0/onnx/model-fp32.onnx',
-    'acoustic-models/v2.4/tf/model-fp32.tflite',
-    'geo-models/v2.4/tf/model-fp32.tflite',
+    'acoustic-models/v2.4/onnx/model-fp32.onnx',
+    'geo-models/v2.4/onnx/model-fp32.onnx',
 )
 
 
@@ -190,7 +213,7 @@ def _verify_bundle(is_onefile: bool) -> None:
     """Fail the build if the model tree did not make it into the output.
 
     A frozen app whose models are missing still starts and still runs: it
-    just re-downloads ~640 MB on the user's first Analyze click, with the
+    just re-downloads ~660 MB on the user's first Analyze click, with the
     lib's progress bar going to a stderr that a windowed build sends to
     devnull. That failure has shipped before, from a malformed --add-data
     separator, and it is invisible from the build log. So it is checked here.
@@ -369,6 +392,14 @@ def main() -> None:
         # BIRDNET_APP_DATA; that tree is added via --add-data below.
         '--collect-data',
         'birdnet',
+        # birdnet imports ai_edge_litert inside load_lib_litert_model, and
+        # PyInstaller follows function-level imports, so it would bundle the
+        # interpreter for a backend this app never selects. The [tool.uv]
+        # override in pyproject.toml already keeps it out of the venv. This
+        # states the same intent at the bundle, so removing the override
+        # cannot silently add 32 MB back.
+        '--exclude-module',
+        'ai_edge_litert',
     ]
     # Inject hidden imports from pyproject.toml dependencies:
     # --hidden-import <module> --hidden-import <module> ...

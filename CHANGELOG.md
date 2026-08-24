@@ -9,7 +9,9 @@
 
 ### Changed
 - The project Species taxonomy setting now chooses between BirdNET-2.4's and v3.0's axis (instead of BirdNET-2.4 and Perch-3.0).
-- BirdNET v2.4 no longer needs TensorFlow. It runs on the litert interpreter from the base install.
+- BirdNET v2.4 runs on ONNX Runtime instead of the litert interpreter.
+- [Dev] The build converts BirdNET v2.4 from upstream's SavedModel to ONNX, because no upstream ONNX export exists.
+- [Dev] `ai-edge-litert` is no longer installed or bundled. A `[tool.uv]` override drops it along with `ml-dtypes` and `backports-strenum`.
 - Species taxonomy:
   - The project Species taxonomy setting picks the scientific-name axis detections are written under, BirdNET-3.0 (default) or BirdNET-2.4.
   - Species lists match under either taxonomy. A name written as `Accipiter gentilis` or `Astur gentilis` is accepted whichever engine runs.
@@ -19,7 +21,7 @@
 - [Dev] Replace `taxonomy_crosswalk` with the `legacy_names` module. `to_axis` rewrites output in either direction, `expand_species` matches user input in both at once.
 - [Dev] `ParsedRow.match_name` keeps each model's native spelling, so the output axis cannot affect region filtering.
 - [Dev] Drop the `[tool.uv]` environment pins that existed to route around TensorFlow wheels.
-- [Dev] The CI model cache key includes `scripts/build.py`, so changing the bundled model set invalidates it.
+- [Dev] The CI model cache key includes `scripts/build.py` and `scripts/convert_birdnet_2_4_onnx.py`, so changing the bundled model set or how v2.4 is converted invalidates it.
 
 ## [0.6.0] - 2026-08-04
 ### Added

@@ -9,8 +9,8 @@ rewritten to whichever axis the project chose.
 
 The _parse_row cases run fast because that hook takes its label maps as
 arguments and never touches the model. The end-to-end case is marked slow
-because it downloads the v2.4 TFLite weights on first run (~56 MB, cached
-afterwards).
+because it loads the converted v2.4 ONNX weights, which the build produces
+via scripts/convert_birdnet_2_4_onnx.py.
 """
 
 from __future__ import annotations
