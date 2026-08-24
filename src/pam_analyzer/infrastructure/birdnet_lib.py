@@ -85,7 +85,11 @@ def _geo_model_cached(version: str):  # noqa: ANN202
 
     import birdnet
 
-    return birdnet.load("geo", ACOUSTIC_V3_0, "onnx", lang="en_us", precision=MODEL_PRECISION)
+    from .birdnet_onnx_threads import single_threaded
+
+    return single_threaded(
+        birdnet.load("geo", ACOUSTIC_V3_0, "onnx", lang="en_us", precision=MODEL_PRECISION)
+    )
 
 
 def _split_sci_common(line: str) -> tuple[str, str]:

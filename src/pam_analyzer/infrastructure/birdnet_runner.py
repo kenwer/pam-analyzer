@@ -56,10 +56,18 @@ class BirdnetRunner(BaseAnalysisRunner):
         Loaded with en_us so result rows carry English common names in the
         'Sci_Common' species_name string. Other locales come from
         locale_label_map() lookups inside _parse_row.
+
+        single_threaded() is a workaround for a birdnet default, described in
+        birdnet_onnx_threads. It changes how each worker's session is built and
+        nothing about what the model computes.
         """
         import birdnet
 
-        return birdnet.load("acoustic", "3.0", "onnx", lang="en_us", precision=MODEL_PRECISION)
+        from .birdnet_onnx_threads import single_threaded
+
+        return single_threaded(
+            birdnet.load("acoustic", "3.0", "onnx", lang="en_us", precision=MODEL_PRECISION)
+        )
 
     def _open_predict_session(
         self,
