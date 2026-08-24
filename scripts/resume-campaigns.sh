@@ -11,8 +11,8 @@ set -euo pipefail
 # there in the GUI, then merged back.
 #
 # Usage:
-#   scripts/resume-campaigns.sh split <project-dir> [temp-dir] [--model KEY]
-#   scripts/resume-campaigns.sh merge <project-dir> [temp-dir] [--model KEY]
+#   scripts/resume-campaigns.sh split <project-dir> [temp-dir]
+#   scripts/resume-campaigns.sh merge <project-dir> [temp-dir]
 #
 #   split  Copies the project toml into <temp-dir> and moves every campaign
 #          that lacks its detections CSV from <project-dir> into <temp-dir>.
@@ -24,11 +24,7 @@ set -euo pipefail
 # as the project so the moves are instant metadata renames, not multi-GB
 # copies of the audio. The script refuses to run otherwise.
 #
-# The model whose CSV marks a campaign complete defaults to BirdNET-2.4. Pick
-# the other with --model, e.g. --model Perch-2.0. Known models: BirdNET-2.4,
-# Perch-2.0. The RESUME_MODEL env var sets the default when no --model is given.
-# Both subcommands need the same --model, so split and merge agree on which CSV
-# means "done".
+# A campaign counts as complete when its detections CSV for MODEL is present.
 #
 # Note: adequate power is a prerequisite for the actual run. A run pegs all CPU
 # cores, so power the Mac from a full-wattage charger, not a display's USB-C.
@@ -38,7 +34,7 @@ set -euo pipefail
 # just re-run in the GUI, since finished campaigns are skipped by the CSV check.
 
 PROJECT_TOML="pam-analyzer.toml"
-KNOWN_MODELS=("BirdNET-2.4" "Perch-2.0")
+MODEL="BirdNET-3.0-preview3.1"
 
 die() {
   echo "error: $*" >&2
@@ -46,19 +42,7 @@ die() {
 }
 
 usage() {
-  echo "usage: $0 {split|merge} <project-dir> [temp-dir] [--model KEY]"
-  echo "  --model KEY   one of: ${KNOWN_MODELS[*]} (default: BirdNET-2.4)"
-}
-
-# Reject an unknown model so a typo cannot make split treat finished campaigns
-# as unfinished (a wrong CSV name matches nothing, so every folder looks
-# missing and would be moved).
-assert_known_model() {
-  local m="$1" k
-  for k in "${KNOWN_MODELS[@]}"; do
-    [ "$m" = "$k" ] && return 0
-  done
-  die "unknown model: $m (expected one of: ${KNOWN_MODELS[*]})"
+  echo "usage: $0 {split|merge} <project-dir> [temp-dir]"
 }
 
 # Fail unless both paths resolve to the same filesystem, so a move is a rename.
@@ -140,15 +124,10 @@ cmd_merge() {
 }
 
 main() {
-  local model="${RESUME_MODEL:-BirdNET-2.4}"
+  local model="$MODEL"
   local positionals=()
   while [ $# -gt 0 ]; do
     case "$1" in
-      -m|--model)
-        [ $# -ge 2 ] || die "$1 needs a value"
-        model="$2"
-        shift 2
-        ;;
       -h|--help)
         usage
         return 0
@@ -168,8 +147,6 @@ main() {
   local src="${positionals[1]%/}"
   local tmp="${positionals[2]:-${src}_RESUME}"
   tmp="${tmp%/}"
-
-  assert_known_model "$model"
   MODEL="$model"
   CSV_NAME="detections-${MODEL}.csv"
   echo "Model: $MODEL (complete = $CSV_NAME present)"

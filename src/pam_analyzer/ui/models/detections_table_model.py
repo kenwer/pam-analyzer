@@ -33,7 +33,7 @@ PLAY_COLUMN_INDEX = 0
 _PLAY_COLUMN = ColumnSpec("_play", lambda _d: "")
 
 # The play column plus the schema's canonical column list. The schema order
-# matches the column order both BirdnetRunner and PerchRunner emit when
+# matches the column order BirdnetRunner emits when
 # writing their per-model CSV, so the on-screen table is a direct
 # visual analog of the file on disk. The model may extend this list at
 # runtime with extras discovered in Detection.extra (e.g. Species_de /

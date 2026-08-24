@@ -44,7 +44,11 @@ class _CountingProgress:
 
 
 class _StubRunner(BaseAnalysisRunner):
-    """Concrete runner that records which campaigns ran and can fail on cue."""
+    """Concrete runner that records which campaigns ran and can fail on cue.
+
+    Implements the model hooks with stubs so the loop under test runs
+    without ONNX or any model download.
+    """
 
     model_key = "Stub-1.0"
     log_prefix = "stub"
@@ -60,7 +64,7 @@ class _StubRunner(BaseAnalysisRunner):
         raise AssertionError("_run_campaign is stubbed, so no session is opened")
 
     def _parse_row(self, *args: Any, **kwargs: Any) -> Any:  # pragma: no cover
-        raise AssertionError("_run_campaign is stubbed, so no row is parsed")
+        raise AssertionError("_run_campaign is stubbed, so no rows are parsed")
 
     def _run_campaign(self, campaign: Campaign, *_a: Any, **_k: Any) -> CampaignRunResult:
         if campaign.name == self._fail_on:

@@ -34,7 +34,7 @@ from .inventory import (
 )
 from .project import Project
 from .species_filter import ResolvedSpeciesFilter, SpeciesFilter
-from .values import MAX_OVERLAP_S, AnalysisSettings, LatLon
+from .values import DEFAULT_MIN_CONF, MAX_OVERLAP_S, AnalysisSettings, LatLon
 
 __all__ = [
     "AnalysisProgress",
@@ -60,6 +60,7 @@ __all__ = [
     "FileConflict",
     "FilterMode",
     "ImportProgress",
+    "DEFAULT_MIN_CONF",
     "MAX_OVERLAP_S",
     "LatLon",
     "filter_top_per_aru_species",

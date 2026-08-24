@@ -2,9 +2,10 @@
 
 BaseAnalysisRunner owns the per-campaign sequencing, progress reporting,
 species-filter resolution, per-week species-list TXT writing, ARU and rank
-computation, and CSV writing. Subclasses (BirdnetRunner, PerchRunner) fill
-in the per-model bits via three abstract methods: _load_model,
-_open_predict_session, and _parse_row.
+computation, and CSV writing. Subclasses fill in the per-model bits via
+three abstract methods: _load_model, _open_predict_session, and _parse_row.
+BirdnetRunner is currently the only subclass. The split is kept so a second
+model can be added back without disturbing the shared pipeline.
 
 Lifecycle of one run() call:
 
@@ -28,6 +29,7 @@ from __future__ import annotations
 
 import csv
 import logging
+import math
 import shutil
 import time
 from abc import ABC, abstractmethod
@@ -59,12 +61,12 @@ from ._analysis_helpers import (
 )
 from .birdnet_lib import available_locales as _available_locales
 from .birdnet_lib import (
-    birdnet_species_scientific,
+    known_species_scientific,
     locale_label_map,
     normalize_lang_code,
     region_species_scientific,
 )
-from .taxonomy_crosswalk import expand_species
+from .legacy_names import expand_species
 
 
 @dataclass(frozen=True)
@@ -79,8 +81,7 @@ class ParsedRow:
     file_path: Path
     start_time: float
     end_time: float
-    scientific_name: str  # normalized to the project's canonical taxonomy, for output
-    match_name: str  # the model's native spelling, for the species-filter check
+    scientific_name: str
     confidence: float  # probability 0-1, after any per-model calibration
     preferred_common: str  # for the "Species" CSV column
     # Keyed by locale code without the "Species_" prefix (e.g. "en_us").
@@ -91,7 +92,7 @@ class BaseAnalysisRunner(ABC):
     """Shared scaffold for AnalysisRunner implementations.
 
     The public interface (run, count_audio_files, available_locales)
-    matches what AnalysisRunner callers expect; concrete subclasses provide
+    matches what AnalysisRunner callers expect. Concrete subclasses provide
     model-specific behaviour via _load_model, _open_predict_session, and
     _parse_row.
     """
@@ -116,7 +117,7 @@ class BaseAnalysisRunner(ABC):
         t0 = time.monotonic()
 
         # Project files saved under the old birdnet_analyzer locale scheme
-        # used short codes ('en', 'de'); the new lib uses 'en_us' / 'en_uk'
+        # used short codes ('en', 'de'). The new lib uses 'en_us' / 'en_uk'
         # / 'de'. Normalise so a stale 'en' degrades to 'en_us' silently.
         preferred_lang = normalize_lang_code(preferred_lang)
 
@@ -206,16 +207,16 @@ class BaseAnalysisRunner(ABC):
 
         detections_csv = schema.campaign_csv_for_model(campaign.folder, self.model_key)
 
-        # Resolve the species filter before opening the inference session:
-        # in LOCATION mode this pre-warms the geo model and computes per-
-        # week whitelists, so any geo lookup cost is paid during 'preparing'.
+        # Resolve the species filter before opening the inference session.
+        # In LOCATION mode this pre-warms the geo model and computes per-week allowlists,
+        # so any geo lookup cost is paid during 'preparing'.
         resolved = campaign.load_species_filter().resolve(
             wav_files, region_species_scientific, expand_synonyms=expand_species
         )
         lat = resolved.location.latitude if resolved.location else None
         lon = resolved.location.longitude if resolved.location else None
 
-        # Write the applied per-week allow-list (geo + must-haves) alongside
+        # Write the applied per-week allowlist (geo + must-haves) alongside
         # the detections so the user can inspect exactly what the model was
         # asked to consider. Must-have entries are tagged with a `# must-have`
         # marker. The parser ignores comments so the file round-trips cleanly
@@ -304,11 +305,10 @@ class BaseAnalysisRunner(ABC):
                     campaign_name,
                     exc,
                 )
-                # Copy birdnet's internal log now: the library only copies it
-                # into place on a clean session exit (session.__exit__ ->
-                # ProcessManager.join()), and that join can itself hang if a
-                # worker/producer process never exits, so this may be the
-                # only copy that ever lands.
+                # Copy birdnet's log into our log dir as the lib keeps it
+                # in the temp dir and only renames it at the very end of
+                # session.__exit__, and teardown that raises or blocks skips
+                # that.
                 self._save_birdnet_session_log(birdnet_log, campaign_name)
                 if isinstance(exc, RuntimeError) and progress.is_cancelled():
                     raise CancelledError() from exc
@@ -342,9 +342,10 @@ class BaseAnalysisRunner(ABC):
 
         detection_count = 0
         # Two reasons a row can be dropped by the per-week allow-list, tracked
-        # apart so a taxonomy mismatch does not hide behind ordinary geography.
-        out_of_region_count = 0  # a BirdNET-known bird, just not expected here
-        unknown_species_count = 0  # name absent from BirdNET's axis entirely
+        # apart so a legacy-name mismatch does not hide behind ordinary geography.
+        out_of_region_count = 0  # a known bird, just not expected here
+        unknown_species_count = 0  # name absent from the model's axis entirely
+        nonfinite_count = 0  # see the guard in the row loop below
         aru_set: set[str] = set()
 
         arr = result.to_structured_array()
@@ -359,7 +360,7 @@ class BaseAnalysisRunner(ABC):
 
             # Rank is recomputed per (file, chunk_start) over rows that
             # survive the per-week allow-list. The lib already sorts rows by
-            # (file_idx asc, chunk_idx asc, confidence desc); dropping
+            # (file_idx asc, chunk_idx asc, confidence desc). Dropping
             # out-of-region rows preserves that order, so a streaming pass
             # that resets on key change yields the right rank without
             # re-sorting.
@@ -373,13 +374,24 @@ class BaseAnalysisRunner(ABC):
                     settings=settings,
                 )
 
+                # A model can hand back a non-finite score for degenerate
+                # input. BirdNET v3.0 normalizes each window by its own
+                # standard deviation, so a digitally constant window (a dead
+                # ARU channel, a dropout, a muted track) divides by zero and
+                # every class comes back NaN. Dropping those rows keeps one
+                # bad file from aborting the whole campaign when the CSV
+                # writer tries to format the value.
+                if not math.isfinite(parsed.confidence):
+                    nonfinite_count += 1
+                    continue
+
                 allowed = resolved.allowed_for(parsed.file_path)
-                if allowed is not None and parsed.match_name not in allowed:
-                    # birdnet_species_scientific() is called lazily here, in
-                    # the drop path, so a species-only run (allowed is always
-                    # None) never forces the en_us label download just to
-                    # classify drops it will not make.
-                    if parsed.match_name in birdnet_species_scientific():
+                if allowed is not None and parsed.scientific_name not in allowed:
+                    # known_species_scientific() is called lazily here, in the
+                    # drop path, so a species-only run (allowed is always None)
+                    # never forces the en_us label read just to classify drops
+                    # it will not make.
+                    if parsed.scientific_name in known_species_scientific():
                         out_of_region_count += 1
                     else:
                         unknown_species_count += 1
@@ -441,10 +453,17 @@ class BaseAnalysisRunner(ABC):
         # publishes a complete CSV under the final name in one atomic step.
         tmp_csv.replace(detections_csv)
 
+        if nonfinite_count:
+            logging.warning(
+                "%s: dropped %d row(s) with a non-finite confidence. Some audio has windows of constant amplitude",
+                self.log_prefix,
+                nonfinite_count,
+            )
+
         if out_of_region_count or unknown_species_count:
             logging.info(
                 "%s: per-week species filter dropped %d row(s): %d out-of-region, "
-                "%d not on BirdNET's axis (taxonomy mismatch or non-bird). %d kept",
+                "%d not on the model's axis (legacy name or non-bird). %d kept",
                 self.log_prefix,
                 out_of_region_count + unknown_species_count,
                 out_of_region_count,
@@ -475,7 +494,7 @@ class BaseAnalysisRunner(ABC):
         """Look up birdnet's own per-session log file, if the lib exposes one.
 
         Reaches into the lib's private `_resources` attribute since this path
-        isn't part of its public API; any failure here is swallowed so a lib
+        isn't part of its public API. Any failure here is swallowed so a lib
         internals change can't break an analysis run.
         """
         try:
@@ -486,10 +505,10 @@ class BaseAnalysisRunner(ABC):
     def _save_birdnet_session_log(self, birdnet_log: Path | None, campaign_name: str) -> None:
         """Copy birdnet's session log next to ours as soon as an error surfaces.
 
-        birdnet only copies this file into place on a clean session exit
-        (session.__exit__ -> ProcessManager.join()); if a worker/producer
-        process never exits, that join can hang too, so this may be the only
-        copy that ever lands.
+        birdnet writes this file live into the temp dir and only copies it to
+        its global temp name at the end of session.__exit__, so an error leaves
+        the evidence in a temp file under a session-hash name. This puts a
+        campaign-tagged copy in our log dir instead.
         """
         if birdnet_log is None or not birdnet_log.exists():
             return
@@ -499,8 +518,6 @@ class BaseAnalysisRunner(ABC):
             logging.info("%s: copied birdnet session log to %s", self.log_prefix, dest)
         except Exception as exc:  # noqa: BLE001  best-effort: never shadow the real error
             logging.warning("%s: failed to copy birdnet session log: %s", self.log_prefix, exc)
-
-    # ---- Subclass hooks ----------------------------------------------------
 
     @abstractmethod
     def _load_model(self) -> Any:
@@ -522,9 +539,8 @@ class BaseAnalysisRunner(ABC):
         """Open the inference session as a context manager.
 
         Subclasses translate `settings.min_conf` and `settings.overlap` into
-        the lib's predict_session kwargs. BirdNET works in probability space
-        with apply_sigmoid=True; Perch works in raw-logit space with
-        apply_sigmoid=False and a top-k cap.
+        the lib's predict_session kwargs, along with whatever scoring options
+        the model needs (sigmoid handling, top-k caps, device selection).
         """
 
     @abstractmethod
@@ -538,8 +554,9 @@ class BaseAnalysisRunner(ABC):
     ) -> ParsedRow:
         """Convert one raw lib result row into a ParsedRow.
 
-        The lib's row layout differs by model: BirdNET emits 'Sci_Common' in
-        species_name and a sigmoid probability in confidence; Perch emits a
-        raw Latin name and a raw logit. Subclasses normalise both into a
-        ParsedRow with probability-space confidence.
+        The lib's row layout differs by model, both in how species_name
+        encodes the name and in whether confidence arrives as a probability
+        or a raw logit. Subclasses normalise theirs into a ParsedRow whose
+        confidence is in probability space and whose scientific_name is on
+        the axis the species filter checks against.
         """

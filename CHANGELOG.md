@@ -1,5 +1,25 @@
 # Changelog
 
+## [Unreleased]
+### Added
+- Detections with a non-finite confidence are dropped and logged instead of aborting the campaign.
+### Removed
+- Perch-2.0 and BirdNET-2.4. The app now runs BirdNET v3.0 only, and the model selector is gone.
+- The project Species taxonomy setting, along with the BirdNET/Perch rename crosswalk.
+- TensorFlow and kagglehub dependencies.
+### Changed
+- The default Min confidence is now 0.5, matching BirdNET v3.0's higher confidence scale. Existing projects keep their saved value.
+- Species detection uses BirdNET v3.0 on the ONNX backend, with the v3.0 geographic model for region filtering. The model birdnet 1.1 ships is a preview build (`V3.0-preview3.1`), and the UI and CSVs say so.
+- Detections are written to `detections-BirdNET-3.0-preview3.1.csv`. The model key names the exact model release, so a future final v3.0 writes a separate file. CSVs from earlier model versions stay readable in the Examine panel and are not rewritten.
+- Species lists written under the older BirdNET v2.4 names still match, via a 175-entry legacy alias table.
+- Analysis runs at roughly 60x real-time on CPU, down from BirdNET v2.4's ~1050x.
+- Estonian is no longer available as a species language, as BirdNET v3.0 dropped it.
+- The macOS, Windows and Linux builds bundle the BirdNET v3.0 models and the label files for all 29 languages, so they analyse offline and never download at runtime.
+- [Dev] The build fails if the model tree does not reach the finished bundle, instead of shipping a binary that re-downloads on first use.
+- [Dev] `BirdnetRunner` is the only `BaseAnalysisRunner` subclass now that `PerchRunner` is gone.
+- [Dev] Replace `taxonomy_crosswalk` with the one-directional `legacy_names` module.
+- [Dev] Drop the `[tool.uv]` environment pins that existed to route around TensorFlow wheels.
+
 ## [0.6.0] - 2026-08-04
 ### Added
 - New project setting that allows to choose the taxonomy for species names.

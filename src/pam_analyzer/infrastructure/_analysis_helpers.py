@@ -1,14 +1,11 @@
-"""Shared scaffolding for the BirdNET and Perch v2 analysis runners.
+"""Supporting pieces for the analysis runner.
 
-These helpers are model-agnostic: file discovery, recording-time parsing,
-species-list resolution, progress translation, and the per-week species-list
-TXT writer. Both runners share this module via the BaseAnalysisRunner class
-and via direct imports of the leaf utilities.
+File discovery, recording-time parsing, progress translation, and the
+per-week species-list TXT writer.
 
-Module-level functions (rather than methods on the base class) by design:
-nothing here touches per-run state, and keeping them as plain functions
-prevents override-by-accident from a subclass and keeps them callable from
-non-runner code (e.g. counting files before a run starts).
+Module-level functions rather than methods on the runner by design: nothing
+here touches per-run state, and keeping them as plain functions keeps them
+callable from non-runner code (e.g. counting files before a run starts).
 """
 
 from __future__ import annotations

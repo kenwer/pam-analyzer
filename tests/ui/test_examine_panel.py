@@ -14,6 +14,7 @@ from pam_analyzer.ui.app_state import AppState
 from pam_analyzer.ui.models.detections_table_model import COLUMNS_BY_NAME
 from pam_analyzer.ui.panels.examine_panel import ExaminePanel
 from pam_analyzer.ui.settings import AppSettings
+from tests.conftest import CURRENT_MODEL_KEY
 
 _HEADERS = [
     "Campaign",
@@ -47,7 +48,7 @@ def project(tmp_path: Path) -> Project:
             species_filter_mode=FilterMode.LOCATION,
             location=LatLon(48.0, 11.0),
         ).save()
-        csv_path = folder / "detections-BirdNET-2.4.csv"
+        csv_path = folder / f"detections-{CURRENT_MODEL_KEY}.csv"
         with open(csv_path, "w", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
             w.writerow(_HEADERS)
@@ -143,11 +144,14 @@ def test_info_label_breaks_down_counts_by_model(
     # playback.
     monkeypatch.setattr(panel.ui.detections_table, "_present", lambda *a, **k: None)
 
-    # Add a Perch run (2 rows) alongside alpha's existing 3 BirdNET rows. The
-    # base fixture omits the Model column, so its rows load as model "" and
-    # would collide with the Perch rows in the breakdown; rewrite alpha's
-    # BirdNET CSV to name its model explicitly, matching what a real runner writes.
-    _write_model_csv(project.folder / "alpha" / "detections-BirdNET-2.4.csv", "alpha", "MSD-1", "BirdNET-2.4", rows=3)
+    # Alpha ends up with a current run plus a CSV from the retired Perch
+    # model, which is what a campaign analyzed before the upgrade looks like.
+    # The base fixture omits the Model column, so its rows would load as model
+    # "" and show up as a third "unknown" group; overwrite that same file with
+    # one that names its model, matching what a real runner writes.
+    _write_model_csv(
+        project.folder / "alpha" / f"detections-{CURRENT_MODEL_KEY}.csv", "alpha", "MSD-1", CURRENT_MODEL_KEY, rows=3
+    )
     _write_model_csv(project.folder / "alpha" / "detections-Perch-2.0.csv", "alpha", "MSD-1", "Perch-2.0", rows=2)
 
     # Switch to the alpha campaign (found by data, since combo order isn't
@@ -156,19 +160,19 @@ def test_info_label_breaks_down_counts_by_model(
     panel.ui.campaign_combo.setCurrentIndex(panel.ui.campaign_combo.findData("alpha"))
 
     text = panel.ui.info_label.text()
-    # alpha only: 3 BirdNET + 2 Perch = 5. Unfiltered, so every cell collapses
+    # alpha only: 3 current + 2 Perch = 5. Unfiltered, so every cell collapses
     # to a single number.
     assert "5 detections" in text
-    assert "[BirdNET-2.4: 3]   [Perch-2.0: 2]" in text
+    assert f"[{CURRENT_MODEL_KEY}: 3]   [Perch-2.0: 2]" in text
 
     # A cap narrows the view to the single highest-confidence row per
-    # (ARU, Species). That row is a BirdNET one (conf 0.7 > any Perch row),
-    # so its cell shows the shown-of-total split while Perch drops to 0 of 2.
-    # Perch stays listed (order and membership come from the totals).
+    # (ARU, Species). That row is a current-model one (conf 0.7 > any Perch
+    # row), so its cell shows the shown-of-total split while Perch drops to
+    # 0 of 2. Perch stays listed (order and membership come from the totals).
     panel.ui.max_per_spin.setValue(1)
     text = panel.ui.info_label.text()
     assert "1 of 5 detections" in text
-    assert "[BirdNET-2.4: 1 of 3]   [Perch-2.0: 0 of 2]" in text
+    assert f"[{CURRENT_MODEL_KEY}: 1 of 3]   [Perch-2.0: 0 of 2]" in text
 
 
 def _write_model_csv(path: Path, campaign: str, aru: str, model: str, rows: int) -> None:
@@ -251,7 +255,7 @@ def test_autosave_debounces_and_persists(qtbot, panel: ExaminePanel, project) ->
     # Pick the row whose campaign we'll re-read after the save.
     detection = panel._model.detection_at(0)
     assert detection is not None
-    csv_path = project.folder / detection.campaign / "detections-BirdNET-2.4.csv"
+    csv_path = project.folder / detection.campaign / f"detections-{CURRENT_MODEL_KEY}.csv"
 
     panel._model.setData(idx, "true")
     # Auto-save runs after the debounce window. Wait for the timer to fire and
@@ -272,7 +276,7 @@ def test_autosave_preserves_unedited_rows(qtbot, panel: ExaminePanel, project) -
     idx = panel._model.index(0, col)
     detection = panel._model.detection_at(0)
     assert detection is not None
-    csv_path = project.folder / detection.campaign / "detections-BirdNET-2.4.csv"
+    csv_path = project.folder / detection.campaign / f"detections-{CURRENT_MODEL_KEY}.csv"
 
     rows_before = csv_path.read_text(encoding="utf-8").splitlines()
     assert len(rows_before) == 4  # header + 3 fixture rows

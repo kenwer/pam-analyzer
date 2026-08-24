@@ -9,27 +9,23 @@ from pathlib import Path
 
 
 def _configure_frozen_model_paths() -> None:
-    """Point the birdnet lib and kagglehub at the bundled model cache.
+    """Point the birdnet lib at the bundled model cache.
 
     PyInstaller stages our bundled birdnet-models/ tree under sys._MEIPASS at
-    runtime. Both BIRDNET_APP_DATA (read by the birdnet library) and
-    KAGGLEHUB_CACHE (read by kagglehub, which the lib uses for Perch v2)
-    have to be set before any `import birdnet` call triggers a model load,
-    or the frozen app will try to write to the user's home directory and
-    re-download.
+    runtime. BIRDNET_APP_DATA has to be set before any `import birdnet` call
+    triggers a model load, or the frozen app will try to write to the user's
+    home directory and re-download.
 
-    setdefault() rather than [] = so a user can still override either
-    variable from the shell for development or one-off builds.
+    setdefault() rather than [] = so a user can still override the variable
+    from the shell for development or one-off builds.
 
     No-op when not running frozen, so dev runs still use the per-user
     cache and stay independent of the build artifact.
     """
     if not getattr(sys, "frozen", False):
         return
-    base = Path(getattr(sys, "_MEIPASS", "."))
-    bundled = base / "birdnet-models"
+    bundled = Path(getattr(sys, "_MEIPASS", ".")) / "birdnet-models"
     os.environ.setdefault("BIRDNET_APP_DATA", str(bundled / "birdnet-app-data"))
-    os.environ.setdefault("KAGGLEHUB_CACHE", str(bundled / "kagglehub"))
 
 
 _configure_frozen_model_paths()
@@ -42,7 +38,6 @@ from ..domain import paths  # noqa: E402
 from ..infrastructure import (  # noqa: E402
     AudioImporter,
     BirdnetRunner,
-    PerchRunner,
     PsutilSdCardScanner,
     SoundfileAudioExtractor,
 )
@@ -55,9 +50,7 @@ from ..workers import ImportOrchestrator  # noqa: E402
 
 def build_main_window() -> MainWindow:
     audio_extractor = SoundfileAudioExtractor()
-    # Ordered: first key is the default model in the panel's dropdown.
-    # Keying by model_key keeps a single source of truth for model identity.
-    analysis_runners = {r.model_key: r for r in (BirdnetRunner(), PerchRunner())}
+    analysis_runner = BirdnetRunner()
     sdcard_scanner = PsutilSdCardScanner()
     audio_importer = AudioImporter()
     import_orchestrator = ImportOrchestrator(audio_importer, sdcard_scanner)
@@ -66,7 +59,7 @@ def build_main_window() -> MainWindow:
     settings = AppSettings()
     return MainWindow(
         app_state,
-        analysis_runners,
+        analysis_runner,
         import_orchestrator,
         settings,
         audio_extractor,

@@ -10,7 +10,17 @@ import os
 import pytest
 from PySide6.QtCore import QThread
 
+from pam_analyzer.infrastructure.birdnet_runner import MODEL_KEY
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+# The model key a run writes today, derived from the shipped runner rather
+# than copied. Tests that only need "a detections CSV" should use this.
+CURRENT_MODEL_KEY = MODEL_KEY
+
+# Keys the app can still read but no longer writes. Only tests whose subject
+# is that continuity should name one of these, and they should say so.
+RETIRED_MODEL_KEYS = ("BirdNET-2.4", "Perch-2.0")
 
 
 @pytest.fixture(autouse=True)

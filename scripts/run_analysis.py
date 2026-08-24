@@ -1,20 +1,19 @@
 #!/usr/bin/env -S uv run python
-"""Run BirdNET-2.4 or Perch-2.0 over a project folder without a GUI.
+"""Run BirdNET v3.0 over a project folder without a GUI.
 
 Generates the same CSVs as the PAM Analyzer GUI app but headless on a server.
 All configuration is taken from the project's TOML files: pam-analyzer.toml at
-the project root (model, thresholds, overlap, locales, preferred language) and
+the project root (thresholds, overlap, locales, preferred language) and
 one campaign.toml per campaign subfolder (species-filter mode and coordinates).
 
     uv run python scripts/run_analysis.py --project /path/to/project
 
 By default every campaign that does not yet have a detections-<model>.csv is
-analyzed. Pass --force to re-run and overwrite existing CSVs. --model overrides
-the model recorded in pam-analyzer.toml.
+analyzed. Pass --force to re-run and overwrite existing CSVs.
 
 On a cold server the first run downloads model assets to the per-user cache. Set
-BIRDNET_APP_DATA and KAGGLEHUB_CACHE (read by the birdnet library) to redirect
-that cache if the home directory is not writable.
+BIRDNET_APP_DATA (read by the birdnet library) to redirect that cache if the
+home directory is not writable.
 """
 
 from __future__ import annotations
@@ -28,7 +27,6 @@ from pathlib import Path
 
 from pam_analyzer.domain import (
     AnalysisProgressSnapshot,
-    AnalysisRunner,
     AnalysisRunResult,
     Campaign,
     Project,
@@ -36,18 +34,9 @@ from pam_analyzer.domain import (
     paths,
 )
 from pam_analyzer.domain.analysis import CancelledError
-from pam_analyzer.infrastructure import BirdnetRunner, PerchRunner
+from pam_analyzer.infrastructure import BirdnetRunner
 
 _log = logging.getLogger("run_model_on_project_folder")
-
-
-def _build_runners() -> dict[str, AnalysisRunner]:
-    """Model-key to runner, mirroring the GUI factory in app/__main__.py.
-
-    Reusing the runner classes rather than reimplementing them is what keeps
-    output identical to the GUI, including the Perch logit calibration.
-    """
-    return {r.model_key: r for r in (BirdnetRunner(), PerchRunner())}
 
 
 class _ConsoleProgress:
@@ -87,19 +76,13 @@ class _ConsoleProgress:
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run BirdNET-2.4 or Perch-2.0 over a project folder headless.",
+        description="Run BirdNET v3.0 over a project folder headless.",
     )
     parser.add_argument(
         "--project",
         type=Path,
         required=True,
         help="Project folder containing pam-analyzer.toml and campaign subfolders.",
-    )
-    parser.add_argument(
-        "--model",
-        choices=("BirdNET-2.4", "Perch-2.0"),
-        default=None,
-        help="Override the analysis_model recorded in pam-analyzer.toml.",
     )
     parser.add_argument(
         "--campaign",
@@ -179,16 +162,9 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     project = Project.load(project_folder)
 
-    model_key = args.model or project.analysis_model
-    runners = _build_runners()
-    runner = runners.get(model_key)
-    if runner is None:
-        _log.error(
-            "Unknown model %r. Valid models: %s",
-            model_key,
-            ", ".join(sorted(runners)),
-        )
-        return 1
+    # Same runner class the GUI uses, which is what keeps output identical.
+    runner = BirdnetRunner()
+    model_key = runner.model_key
 
     campaigns = _select_campaigns(project_folder, args.campaign)
     if campaigns is None:

@@ -10,18 +10,16 @@ pre-downloads every model the app needs at runtime into a build-local
 cache directory, then runs PyInstaller with that cache bundled into the
 binary.
 
-Two environment variables control where the model files land during the
+One environment variable controls where the model files land during the
 download phase:
 
-- BIRDNET_APP_DATA -> acoustic v2.4 + geo v2.4 (model weights + per-locale
-  label .txt files). Honored by the birdnet>=0.2 library.
-- KAGGLEHUB_CACHE -> Perch v2 SavedModel. Honored by kagglehub, which the
-  birdnet library uses internally to fetch the Perch checkpoint.
+- BIRDNET_APP_DATA -> acoustic v3.0 + geo v3.0 ONNX weights, plus the
+  per-locale label files. Honored by the birdnet>=1.1 library.
 
-Both directories are placed inside one MODEL_CACHE root and shipped as a
-single --add-data entry. At runtime app/__main__.py points the same two
-env vars at the bundled location inside _MEIPASS, so the frozen app never
-touches the user's home directory or the network for model loading.
+That directory sits inside the MODEL_CACHE root and ships as a single
+--add-data entry. At runtime app/__main__.py points the same env var at the
+bundled location inside _MEIPASS, so the frozen app never touches the user's
+home directory or the network for model loading.
 
 Usage:
     uv run --script scripts/build.py
@@ -30,7 +28,6 @@ Usage:
 
 import argparse
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -49,12 +46,10 @@ DIST_DIR = ROOT_DIR / 'dist'
 BUILD_DIR = DIST_DIR / 'build' / APP_NAME
 VENV_DIR = DIST_DIR / 'venv'
 
-# All bundled model assets live under this single root, with one subdir
-# per env-var-driven cache (one for the birdnet lib, one for kagglehub).
-# Reused across builds; delete this directory to force a fresh download.
+# All bundled model assets live under this single root. Reused across
+# builds; delete this directory to force a fresh download.
 MODEL_CACHE = DIST_DIR / '.birdnet-models'
 BIRDNET_APP_DATA_CACHE = MODEL_CACHE / 'birdnet-app-data'
-KAGGLEHUB_CACHE = MODEL_CACHE / 'kagglehub'
 
 # Modules to collect via --collect-all
 # QtQuick, QtQuick.Controls, QtLocation, QtPositioning are required by the MapPickerWidget
@@ -73,10 +68,10 @@ MODULES: tuple[str, ...] = (
 DATA: tuple[tuple[Path, str], ...] = (
     (ROOT_DIR / 'CHANGELOG.md', '.'),
     (ROOT_DIR / 'src' / 'pam_analyzer' / 'widgets' / 'map_picker.qml', 'widgets'),
-    # taxonomy_crosswalk.py reads this via importlib.resources.files(__package__),
+    # legacy_names.py reads this via importlib.resources.files(__package__),
     # so it must land at its real package path, not a bespoke top-level folder.
     (
-        ROOT_DIR / 'src' / 'pam_analyzer' / 'infrastructure' / 'data' / 'taxonomy_crosswalk.tsv',
+        ROOT_DIR / 'src' / 'pam_analyzer' / 'infrastructure' / 'data' / 'legacy_species_aliases.tsv',
         'pam_analyzer/infrastructure/data',
     ),
 )
@@ -91,22 +86,38 @@ def _load_dependencies() -> list[str]:
     return [Requirement(d).name.replace("-", "_") for d in raw_deps]
 
 
-# Single prewarm script: load every model the app might reach for, so the
+# Single prewarm script: load every model the app reaches for, so the
 # downloads happen here (with retry-on-failure) rather than on first user
-# click. BIRDNET_APP_DATA / KAGGLEHUB_CACHE point at the build cache, so
-# files land in a known location ready for PyInstaller bundling.
-# Perch v2 goes through the app's own pinned loader so the bundle contains
-# exactly the version the app will ask kagglehub for at runtime.
+# click. BIRDNET_APP_DATA points at the build cache, so files land in a known
+# location ready for PyInstaller bundling. The precision must match
+# birdnet_lib._PRECISION or the bundle holds weights the app never asks for.
 MODEL_PREWARM = textwrap.dedent("""
     import sys
     import birdnet
-    from pam_analyzer.infrastructure.birdnet_lib import load_perch_v2_pinned
-    print('Pre-downloading birdnet acoustic v2.4 (en_us)...', file=sys.stderr)
-    birdnet.load('acoustic', '2.4', 'tf', lang='en_us')
-    print('Pre-downloading birdnet geo v2.4 (en_us)...', file=sys.stderr)
-    birdnet.load('geo', '2.4', 'tf', lang='en_us')
-    print('Pre-downloading Perch v2 (CPU)...', file=sys.stderr)
-    load_perch_v2_pinned()
+    from birdnet.acoustic.models.v3_0.model import AcousticDownloaderBaseV3_0
+    from birdnet.geo.models.v3_0.model import GeoDownloaderBaseV3_0
+    from birdnet.utils.local_data import get_lang_dir
+
+    print('Pre-downloading birdnet acoustic v3.0 onnx (en_us)...', file=sys.stderr)
+    birdnet.load('acoustic', '3.0', 'onnx', lang='en_us', precision='fp32')
+    print('Pre-downloading birdnet geo v3.0 onnx (en_us)...', file=sys.stderr)
+    birdnet.load('geo', '3.0', 'onnx', lang='en_us', precision='fp32')
+
+    # Loading one locale generates the label files for every locale, so the
+    # bundled app can switch species language offline. Asserted against the
+    # lib's own language set because a partial label set is invisible here
+    # and only surfaces as a download on an end user's machine.
+    for kind, downloader in (
+        ('acoustic', AcousticDownloaderBaseV3_0),
+        ('geo', GeoDownloaderBaseV3_0),
+    ):
+        lang_dir = get_lang_dir(kind, '3.0', 'onnx')
+        missing = sorted(
+            lang for lang in downloader.AVAILABLE_LANGUAGES
+            if not (lang_dir / (lang + '.txt')).is_file()
+        )
+        if missing:
+            raise SystemExit(f'{kind} v3.0 labels missing for: {missing}')
     print('All models cached.')
 """).strip()
 
@@ -118,12 +129,11 @@ def run(cmd: list, env: dict | None = None) -> None:
 def _prewarm_models(download_env: dict, uv_run_prefix: list) -> None:
     """Download every model into MODEL_CACHE, with retry on transient failures.
 
-    Always runs the prewarm script; each library skips work it has already
-    done (birdnet checks its local files, kagglehub resolves the pinned
-    Perch version from its cache without a network call), so a warm run
-    finishes in about a second. A coarse "cache directory is non-empty"
-    skip used to live here, but it could ship a stale bundle after a
-    PERCH_V2_KAGGLE_VERSION bump.
+    Always runs the prewarm script. birdnet decides freshness offline, from
+    the byte size and sha256 constants the installed version pins, so a warm
+    run finishes in about a second and a model whose pinned release changed
+    is re-fetched. A coarse "cache directory is non-empty" skip used to live
+    here, but it could ship a stale bundle.
 
     uv_run_prefix selects which venv runs the download: the isolated build
     venv (['uv', 'run', '--no-project'], with VIRTUAL_ENV/UV_PROJECT_ENVIRONMENT
@@ -132,9 +142,8 @@ def _prewarm_models(download_env: dict, uv_run_prefix: list) -> None:
     disk before tests run and has no isolated venv to point at.
     """
     BIRDNET_APP_DATA_CACHE.mkdir(parents=True, exist_ok=True)
-    KAGGLEHUB_CACHE.mkdir(parents=True, exist_ok=True)
 
-    print('  Pre-downloading model checkpoints (BirdNET acoustic + geo, Perch v2)')
+    print('  Pre-downloading model checkpoints (BirdNET acoustic + geo, v3.0 onnx)')
     max_attempts = 3
     for attempt in range(1, max_attempts + 1):
         try:
@@ -148,6 +157,71 @@ def _prewarm_models(download_env: dict, uv_run_prefix: list) -> None:
                 raise
             print(f'  Download failed (attempt {attempt}/{max_attempts}), retrying...')
     print(f'  Cached models to {MODEL_CACHE}')
+
+
+# Model files that must survive into the finished bundle, relative to
+# BIRDNET_APP_DATA_CACHE. The per-locale label files are checked by the
+# prewarm script instead, which can compare them against the lib's own
+# language set.
+REQUIRED_MODEL_FILES: tuple[str, ...] = (
+    'acoustic-models/v3.0/onnx/model-fp32.onnx',
+    'geo-models/v3.0/onnx/model-fp32.onnx',
+)
+
+
+def _verify_bundle(is_onefile: bool) -> None:
+    """Fail the build if the model tree did not make it into the output.
+
+    A frozen app whose models are missing still starts and still runs: it
+    just re-downloads ~557 MB on the user's first Analyze click, with the
+    lib's progress bar going to a stderr that a windowed build sends to
+    devnull. That failure has shipped before, from a malformed --add-data
+    separator, and it is invisible from the build log. So it is checked here.
+
+    The two output shapes need different checks. An onedir build (the macOS
+    .app) keeps the tree on disk, so the files are located and their sizes
+    compared exactly. A onefile build seals its payload inside the
+    executable, where the files cannot be stat'd without unpacking, so the
+    binary is instead required to be larger than the models it should carry.
+    The threshold is deliberately loose, since it only has to separate a
+    bundle holding the weights from one that dropped them.
+    """
+    expected = {
+        rel: (BIRDNET_APP_DATA_CACHE / rel).stat().st_size for rel in REQUIRED_MODEL_FILES
+    }
+    payload = sum(expected.values())
+
+    if is_onefile:
+        binaries = [
+            f for f in DIST_DIR.iterdir() if f.is_file() and f.stem == APP_NAME
+        ]
+        if not binaries:
+            raise SystemExit(f'No {APP_NAME} binary found in {DIST_DIR}')
+        size = max(f.stat().st_size for f in binaries)
+        floor = int(payload * 0.6)
+        if size < floor:
+            raise SystemExit(
+                f'The built binary is {size / 1e6:.0f} MB, below the {floor / 1e6:.0f} MB '
+                f'floor for a bundle carrying {payload / 1e6:.0f} MB of models. '
+                'The model tree is probably missing from --add-data.'
+            )
+        print(f'  Verified bundle: {size / 1e6:.0f} MB, carries the model payload')
+        return
+
+    for rel, size in expected.items():
+        found = list(DIST_DIR.glob(f'**/birdnet-models/birdnet-app-data/{rel}'))
+        if not found:
+            raise SystemExit(
+                f'{rel} is missing from the bundle. The model tree did not survive '
+                'PyInstaller; check the --add-data entry for MODEL_CACHE.'
+            )
+        actual = found[0].stat().st_size
+        if actual != size:
+            raise SystemExit(
+                f'{rel} is {actual} bytes in the bundle, expected {size}. '
+                'The bundled copy is truncated or stale.'
+            )
+    print(f'  Verified bundle: {payload / 1e6:.0f} MB of models present')
 
 
 def main() -> None:
@@ -168,7 +242,6 @@ def main() -> None:
         download_env = {
             **os.environ,
             'BIRDNET_APP_DATA': str(BIRDNET_APP_DATA_CACHE),
-            'KAGGLEHUB_CACHE': str(KAGGLEHUB_CACHE),
         }
         _prewarm_models(download_env, ['uv', 'run'])
         return
@@ -193,9 +266,8 @@ def main() -> None:
     DIST_DIR.mkdir(parents=True, exist_ok=True)
     run(['uv', 'venv', '--python', '3.13', '--clear', VENV_DIR])
 
-    print('  Syncing build venv (project + dev deps including kagglehub)')
+    print('  Syncing build venv (project + dev deps)')
     # uv sync installs the project + all dependency groups.
-    # --group dev ensures kagglehub is installed (needed for Perch v2 model download).
     # --no-install-project skips editable install so we can compile .ui/.qrc
     # before the package is installed (compiled files are picked up by pip install).
     run(
@@ -215,7 +287,6 @@ def main() -> None:
     download_env = {
         **build_env,
         'BIRDNET_APP_DATA': str(BIRDNET_APP_DATA_CACHE),
-        'KAGGLEHUB_CACHE': str(KAGGLEHUB_CACHE),
     }
     _prewarm_models(download_env, ['uv', 'run', '--no-project'])
 
@@ -278,7 +349,7 @@ def main() -> None:
         icon,
         # Include any non-Python data the birdnet package itself ships.
         # Model weights and labels live outside the package under
-        # BIRDNET_APP_DATA / KAGGLEHUB_CACHE; those are added via DATA below.
+        # BIRDNET_APP_DATA; that tree is added via --add-data below.
         '--collect-data',
         'birdnet',
     ]
@@ -292,7 +363,7 @@ def main() -> None:
         cmd += ['--collect-all', module]
     # Bundle the model cache as a single tree at <bundle>/birdnet-models.
     # app/__main__.py reads sys._MEIPASS at startup and points
-    # BIRDNET_APP_DATA / KAGGLEHUB_CACHE at the subdirs of that path.
+    # BIRDNET_APP_DATA at a subdir of that path.
     # PyInstaller splits --add-data on os.pathsep, which is ';' on Windows
     # and ':' on POSIX. A hardcoded ':' is malformed on Windows (the source
     # path also starts with a drive-letter colon), so the tree never lands
@@ -324,6 +395,9 @@ def main() -> None:
         cmd += ['--runtime-hook', PACKAGING_DIR / 'rthook_win_dll_path.py']
     cmd.append(ROOT_DIR / 'src' / 'pam_analyzer' / '__main__.py')
     run(cmd, env=build_env)
+
+    print('  Verifying bundled models')
+    _verify_bundle(is_onefile=not is_mac)
 
     print(f'\nDone. Binary is in {DIST_DIR}/')
 

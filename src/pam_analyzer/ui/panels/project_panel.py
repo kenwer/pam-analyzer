@@ -8,9 +8,8 @@ from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QCheckBox, QWidget
 
-from ...domain import MAX_OVERLAP_S, Project, paths
+from ...domain import DEFAULT_MIN_CONF, MAX_OVERLAP_S, Project, paths
 from ...infrastructure.birdnet_lib import normalize_lang_code
-from ...infrastructure.taxonomy_crosswalk import TAXONOMIES
 from ..app_state import AppState
 from .ui_project_panel import Ui_ProjectPanel
 
@@ -42,7 +41,6 @@ class ProjectPanel(QWidget):
         # Single source of truth for the overlap cap: size the slider from it.
         self.ui.overlap_slider.setMaximum(int(round(MAX_OVERLAP_S * 10)))
         self._populate_locale_combo()
-        self._populate_taxonomy_combo()
         self._build_locales_grid()
         self._wire_signals()
         self._render(app_state.project)
@@ -60,7 +58,6 @@ class ProjectPanel(QWidget):
         self.ui.sdcard_pattern_edit.textChanged.connect(self._refresh_regex_indicator)
         self.ui.sdcard_pattern_edit.editingFinished.connect(self._on_sdcard_pattern_changed)
         self.ui.species_lang_combo.editTextChanged.connect(self._on_species_lang_changed)
-        self.ui.taxonomy_combo.currentTextChanged.connect(self._on_taxonomy_changed)
         self.ui.folder_label.linkActivated.connect(self._open_folder)
         # Sliders fire continuously while dragged, so these save silently
         # (no projectChanged broadcast) to avoid re-rendering every panel
@@ -72,10 +69,6 @@ class ProjectPanel(QWidget):
         # Same source as the extra-languages grid, so both controls offer the
         # model's real locale codes (e.g. en_us/en_uk, not a bare en).
         self.ui.species_lang_combo.addItems(sorted(self._available_locales))
-
-    def _populate_taxonomy_combo(self) -> None:
-        # A fixed pair of axes, so populated once; the combo is not editable.
-        self.ui.taxonomy_combo.addItems(list(TAXONOMIES))
 
     def _build_locales_grid(self) -> None:
         """Lay the model's locale codes out as a checkbox grid.
@@ -103,7 +96,6 @@ class ProjectPanel(QWidget):
             for w in (
                 self.ui.sdcard_pattern_edit,
                 self.ui.species_lang_combo,
-                self.ui.taxonomy_combo,
                 self.ui.min_conf_slider,
                 self.ui.overlap_slider,
             ):
@@ -115,9 +107,8 @@ class ProjectPanel(QWidget):
                 self.ui.folder_label.clear()
                 self.ui.sdcard_pattern_edit.clear()
                 self.ui.species_lang_combo.setCurrentText("")
-                self.ui.taxonomy_combo.setCurrentIndex(0)
                 self._refresh_regex_indicator("")
-                self._set_slider_values(min_conf=0.25, overlap=0.0)
+                self._set_slider_values(min_conf=DEFAULT_MIN_CONF, overlap=0.0)
                 self._set_locale_checks(())
                 return
 
@@ -125,7 +116,6 @@ class ProjectPanel(QWidget):
             self.ui.folder_label.setText(f'<a href="open">{folder_text}</a>')
             self.ui.sdcard_pattern_edit.setText(project.sdcard_name_pattern)
             self._set_combo_value(project.preferred_species_lang)
-            self._set_taxonomy_value(project.analysis_taxonomy)
             self._set_slider_values(min_conf=project.min_conf, overlap=project.overlap)
             self._set_locale_checks(project.locales)
 
@@ -170,14 +160,6 @@ class ProjectPanel(QWidget):
         else:
             self.ui.species_lang_combo.setEditText(lang)
 
-    def _set_taxonomy_value(self, taxonomy: str) -> None:
-        # A stored taxonomy the current build no longer offers falls back to
-        # the first (default) axis rather than showing an empty combo.
-        idx = self.ui.taxonomy_combo.findText(taxonomy)
-        self.ui.taxonomy_combo.setCurrentIndex(idx if idx >= 0 else 0)
-
-    # handlers
-
     def _on_sdcard_pattern_changed(self) -> None:
         if self._loading:
             return
@@ -187,13 +169,6 @@ class ProjectPanel(QWidget):
         if self._loading:
             return
         self._apply(preferred_species_lang=value.strip() or "en")
-
-    def _on_taxonomy_changed(self, value: str) -> None:
-        if self._loading or not value:
-            return
-        # Silent save (like the sliders): the axis only affects the next run's
-        # output, so no other panel needs to re-render now.
-        self._app_state.save_project_fields(analysis_taxonomy=value)
 
     def _on_min_conf_changed(self, value: int) -> None:
         self._refresh_slider_labels()

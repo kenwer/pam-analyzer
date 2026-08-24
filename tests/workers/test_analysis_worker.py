@@ -26,6 +26,7 @@ from pam_analyzer.domain import (
     RunStatus,
 )
 from pam_analyzer.workers.analysis_worker import AnalysisWorker
+from tests.conftest import CURRENT_MODEL_KEY
 
 
 class FakeRunner:
@@ -78,7 +79,7 @@ def test_forwards_returned_cancelled_outcome_with_its_campaigns(tmp_path: Path, 
     """
     done = CampaignRunResult(
         campaign_name="a",
-        detections_csv=tmp_path / "detections-BirdNET-2.4.csv",
+        detections_csv=tmp_path / f"detections-{CURRENT_MODEL_KEY}.csv",
         detection_count=3,
         wav_count=5,
         aru_count=1,

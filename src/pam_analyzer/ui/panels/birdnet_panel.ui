@@ -26,23 +26,6 @@
    <item>
     <layout class="QHBoxLayout" name="campaign_row">
      <item>
-      <widget class="QLabel" name="model_label">
-       <property name="text">
-        <string>Model</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QComboBox" name="model_combo">
-       <property name="minimumSize">
-        <size>
-         <width>120</width>
-         <height>0</height>
-        </size>
-       </property>
-      </widget>
-     </item>
-     <item>
       <widget class="QLabel" name="campaign_label">
        <property name="text">
         <string>Campaign</string>
@@ -115,7 +98,7 @@ QPushButton:checked:pressed { background-color: #c62828; }
 QPushButton:disabled { background-color: #c0c0c0; color: #f5f5f5; }</string>
        </property>
        <property name="text">
-        <string>Run BirdNET</string>
+        <string>Run BirdNET-3.0-preview3.1</string>
        </property>
        <property name="checkable">
         <bool>true</bool>

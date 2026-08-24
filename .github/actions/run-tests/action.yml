@@ -6,20 +6,17 @@ runs:
   steps:
     # Fast and slow tests run as separate pytest processes so the Qt/UI
     # tests never share an address space with leftover state from the model
-    # tests (the birdnet session can leak worker processes and feeder
-    # threads, https://github.com/birdnet-team/birdnet/issues/51).
+    # tests, whose inference pipeline spawns worker processes.
     # Composite action steps can't set their own timeout-minutes, so the
     # caller wraps this whole action in a timeout instead.
     - name: Run fast tests
       shell: bash
       env:
         BIRDNET_APP_DATA: ${{ github.workspace }}/dist/.birdnet-models/birdnet-app-data
-        KAGGLEHUB_CACHE: ${{ github.workspace }}/dist/.birdnet-models/kagglehub
       run: uv run poe test-fast
 
     - name: Run slow tests
       shell: bash
       env:
         BIRDNET_APP_DATA: ${{ github.workspace }}/dist/.birdnet-models/birdnet-app-data
-        KAGGLEHUB_CACHE: ${{ github.workspace }}/dist/.birdnet-models/kagglehub
       run: uv run poe test-slow

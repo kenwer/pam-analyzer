@@ -16,7 +16,7 @@ _ACKNOWLEDGEMENTS_MARKDOWN = """\
 The author would like to thank the following projects:
 
 - [BirdNET](https://github.com/birdnet-team/birdnet)
-- [Perch 2.0](https://arxiv.org/pdf/2508.04665)
+- [ONNX Runtime](https://onnxruntime.ai)
 - [Qt](https://www.qt.io/) / [PySide6](https://doc.qt.io/qtforpython)
 - [Python](https://www.python.org)
 - [Polars](https://pola.rs)

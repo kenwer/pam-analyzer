@@ -5,6 +5,7 @@ from dataclasses import fields
 
 from pam_analyzer.domain import Detection, VerifiedState
 from pam_analyzer.domain import detection_schema as schema
+from tests.conftest import CURRENT_MODEL_KEY
 
 
 def _sample_detection() -> Detection:
@@ -24,7 +25,7 @@ def _sample_detection() -> Detection:
         lon=9.32,
         species_list="",
         min_conf=0.25,
-        model="BirdNET-2.4",
+        model=CURRENT_MODEL_KEY,
         verified=VerifiedState.TRUE,
         corrected_species="",
         comment="clear song",
@@ -126,6 +127,8 @@ class TestRowRoundTrip:
 
 class TestFilenamePattern:
     def test_build_and_parse_are_inverse(self):
+        # A key the app no longer writes, on purpose: round-tripping any key
+        # is what keeps CSVs from retired models readable.
         name = schema.detections_csv_name("Perch-2.0")
         assert name == "detections-Perch-2.0.csv"
         assert schema.model_key_from_csv_name(name) == "Perch-2.0"

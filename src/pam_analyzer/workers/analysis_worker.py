@@ -61,7 +61,7 @@ class AnalysisWorker(QObject):
                 progress=prog,
             )
         except CancelledError:
-            # Defensive: BaseAnalysisRunner returns a CANCELLED outcome rather
+            # Defensive: BirdnetRunner returns a CANCELLED outcome rather
             # than raising, so this only fires for a different runner (or the
             # test fake) that signals cancellation by raising.
             outcome = AnalysisRunResult(status=RunStatus.CANCELLED)

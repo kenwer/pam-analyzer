@@ -15,6 +15,7 @@ from pam_analyzer.domain import (
 )
 from pam_analyzer.ui.app_state import AppState
 from pam_analyzer.ui.panels.birdnet_panel import BirdNetPanel
+from tests.conftest import CURRENT_MODEL_KEY
 
 
 @pytest.fixture(autouse=True)
@@ -47,7 +48,7 @@ def _isolated_qsettings(tmp_path, monkeypatch):
 
 
 class _FakeRunner:
-    model_key = "BirdNET-2.4"
+    model_key = CURRENT_MODEL_KEY
 
     def count_audio_files(self, _path: Path) -> int:
         return 0
@@ -91,7 +92,7 @@ def state(project_and_campaigns) -> AppState:
 @pytest.fixture
 def panel(qtbot, state: AppState, project_and_campaigns, load_project) -> BirdNetPanel:
     proj, _ = project_and_campaigns
-    p = BirdNetPanel(state, {"BirdNET-2.4": _FakeRunner()})
+    p = BirdNetPanel(state, _FakeRunner())
     qtbot.addWidget(p)
     load_project(state, proj.folder)
     return p
@@ -99,14 +100,14 @@ def panel(qtbot, state: AppState, project_and_campaigns, load_project) -> BirdNe
 
 def test_panel_loads_disabled_without_project(qtbot):
     state = AppState()
-    p = BirdNetPanel(state, {"BirdNET-2.4": _FakeRunner()})
+    p = BirdNetPanel(state, _FakeRunner())
     qtbot.addWidget(p)
 
     assert not p.ui.run_button.isEnabled()
     assert not p.ui.campaign_combo.isEnabled()
 
 
-def test_combo_populates_on_project_load(panel: BirdNetPanel, project_and_campaigns):
+def test_campaign_combo_populates_on_project_load(panel: BirdNetPanel, project_and_campaigns):
     _proj, campaigns = project_and_campaigns
     combo = panel.ui.campaign_combo
     # "All campaigns" item + one per campaign
@@ -138,7 +139,7 @@ def _make_completed_outcome(state: AppState, count: int = 42) -> AnalysisRunResu
     campaign_dir = project.folder / "alpha"
     campaign_dir.mkdir(parents=True, exist_ok=True)
     (campaign_dir / "campaign.toml").touch()
-    csv_path = campaign_dir / "detections-BirdNET-2.4.csv"
+    csv_path = campaign_dir / f"detections-{CURRENT_MODEL_KEY}.csv"
     csv_path.write_text(
         "Species,Confidence\n" + "Robin,0.9\n" * count,
         encoding="utf-8",
@@ -205,7 +206,7 @@ def test_loads_previous_results_from_disk(qtbot, tmp_path: Path, load_project):
     campaign_dir = proj.folder / "alpha"
     campaign_dir.mkdir(parents=True)
     (campaign_dir / "campaign.toml").touch()
-    csv_path = campaign_dir / "detections-BirdNET-2.4.csv"
+    csv_path = campaign_dir / f"detections-{CURRENT_MODEL_KEY}.csv"
     csv_path.write_text(
         "Species,Confidence\n"
         "Robin,0.9\n"
@@ -215,7 +216,7 @@ def test_loads_previous_results_from_disk(qtbot, tmp_path: Path, load_project):
     )
 
     state = AppState()
-    panel = BirdNetPanel(state, {"BirdNET-2.4": _FakeRunner()})
+    panel = BirdNetPanel(state, _FakeRunner())
     qtbot.addWidget(panel)
 
     load_project(state, proj.folder)
@@ -228,10 +229,13 @@ def test_loads_previous_results_from_disk(qtbot, tmp_path: Path, load_project):
     assert "[" not in panel.ui.summary_label.text()
 
 
-def test_panel_shows_all_csvs_regardless_of_model_selection(qtbot, tmp_path: Path, load_project):
-    """All CSVs in a project are listed at once. The model combo picks what
-    to run next; it does not filter the result view, because the filename
-    suffix already tells the user which model each row belongs to.
+def test_panel_shows_csvs_from_models_no_longer_shipped(qtbot, tmp_path: Path, load_project):
+    """All CSVs in a campaign are listed at once, whatever produced them.
+
+    A campaign analyzed before the move to BirdNET v3.0 still holds its
+    BirdNET-2.4 and Perch-2.0 files. Those are never rewritten, so the panel
+    has to keep reading them. The Model column and the filename suffix are
+    what tell the user which model each row came from.
     """
     proj = Project(folder=tmp_path / "dual")
     proj.save()
@@ -245,31 +249,23 @@ def test_panel_shows_all_csvs_regardless_of_model_selection(qtbot, tmp_path: Pat
     pc.write_text("Species,Confidence\nCrow,0.7\nJay,0.6\n", encoding="utf-8")
 
     state = AppState()
-    bn_runner = _FakeRunner()
-    perch_runner = _FakeRunner()
-    perch_runner.model_key = "Perch-2.0"
-    panel = BirdNetPanel(
-        state,
-        {"BirdNET-2.4": bn_runner, "Perch-2.0": perch_runner},
-    )
+    panel = BirdNetPanel(state, _FakeRunner())
     qtbot.addWidget(panel)
     load_project(state, proj.folder)
 
-    # Both rows visible from the start: 1 (birdnet) + 2 (perch) = 3 detections.
-    assert "3 detections" in panel.ui.summary_label.text()
-    assert panel._results_model.rowCount() == 2
-
-    # Switching the model selector does not filter or rearrange the rows.
-    perch_idx = panel.ui.model_combo.findData("Perch-2.0")
-    panel.ui.model_combo.setCurrentIndex(perch_idx)
+    # Both rows visible: 1 (BirdNET 2.4) + 2 (Perch) = 3 detections, even
+    # though neither model ships any more.
     assert "3 detections" in panel.ui.summary_label.text()
     assert panel._results_model.rowCount() == 2
 
 
-def test_panel_keeps_birdnet_after_perch_run(qtbot, tmp_path: Path, load_project):
-    """After running BirdNET then Perch, both CSVs are visible. Regression
-    test: previously the in-memory result was replaced with only the fresh
-    run's rows, so the earlier sibling-model CSV vanished from the view.
+def test_fresh_run_keeps_legacy_model_csvs_visible(qtbot, tmp_path: Path, load_project):
+    """A finished run leaves CSVs from retired models visible alongside it.
+
+    Regression test: the in-memory result used to be replaced with only the
+    fresh run's rows, so sibling CSVs vanished from the view. It also covers
+    the upgrade path, where a campaign carries detections from BirdNET 2.4
+    and Perch 2.0 that the app can still read but can no longer produce.
     """
     proj = Project(folder=tmp_path / "seq")
     proj.save()
@@ -285,13 +281,7 @@ def test_panel_keeps_birdnet_after_perch_run(qtbot, tmp_path: Path, load_project
     perch_csv.write_text("Species,Confidence\nCrow,0.7\n", encoding="utf-8")
 
     state = AppState()
-    bn_runner = _FakeRunner()
-    perch_runner = _FakeRunner()
-    perch_runner.model_key = "Perch-2.0"
-    panel = BirdNetPanel(
-        state,
-        {"BirdNET-2.4": bn_runner, "Perch-2.0": perch_runner},
-    )
+    panel = BirdNetPanel(state, _FakeRunner())
     qtbot.addWidget(panel)
     load_project(state, proj.folder)
 

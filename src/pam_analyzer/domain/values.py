@@ -1,14 +1,10 @@
 from dataclasses import dataclass
 
-# Largest overlap (seconds) any model accepts. BirdNET's analyze.core caps
-# overlap at 2.5 s on its 3 s window; Perch would allow up to 4.9 s on its 5 s
-# window, but the setting is now project-wide and model-agnostic, so we apply
-# the more conservative BirdNET limit to every run.
+# Largest overlap (seconds) the model accepts. BirdNET v3.0 frames audio in
+# 3 s windows (96,000 samples at 32 kHz), so consecutive windows must advance
+# by at least 0.5 s.
 MAX_OVERLAP_S = 2.5
-
-# Default scientific-name axis a project normalizes output to
-DEFAULT_TAXONOMY = "BirdNET-2.4"
-
+DEFAULT_MIN_CONF = 0.5
 
 @dataclass(frozen=True, slots=True)
 class LatLon:
@@ -26,7 +22,6 @@ class LatLon:
 class AnalysisSettings:
     """Project-wide analysis run parameters, passed to any model runner."""
 
-    min_conf: float = 0.25
+    min_conf: float = DEFAULT_MIN_CONF
     overlap: float = 0.0
     locales: tuple[str, ...] = ()  # frozen for hashability
-    canonical_taxonomy: str = DEFAULT_TAXONOMY  # axis every model's output is written under

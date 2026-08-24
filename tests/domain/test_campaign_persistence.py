@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from pam_analyzer.domain import Campaign, FilterMode, LatLon
+from tests.conftest import CURRENT_MODEL_KEY
 
 
 @pytest.fixture
@@ -65,7 +66,7 @@ def test_rename_keeps_detection_csvs_valid(audio_root):
 
     c = _new_campaign(audio_root, "before")
     c.create()
-    csv_path = schema.campaign_csv_for_model(c.folder, "BirdNET-2.4")
+    csv_path = schema.campaign_csv_for_model(c.folder, CURRENT_MODEL_KEY)
     csv_path.write_text(
         "Campaign,Species,Confidence,File\nbefore,Robin,0.9,MSD-1/week_08/r.flac\n",
         encoding="utf-8",
@@ -73,7 +74,8 @@ def test_rename_keeps_detection_csvs_valid(audio_root):
 
     renamed = c.rename("after")
 
-    assert schema.campaign_csvs(renamed.folder) == [renamed.folder / "detections-BirdNET-2.4.csv"]
+    # Same filename, new folder: the CSV name never carried the campaign name.
+    assert schema.campaign_csvs(renamed.folder) == [renamed.folder / csv_path.name]
     detections = DetectionSet.load_for_campaign(renamed.folder).detections
     assert detections[0].file == "after/MSD-1/week_08/r.flac"
     assert (audio_root / detections[0].file).parent == renamed.folder / "MSD-1" / "week_08"

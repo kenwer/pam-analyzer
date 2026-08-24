@@ -49,20 +49,16 @@ class BirdNetPanel(QWidget):
     def __init__(
         self,
         app_state: AppState,
-        runners: dict[str, AnalysisRunner],
+        runner: AnalysisRunner,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.ui = Ui_BirdNetPanel()
         self.ui.setupUi(self)
 
-        if not runners:
-            raise ValueError("BirdNetPanel requires at least one analysis runner")
         self._app_state = app_state
-        self._runners = runners
-        first_key = next(iter(runners))
-        self._runner: AnalysisRunner = runners[first_key]
-        self._runner_key: str = first_key
+        self._runner: AnalysisRunner = runner
+        self._runner_key: str = runner.model_key
         self._state = _PanelState()
         self._thread: QThread | None = None
         self._worker: AnalysisWorker | None = None
@@ -71,21 +67,11 @@ class BirdNetPanel(QWidget):
         self.ui.results_tree.header().setStretchLastSection(True)
         disable_item_hover(self.ui.results_tree)
 
-        self._populate_model_combo()
         self._update_run_label()
         self._wire_signals()
         self._set_status_page(_StatusPage.IDLE)
         self._render_project(app_state.project)
         self._on_analysis_inventory_changed(app_state.analysis_inventory)
-
-    def _populate_model_combo(self) -> None:
-        combo = self.ui.model_combo
-        combo.blockSignals(True)
-        combo.clear()
-        for key in self._runners:
-            combo.addItem(key, key)
-        combo.setCurrentIndex(0)
-        combo.blockSignals(False)
 
     def _update_run_label(self) -> None:
         """Show the selected model on the Run button (idle state only).
@@ -106,20 +92,8 @@ class BirdNetPanel(QWidget):
         self._app_state.campaignsChanged.connect(self._rebuild_campaign_combo)
         self._app_state.analysisInventoryChanged.connect(self._on_analysis_inventory_changed)
 
-        self.ui.model_combo.currentIndexChanged.connect(self._on_model_changed)
         self.ui.campaign_combo.currentIndexChanged.connect(self._on_campaign_changed)
         self.ui.run_button.clicked.connect(self._on_run_clicked)
-
-    def _on_model_changed(self, index: int) -> None:
-        if index < 0:
-            return
-        key = str(self.ui.model_combo.itemData(index))
-        if key not in self._runners or key == self._runner_key:
-            return
-        self._runner_key = key
-        self._runner = self._runners[key]
-        self._update_run_label()
-        self._app_state.save_project_fields(analysis_model=key)
 
     def _render_project(self, project: Project | None) -> None:
         loaded = project is not None
@@ -130,36 +104,10 @@ class BirdNetPanel(QWidget):
             self._set_status_page(_StatusPage.IDLE)
             return
         assert project is not None
-        self._restore_model_from_project(project)
         self._rebuild_campaign_combo(self._app_state.campaigns)
-
-    def _restore_model_from_project(self, project: Project) -> None:
-        """Select the model the project was last saved with, if still available.
-
-        A project saved with a model that no longer ships (renamed, removed)
-        falls back to whatever is currently the default first key. The combo
-        signal is blocked while we set the index so we don't trigger an
-        immediate save-back that would overwrite a legitimate unknown value
-        with our fallback.
-        """
-        target = project.analysis_model
-        idx = self.ui.model_combo.findData(target)
-        if idx < 0:
-            return  # unknown key; keep the current selection (the first runner)
-        if idx == self.ui.model_combo.currentIndex():
-            return
-        self.ui.model_combo.blockSignals(True)
-        try:
-            self.ui.model_combo.setCurrentIndex(idx)
-        finally:
-            self.ui.model_combo.blockSignals(False)
-        self._runner_key = target
-        self._runner = self._runners[target]
-        self._update_run_label()
 
     def _set_settings_enabled(self, enabled: bool) -> None:
         for w in (
-            self.ui.model_combo,
             self.ui.campaign_combo,
             self.ui.run_button,
         ):
@@ -296,7 +244,7 @@ class BirdNetPanel(QWidget):
             if snap.total_campaigns > 1
             else snap.campaign
         )
-        parts = [prefix, snap.phase]
+        parts = [p for p in (prefix, snap.phase) if p]
         if snap.files_total > 0 and snap.phase == "analyzing":
             parts.append(f"{snap.files_done}/{snap.files_total}")
         if snap.phase_detail:

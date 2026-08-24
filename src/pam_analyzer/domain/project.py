@@ -5,7 +5,7 @@ from pathlib import Path
 import tomli_w
 
 from . import paths
-from .values import DEFAULT_TAXONOMY, MAX_OVERLAP_S, AnalysisSettings
+from .values import DEFAULT_MIN_CONF, MAX_OVERLAP_S, AnalysisSettings
 
 
 @dataclass
@@ -13,16 +13,18 @@ class _ProjectToml:
     """Mirrors the on-disk [project] table exactly.
 
     The min-confidence, overlap, and locale keys keep their historical
-    birdnet_ prefix even though every model now uses them. Matching the key
-    names older builds (and the legacy .pamproj format) already wrote means
-    no on-disk migration is needed. The domain Project drops the prefix; the
-    translation happens in Project.from_table and Project.save.
+    birdnet_ prefix. Matching the key names older builds (and the legacy
+    .pamproj format) already wrote means no on-disk migration is needed. The
+    domain Project drops the prefix. The translation happens in
+    Project.from_table and Project.save.
+
+    Files written before the move to a single model may also carry
+    analysis_model and analysis_taxonomy keys. from_table drops unknown keys,
+    so those load without complaint and simply stop being written on save.
     """
 
     sdcard_name_pattern: str = "^(MSD-|2MM)"
-    analysis_model: str = "BirdNET-2.4"
-    analysis_taxonomy: str = DEFAULT_TAXONOMY
-    birdnet_min_conf: float = 0.25
+    birdnet_min_conf: float = DEFAULT_MIN_CONF
     birdnet_overlap: float = 0.0
     birdnet_locales: list[str] = field(default_factory=list)
     preferred_species_lang: str = "en"
@@ -40,9 +42,7 @@ class Project:
 
     folder: Path
     sdcard_name_pattern: str = "^(MSD-|2MM)"  # AudioMoth (MSD-) and Song Meter (2MM serials)
-    analysis_model: str = "BirdNET-2.4"
-    analysis_taxonomy: str = DEFAULT_TAXONOMY  # scientific-name axis all model output is normalized to
-    min_conf: float = 0.25
+    min_conf: float = DEFAULT_MIN_CONF
     overlap: float = 0.0
     locales: tuple[str, ...] = ()
     preferred_species_lang: str = "en"
@@ -58,14 +58,12 @@ class Project:
         """The project's run parameters as an AnalysisSettings.
 
         Overlap is clamped to MAX_OVERLAP_S so a value written by an older
-        build (which let Perch go higher) cannot exceed what the BirdNET
-        model accepts on the next run.
+        build cannot exceed what the model accepts on the next run.
         """
         return AnalysisSettings(
             min_conf=self.min_conf,
             overlap=min(self.overlap, MAX_OVERLAP_S),
             locales=self.locales,
-            canonical_taxonomy=self.analysis_taxonomy,
         )
 
     @classmethod
@@ -81,8 +79,6 @@ class Project:
         return cls(
             folder=folder,
             sdcard_name_pattern=raw.sdcard_name_pattern,
-            analysis_model=raw.analysis_model,
-            analysis_taxonomy=raw.analysis_taxonomy,
             min_conf=raw.birdnet_min_conf,
             overlap=raw.birdnet_overlap,
             locales=tuple(raw.birdnet_locales),
@@ -100,8 +96,6 @@ class Project:
     def save(self) -> None:
         raw = _ProjectToml(
             sdcard_name_pattern=self.sdcard_name_pattern,
-            analysis_model=self.analysis_model,
-            analysis_taxonomy=self.analysis_taxonomy,
             birdnet_min_conf=self.min_conf,
             birdnet_overlap=self.overlap,
             birdnet_locales=list(self.locales),

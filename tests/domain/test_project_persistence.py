@@ -25,7 +25,7 @@ def test_load_falls_back_to_defaults_for_missing_keys(tmp_path: Path) -> None:
     paths.project_toml(tmp_path).write_text('[project]\nsdcard_name_pattern = "^X-"\n')
     project = Project.load(tmp_path)
     assert project.sdcard_name_pattern == "^X-"
-    assert project.min_conf == 0.25  # default
+    assert project.min_conf == 0.5  # default
     assert project.locales == ()
 
 
