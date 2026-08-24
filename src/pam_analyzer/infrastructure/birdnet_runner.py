@@ -57,15 +57,15 @@ class BirdnetRunner(BaseAnalysisRunner):
         'Sci_Common' species_name string. Other locales come from
         locale_label_map() lookups inside _parse_row.
 
-        single_threaded() is a workaround for a birdnet default, described in
+        pin_session_threads() is a workaround for a birdnet default, described in
         birdnet_onnx_threads. It changes how each worker's session is built and
         nothing about what the model computes.
         """
         import birdnet
 
-        from .birdnet_onnx_threads import single_threaded
+        from .birdnet_onnx_threads import pin_session_threads
 
-        return single_threaded(
+        return pin_session_threads(
             birdnet.load("acoustic", "3.0", "onnx", lang="en_us", precision=MODEL_PRECISION)
         )
 
@@ -90,6 +90,12 @@ class BirdnetRunner(BaseAnalysisRunner):
         unchanged' rather than a request for a second squashing. For the same
         reason sigmoid_sensitivity must stay 1.0 and apply_softmax is rejected
         outright. The raw logits a softmax would need are not exported.
+
+        n_workers stays at the lib's default of one worker per physical core,
+        each on a single-threaded session. v3.0 measured fastest that way,
+        losing about 20% on a cold machine when the same threads were regrouped
+        into fewer, wider workers. v2.4 prefers the opposite split and sets its
+        own, which is why the two runners differ here.
         """
         return model.predict_session(
             default_confidence_threshold=settings.min_conf,

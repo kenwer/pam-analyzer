@@ -66,6 +66,14 @@ class _FakeModel:
         return self._backend_kwargs
 
 
+@pytest.fixture(autouse=True)
+def restore_thread_count():  # noqa: ANN201
+    """Keep a test's chosen thread count from leaking into the next one."""
+    before = onnx_threads._session_threads
+    yield
+    onnx_threads.apply(before)
+
+
 @pytest.fixture
 def fake_session(monkeypatch) -> type[_FakeSession]:
     import onnxruntime as ort
@@ -74,19 +82,21 @@ def fake_session(monkeypatch) -> type[_FakeSession]:
     return _FakeSession
 
 
-def test_patched_loader_pins_session_threads(fake_session, tmp_path) -> None:
-    """One thread per session, not onnxruntime's one per physical core."""
-    onnx_threads._load_onnx_model_single_threaded(tmp_path / "model.onnx", "CPU")
+@pytest.mark.parametrize("threads", [1, 2])
+def test_patched_loader_pins_session_threads(fake_session, tmp_path, threads: int) -> None:
+    """The session gets the chosen pool size, not onnxruntime's one per core."""
+    onnx_threads.apply(threads)
+    onnx_threads._load_onnx_model_pinned(tmp_path / "model.onnx", "CPU")
 
     options = fake_session.last_kwargs["sess_options"]
     assert options is not None, "no SessionOptions, so onnxruntime sizes the pool per core"
-    assert options.intra_op_num_threads == 1
+    assert options.intra_op_num_threads == threads
     assert options.inter_op_num_threads == 1
 
 
 def test_patched_loader_leaves_provider_selection_to_the_lib(fake_session, tmp_path) -> None:
     """The thread pools are the only difference from birdnet's own session."""
-    onnx_threads._load_onnx_model_single_threaded(tmp_path / "model.onnx", "CPU")
+    onnx_threads._load_onnx_model_pinned(tmp_path / "model.onnx", "CPU")
 
     assert fake_session.last_kwargs["providers"] == ["CPUExecutionProvider"]
 
@@ -95,14 +105,14 @@ def test_apply_replaces_birdnets_loader() -> None:
     """The patch is installed where birdnet's ONNX backends look it up."""
     onnx_threads.apply()
 
-    assert birdnet_backends.load_onnx_model is onnx_threads._load_onnx_model_single_threaded
+    assert birdnet_backends.load_onnx_model is onnx_threads._load_onnx_model_pinned
 
 
-def test_single_threaded_gives_the_model_a_carrier() -> None:
+def test_pin_session_threads_gives_the_model_a_carrier() -> None:
     """The carrier rides in backend_kwargs, which the pipeline hands to workers."""
     model = _FakeModel(OnnxBackend)
 
-    assert onnx_threads.single_threaded(model) is model
+    assert onnx_threads.pin_session_threads(model) is model
     assert onnx_threads.CARRIER_KEY in model.backend_kwargs
 
 
@@ -113,7 +123,7 @@ def test_non_onnx_models_are_left_alone() -> None:
         pass
 
     model = _FakeModel(_TFBackend)
-    onnx_threads.single_threaded(model)
+    onnx_threads.pin_session_threads(model)
 
     assert model.backend_kwargs == {}
 
@@ -124,14 +134,16 @@ def test_unpickling_a_worker_payload_patches_a_fresh_process() -> None:
     Workers start under 'spawn', so they import birdnet fresh and inherit
     nothing the parent patched. Unpickling is the only hook that travels. This
     pickles the lib's own BackendLoader, holding the backend_kwargs
-    single_threaded() prepared, which is what the pipeline pickles into each
+    pin_session_threads() prepared, which is what the pipeline pickles into each
     worker, and checks that the child comes up patched.
 
     A subprocess is the only honest way to test it: anything in this process
-    has the module imported and the patch applied already.
+    has the module imported and the patch applied already. The thread count is
+    deliberately not the default, so a child that fell back to the default
+    would fail rather than agree by accident.
     """
     model = _FakeModel(OnnxBackend)
-    onnx_threads.single_threaded(model)
+    onnx_threads.pin_session_threads(model, threads=3)
     payload = pickle.dumps(
         BackendLoader(
             model_path=None,
@@ -149,12 +161,14 @@ def test_unpickling_a_worker_payload_patches_a_fresh_process() -> None:
 
         pickle.loads(payload)
 
-        print("patched" if backends.load_onnx_model is not before else "unpatched")
+        from pam_analyzer.infrastructure import birdnet_onnx_threads
+        patched = backends.load_onnx_model is not before
+        print("patched" if patched else "unpatched", birdnet_onnx_threads._session_threads)
     """)
     result = subprocess.run([sys.executable, "-c", script], input=payload, capture_output=True)
 
     assert result.returncode == 0, result.stderr.decode()
-    assert result.stdout.decode().strip() == "patched", (
-        "unpickling a worker payload did not patch the child, so every inference "
-        "worker would run onnxruntime at its default thread count"
+    assert result.stdout.decode().strip() == "patched 3", (
+        "unpickling a worker payload did not patch the child at the chosen thread "
+        "count, so inference workers would not run the configuration they were given"
     )

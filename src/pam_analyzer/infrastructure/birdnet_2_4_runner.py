@@ -38,6 +38,27 @@ from .legacy_names import to_axis
 
 MODEL_KEY = "BirdNET-2.4"
 
+# v2.4 seems to run fastest on half as many workers as the machine has cores, with
+# two onnxruntime threads each, rather than one single-threaded worker per core.
+# 
+# v3.0 seems the other way around and keeps one worker per core, so the two
+# runners set this independently. Whichever way it goes, SESSION_THREADS and
+# the n_workers below are one decision and have to move together.
+SESSION_THREADS = 2
+
+
+def _n_workers() -> int:
+    """Enough workers for SESSION_THREADS each to fill the physical cores.
+
+    Physical rather than logical cores, matching what the lib's own
+    `n_workers=None` resolves to, so the two engines size the same machine the
+    same way.
+    """
+    import psutil
+
+    cores = psutil.cpu_count(logical=False) or 1
+    return max(1, cores // SESSION_THREADS)
+
 
 def _split_sci_common(species_name: str) -> tuple[str, str]:
     """Split a 'Scientific_Common' label entry into (sci, common)."""
@@ -69,10 +90,14 @@ class Birdnet24Runner(BaseAnalysisRunner):
 
         Loaded with en_us so result rows carry English common names in the
         'Sci_Common' species_name string.
+
+        The thread count is this engine's half of the split described at
+        SESSION_THREADS, and is set here rather than in birdnet_2_4_onnx
+        because it only makes sense next to the n_workers below.
         """
         from .birdnet_2_4_onnx import load_acoustic
 
-        return load_acoustic("en_us")
+        return load_acoustic("en_us", threads=SESSION_THREADS)
 
     def _open_predict_session(
         self,
@@ -96,6 +121,9 @@ class Birdnet24Runner(BaseAnalysisRunner):
         earlier releases of this app wrote. top_k=None (the lib defaults to
         5) returns every class above the threshold, matching v3.0's
         behaviour so the two engines' row counts stay comparable.
+
+        n_workers is set rather than left at the lib's default of one worker
+        per core, because each worker's session runs SESSION_THREADS threads.
         """
         return model.predict_session(
             default_confidence_threshold=settings.min_conf,
@@ -105,7 +133,7 @@ class Birdnet24Runner(BaseAnalysisRunner):
             apply_sigmoid=True,
             sigmoid_sensitivity=1.0,
             n_producers=1,
-            n_workers=None,
+            n_workers=_n_workers(),
             batch_size=8,
             show_stats="progress",
             progress_callback=on_stats,

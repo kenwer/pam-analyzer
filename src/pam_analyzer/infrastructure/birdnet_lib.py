@@ -85,9 +85,9 @@ def _geo_model_cached(version: str):  # noqa: ANN202
 
     import birdnet
 
-    from .birdnet_onnx_threads import single_threaded
+    from .birdnet_onnx_threads import pin_session_threads
 
-    return single_threaded(
+    return pin_session_threads(
         birdnet.load("geo", ACOUSTIC_V3_0, "onnx", lang="en_us", precision=MODEL_PRECISION)
     )
 
