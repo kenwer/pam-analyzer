@@ -16,6 +16,7 @@ from .pamproj_migration import (
     load_legacy,
     migrate,
 )
+from .perch_runner import PerchRunner
 from .project_loader import ProjectLoadResult, load_project
 from .psutil_sdcard_scanner import PsutilSdCardScanner
 
@@ -26,6 +27,7 @@ __all__ = [
     "BirdnetRunner",
     "LegacyProject",
     "MigrationReport",
+    "PerchRunner",
     "ProjectLoadResult",
     "PsutilSdCardScanner",
     "SoundfileAudioExtractor",

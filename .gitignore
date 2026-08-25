@@ -17,6 +17,8 @@ dist/
 # Misc
 .DS_Store
 *.csv
+# Perch ships no labels with its ONNX export, so its class list is package data rather than a build artifact or a user's detections CSV.
+!src/pam_analyzer/infrastructure/data/perch_v2_labels.csv
 *.md
 !README.md
 !CHANGELOG.md

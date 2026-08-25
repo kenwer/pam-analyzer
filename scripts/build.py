@@ -76,6 +76,12 @@ DATA: tuple[tuple[Path, str], ...] = (
         ROOT_DIR / 'src' / 'pam_analyzer' / 'infrastructure' / 'data' / 'legacy_species_aliases.tsv',
         'pam_analyzer/infrastructure/data',
     ),
+    # perch_onnx.labels() reads this the same way. REQUIRED_MODEL_FILES checks
+    # the model cache, a different tree, so nothing else catches its absence.
+    (
+        ROOT_DIR / 'src' / 'pam_analyzer' / 'infrastructure' / 'data' / 'perch_v2_labels.csv',
+        'pam_analyzer/infrastructure/data',
+    ),
 )
 
 
@@ -162,6 +168,22 @@ def _convert_v2_4_models(download_env: dict) -> None:
     )
 
 
+def _fetch_perch_model(download_env: dict) -> None:
+    """Fetch the Perch v2 ONNX weights, which no upstream release ships either.
+
+    Unlike v2.4 this cannot be converted here. Perch's SavedModel is a jax2tf
+    export whose graph sits inside XlaCallModule ops, which tf2onnx cannot walk,
+    so the app depends on a published third-party export pinned by commit and
+    checksum. The script verifies before installing and skips when the file is
+    already current.
+    """
+    print('  Fetching Perch v2 onnx (413 MB on a cold cache)')
+    run(
+        ['uv', 'run', '--script', str(PACKAGING_DIR / 'fetch_perch_onnx.py')],
+        env=download_env,
+    )
+
+
 def _prewarm_models(download_env: dict, uv_run_prefix: list) -> None:
     """Download every model into MODEL_CACHE, with retry on transient failures.
 
@@ -180,6 +202,7 @@ def _prewarm_models(download_env: dict, uv_run_prefix: list) -> None:
     BIRDNET_APP_DATA_CACHE.mkdir(parents=True, exist_ok=True)
 
     _convert_v2_4_models(download_env)
+    _fetch_perch_model(download_env)
 
     print('  Pre-downloading model checkpoints (BirdNET acoustic + geo, v3.0 onnx)')
     max_attempts = 3
@@ -206,6 +229,8 @@ REQUIRED_MODEL_FILES: tuple[str, ...] = (
     'geo-models/v3.0/onnx/model-fp32.onnx',
     'acoustic-models/v2.4/onnx/model-fp32.onnx',
     'geo-models/v2.4/onnx/model-fp32.onnx',
+    # Perch has no geo model of its own and reuses v3.0's for the allow-list.
+    'acoustic-models/perch-v2/onnx/model-fp32.onnx',
 )
 
 

@@ -4,12 +4,10 @@
 ### Added
 - BirdNET-3.0-preview3.1 model.
 - Detections with a non-finite confidence are dropped and logged instead of aborting the campaign.
-### Removed
-- Perch-2.0 model (its CSVs stay readable in the Examine panel).
 
 ### Changed
 - The project Species taxonomy setting now chooses between BirdNET-2.4's and v3.0's axis (instead of BirdNET-2.4 and Perch-3.0).
-- BirdNET v2.4 runs on ONNX Runtime instead of the litert interpreter.
+- Perch-2.0 and BirdNET v2.4 now run on ONNX Runtime.
 - [Dev] The build converts BirdNET v2.4 from upstream's SavedModel to ONNX, because no upstream ONNX export exists.
 - [Dev] `ai-edge-litert` is no longer installed or bundled. A `[tool.uv]` override drops it along with `ml-dtypes` and `backports-strenum`.
 - Species taxonomy:
@@ -21,7 +19,7 @@
 - [Dev] Replace `taxonomy_crosswalk` with the `legacy_names` module. `to_axis` rewrites output in either direction, `expand_species` matches user input in both at once.
 - [Dev] `ParsedRow.match_name` keeps each model's native spelling, so the output axis cannot affect region filtering.
 - [Dev] Drop the `[tool.uv]` environment pins that existed to route around TensorFlow wheels.
-- [Dev] The CI model cache key includes `scripts/build.py` and `scripts/convert_birdnet_2_4_onnx.py`, so changing the bundled model set or how v2.4 is converted invalidates it.
+- [Dev] The CI model cache key includes `scripts/build.py`, `scripts/convert_birdnet_2_4_onnx.py` and `scripts/fetch_perch_onnx.py`, so changing the bundled model set, how v2.4 is converted, or the pinned Perch export invalidates it.
 
 ## [0.6.0] - 2026-08-04
 ### Added

@@ -24,8 +24,10 @@ runs:
         # and every run re-downloads the new weights without ever saving them.
         # convert_birdnet_2_4_onnx.py is in it for the same reason: it produces
         # the v2.4 weights, so a change to how it converts has to invalidate
-        # the models it converted.
-        key: birdnet-models-${{ hashFiles('uv.lock', 'scripts/build.py', 'scripts/convert_birdnet_2_4_onnx.py') }}
+        # the models it converted. fetch_perch_onnx.py holds the pinned commit
+        # and checksum of the Perch export, so moving the pin has to invalidate
+        # the 413 MB file it fetched.
+        key: birdnet-models-${{ hashFiles('uv.lock', 'scripts/build.py', 'scripts/convert_birdnet_2_4_onnx.py', 'scripts/fetch_perch_onnx.py') }}
 
     # Populates the cache (with retry-on-failure) up front, so a cold cache
     # never triggers a bare, un-retried download from inside pytest or the build.
