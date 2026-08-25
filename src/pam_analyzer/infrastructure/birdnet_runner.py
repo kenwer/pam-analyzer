@@ -91,6 +91,32 @@ class BirdnetRunner(BaseAnalysisRunner):
         reason sigmoid_sensitivity must stay 1.0 and apply_softmax is rejected
         outright. The raw logits a softmax would need are not exported.
 
+        top_k caps per-segment emissions. The cap exists for memory, not row
+        count: the lib's result tensor is dense over top_k, shaped
+        (n_files, n_segments, top_k) at 7 bytes per slot, and the app hands it
+        a whole campaign at once. None resolves to n_species, which on a
+        6893-file campaign of 2-minute recordings is 22.3 GB for v3.0's 11560
+        classes, against 97 MB at 50.
+
+        The cap is applied before the per-week allow-list, which runs as a
+        post-filter in BaseAnalysisRunner, so a cap low enough to fill with
+        out-of-region names can drop an in-region species that ranked below
+        them.
+
+        50 comes from measuring where that stops happening, over uncapped runs
+        on a 243-file February campaign and a 350-file dawn-chorus sample. The
+        min confidence slider bottoms out at 0.10, and at 0.10 in-region recall
+        is already 100% from k=10 up, with at most 10 classes clearing the
+        threshold in any one segment. At the 0.25 default at most 5 do, so the
+        cap never binds. 50 still holds below the slider's floor: 100% at
+        min_conf 0.02 and 99.4% at 0.01.
+
+        All three runners share the cap, sized to v3.0's distribution rather
+        than Perch's: a raw sigmoid puts far more classes over a low threshold
+        than Perch's calibrated logit does, 134 against 31 in the densest dawn
+        segment at 0.01. Perch alone would hold at 25. The three agree from
+        0.05 up.
+
         n_workers stays at the lib's default of one worker per physical core,
         each on a single-threaded session. v3.0 measured fastest that way,
         losing about 20% on a cold machine when the same threads were regrouped
@@ -101,7 +127,7 @@ class BirdnetRunner(BaseAnalysisRunner):
             default_confidence_threshold=settings.min_conf,
             custom_species_list=None,
             overlap_duration_s=settings.overlap,
-            top_k=None,
+            top_k=50,
             apply_sigmoid=True,
             sigmoid_sensitivity=1.0,
             n_producers=1,

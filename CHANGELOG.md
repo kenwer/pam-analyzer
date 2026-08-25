@@ -8,6 +8,7 @@
 ### Changed
 - The project Species taxonomy setting now chooses between BirdNET-2.4's and v3.0's axis (instead of BirdNET-2.4 and Perch-3.0).
 - Perch-2.0 and BirdNET v2.4 now run on ONNX Runtime.
+- The top_k is now set to 50 for all model runners to lower RAM usage. Results for a large campaign now take about 100 MB of RAM during a run instead of 22 GB.
 - [Dev] The build converts BirdNET v2.4 from upstream's SavedModel to ONNX, because no upstream ONNX export exists.
 - [Dev] `ai-edge-litert` is no longer installed or bundled. A `[tool.uv]` override drops it along with `ml-dtypes` and `backports-strenum`.
 - Species taxonomy:

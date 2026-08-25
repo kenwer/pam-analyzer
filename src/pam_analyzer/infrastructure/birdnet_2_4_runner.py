@@ -118,9 +118,21 @@ class Birdnet24Runner(BaseAnalysisRunner):
         Unlike v3.0, v2.4 emits raw logits, so apply_sigmoid=True is a real
         squashing step rather than a pass-through. sigmoid_sensitivity=1.0 is
         the neutral setting and keeps confidences comparable with what
-        earlier releases of this app wrote. top_k=None (the lib defaults to
-        5) returns every class above the threshold, matching v3.0's
-        behaviour so the two engines' row counts stay comparable.
+        earlier releases of this app wrote.
+
+        top_k matches v3.0's cap so the two engines' row counts stay
+        comparable, and is set for memory rather than for row count. The lib's
+        result tensor is dense over top_k, shaped (n_files, n_segments, top_k)
+        at 7 bytes per slot, and the app hands it a whole campaign at once.
+        None resolves to n_species, which on a 6893-file campaign of 2-minute
+        recordings is 12.6 GB for v2.4's 6522 classes, against 97 MB at 50.
+
+        Measured the same way as v3.0, over uncapped runs on a 243-file
+        February campaign and a 350-file dawn-chorus sample. v2.4 is sparser
+        than v3.0 above a low threshold and holds 100% in-region recall from
+        k=5 up at the 0.10 floor the min confidence slider allows, where at
+        most 7 classes clear the threshold in any one segment. It would hold at
+        25, and stays at 50 to keep one cap across all three runners.
 
         n_workers is set rather than left at the lib's default of one worker
         per core, because each worker's session runs SESSION_THREADS threads.
@@ -129,7 +141,7 @@ class Birdnet24Runner(BaseAnalysisRunner):
             default_confidence_threshold=settings.min_conf,
             custom_species_list=None,
             overlap_duration_s=settings.overlap,
-            top_k=None,
+            top_k=50,
             apply_sigmoid=True,
             sigmoid_sensitivity=1.0,
             n_producers=1,

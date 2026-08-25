@@ -147,24 +147,25 @@ class PerchRunner(BaseAnalysisRunner):
         the score is translated back in _parse_row, so the CSV still carries a
         0-1 Confidence.
 
-        top_k caps per-segment emissions, where the BirdNET runners pass None.
-        The cap exists for memory, not row count: the lib's result tensor is
-        dense over top_k, shaped (n_files, n_segments, top_k) at 7 bytes per
-        slot, and the app hands it a whole campaign at once. None resolves to
-        n_species, which on a 6900-file campaign of 1-minute recordings is
-        8.6 GB for Perch's 14795 classes.
+        top_k caps per-segment emissions and is 50 on all three runners. The
+        cap exists for memory, not row count: the lib's result tensor is dense
+        over top_k, shaped (n_files, n_segments, top_k) at 7 bytes per slot,
+        and the app hands it a whole campaign at once. None resolves to
+        n_species, which on a 6893-file campaign of 2-minute recordings is
+        17.1 GB for Perch's 14795 classes, against 58 MB at 50.
 
         The cap is applied before the per-week allow-list, which runs as a
         post-filter in BaseAnalysisRunner, so a cap low enough to fill with
         non-birds can drop an in-region species that ranked below them.
 
-        25 comes from measuring where that stops happening. Against an uncapped
-        run over a 243-file campaign, in-region recall at min_conf 0.01 is 54%
-        at top_k=5 and 99.9% at 25, and from min_conf 0.02 upward 25 loses
-        nothing. At the 0.25 default the cap never binds at all, because at most
-        4 classes clear the calibrated threshold in any one segment. 25 keeps
-        headroom for denser audio than that campaign holds while still costing
-        14 MB where None costs 8.6 GB.
+        Perch alone would hold at 25. Against uncapped runs over a 243-file
+        February campaign and a 350-file dawn-chorus sample, in-region recall
+        at min_conf 0.01 is 54% and 44% at top_k=5, 99.9% at 25 and 100% at 50,
+        and from min_conf 0.02 upward 25 already loses nothing. At the 0.25
+        default the cap never binds at all, because at most 4 classes clear the
+        calibrated threshold in any one segment. The size is set by the BirdNET
+        runners, whose sigmoid scores put several times more classes over a low
+        threshold than this model's calibrated logit does.
 
         n_workers is set rather than left at the lib's default of one worker
         per core, because each worker's session runs SESSION_THREADS threads.
@@ -173,7 +174,7 @@ class PerchRunner(BaseAnalysisRunner):
             default_confidence_threshold=_perch_logit_threshold(settings.min_conf),
             custom_species_list=None,
             overlap_duration_s=settings.overlap,
-            top_k=25,
+            top_k=50,
             apply_sigmoid=False,
             n_producers=1,
             n_workers=_n_workers(),
