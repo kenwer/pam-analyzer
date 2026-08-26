@@ -8,6 +8,7 @@ from . import paths
 from .values import (
     DEFAULT_ANALYSIS_MODEL,
     DEFAULT_MIN_CONF,
+    DEFAULT_SPECIES_LANG,
     DEFAULT_TAXONOMY,
     MAX_OVERLAP_S,
     AnalysisSettings,
@@ -38,7 +39,7 @@ class _ProjectToml:
     birdnet_min_conf: float = DEFAULT_MIN_CONF
     birdnet_overlap: float = 0.0
     birdnet_locales: list[str] = field(default_factory=list)
-    preferred_species_lang: str = "en"
+    preferred_species_lang: str = DEFAULT_SPECIES_LANG
     snippet_padding_before: float = 0.0
     snippet_padding_after: float = 0.0
 
@@ -58,7 +59,7 @@ class Project:
     min_conf: float = DEFAULT_MIN_CONF
     overlap: float = 0.0
     locales: tuple[str, ...] = ()
-    preferred_species_lang: str = "en"
+    preferred_species_lang: str = DEFAULT_SPECIES_LANG
     snippet_padding_before: float = 0.0
     snippet_padding_after: float = 0.0
 

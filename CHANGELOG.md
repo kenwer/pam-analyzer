@@ -12,12 +12,12 @@
 - The project Species taxonomy setting now chooses between BirdNET-2.4's and v3.0's axis (instead of BirdNET-2.4 and Perch-3.0).
 - Perch-2.0 and BirdNET v2.4 now run on ONNX Runtime.
 - The top_k is now set to 50 for all model runners to lower RAM usage. Results for a large campaign now take about 100 MB of RAM during a run instead of 22 GB.
+- The Main and Extra species language settings both offer the 18 languages every shipped model can produce. A project naming any other language opens on `en_us`, and its unsupported Extra languages are dropped.
 - [Dev] The build converts BirdNET v2.4 from upstream's SavedModel to ONNX, because no upstream ONNX export exists.
 - [Dev] `ai-edge-litert` is no longer installed or bundled. A `[tool.uv]` override drops it along with `ml-dtypes` and `backports-strenum`.
 - Species taxonomy:
   - The project Species taxonomy setting picks the scientific-name axis detections are written under, BirdNET-3.0 (default) or BirdNET-2.4.
   - Species lists match under either taxonomy. A name written as `Accipiter gentilis` or `Astur gentilis` is accepted whichever engine runs.
-  - The species language list is the union of both engines. A language only one of them ships (Italian and Korean on v2.4, Catalan and regional Spanish on v3.0) is left unlocalized by the other. Estonian is gone from both.
 - [Dev] The build fails if the model tree does not reach the finished bundle, instead of shipping a binary that re-downloads on first use.
 - [Dev] `BaseAnalysisRunner` subclasses now bind a `TaxonomyServices`, so the shared pipeline no longer hardcodes one model version's species axis, geo filter and locale set.
 - [Dev] Replace `taxonomy_crosswalk` with the `legacy_names` module. `to_axis` rewrites output in either direction, `expand_species` matches user input in both at once.

@@ -80,6 +80,7 @@ Configure a study in the project settings.
 - Species languages:
   - **Main** sets the preferred language for the Species column in all CSV outputs and for exported audio snippets
   - **Extra** adds one additional common-name column per checked language to the examine data table.
+  - Both controls offer the 18 languages every shipped model can produce: `cs`, `da`, `de`, `en_us`, `es`, `fi`, `fr`, `ja`, `nl`, `no`, `pl`, `pt`, `ru`, `sk`, `sv`, `tr`, `uk`, `zh`.
 All settings are saved automatically to the `pam-analyzer.toml` file inside the project folder.
 
 ### Campaigns
@@ -273,7 +274,6 @@ PAM Analyzer runs three models locally on the CPU through the [`birdnet`](https:
 | Classes | [6,522](https://birdnet.cornell.edu/models/birdnet/labels/en_us.txt) (birds, plus a few amphibians and insects) | [11,560](https://zenodo.org/records/20703646/preview/BirdNET%2B_V3.0-preview3.1_Global_11K_Labels.csv) (birds, plus amphibians, insects and mammals) | [14,795](https://www.kaggle.com/api/v1/models/google/bird-vocalization-classifier/tensorFlow2/perch_v2_cpu/1/download/assets/labels.csv) (birds, other animals, and general sound events) |
 | Taxonomy | older eBird-based axis | shared with the v3.0 geographic model | shares 10,916 names with v3.0's axis |
 | Region filtering | v2.4 geographic model | v3.0 geographic model | v3.0 geographic model |
-| Species languages | 27 | 29 | 29, through v3.0's label files |
 | Size | ~49 MB acoustic + ~28 MB geographic | ~542 MB acoustic + ~16 MB geographic | ~413 MB acoustic, no geographic model of its own |
 | Confidence in the CSV | sigmoid probability | probability, baked into the model graph | calibrated from raw logits, see [Perch confidence](#perch-confidence) |
 | Windows per hour of audio | 1,200 | 1,200 | 720 |

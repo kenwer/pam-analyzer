@@ -8,7 +8,7 @@ from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QCheckBox, QWidget
 
-from ...domain import DEFAULT_MIN_CONF, MAX_OVERLAP_S, Project, paths
+from ...domain import DEFAULT_MIN_CONF, DEFAULT_SPECIES_LANG, MAX_OVERLAP_S, Project, paths
 from ...infrastructure.birdnet_lib import normalize_lang_code
 from ...infrastructure.legacy_names import TAXONOMIES
 from ..app_state import AppState
@@ -59,7 +59,7 @@ class ProjectPanel(QWidget):
         # re-render steals focus from this field.
         self.ui.sdcard_pattern_edit.textChanged.connect(self._refresh_regex_indicator)
         self.ui.sdcard_pattern_edit.editingFinished.connect(self._on_sdcard_pattern_changed)
-        self.ui.species_lang_combo.editTextChanged.connect(self._on_species_lang_changed)
+        self.ui.species_lang_combo.currentTextChanged.connect(self._on_species_lang_changed)
         self.ui.taxonomy_combo.currentTextChanged.connect(self._on_taxonomy_changed)
         self.ui.folder_label.linkActivated.connect(self._open_folder)
         # Sliders fire continuously while dragged, so these save silently
@@ -70,7 +70,7 @@ class ProjectPanel(QWidget):
 
     def _populate_locale_combo(self) -> None:
         # Same source as the extra-languages grid, so both controls offer the
-        # model's real locale codes (e.g. en_us/en_uk, not a bare en).
+        # locale codes every model ships (see domain.shared_locales).
         self.ui.species_lang_combo.addItems(sorted(self._available_locales))
 
     def _populate_taxonomy_combo(self) -> None:
@@ -149,25 +149,41 @@ class ProjectPanel(QWidget):
         self.ui.overlap_value.setText(f"{self.ui.overlap_slider.value() / 10:.1f}")
 
     def _set_locale_checks(self, selected: tuple[str, ...]) -> None:
-        chosen = set(selected)
+        """Check the project's extra locales, dropping any this build cannot offer.
+
+        A locale only some models ship would leave its column empty on the
+        others, so it is removed from the project rather than silently
+        ignored.
+        """
+        offered = tuple(loc for loc in selected if loc in self._locale_checks)
+        chosen = set(offered)
         for loc, chk in self._locale_checks.items():
             chk.blockSignals(True)
             try:
                 chk.setChecked(loc in chosen)
             finally:
                 chk.blockSignals(False)
+        if offered != tuple(selected):
+            self._app_state.save_project_fields(locales=offered)
 
     def _set_combo_value(self, lang: str) -> None:
-        # A legacy short code (e.g. "en") is not one of the model's codes, so
-        # normalize it to its canonical form ("en_us") before selecting, the
-        # same mapping the runner applies at analysis time. A code we still
-        # don't recognise is shown as-is rather than silently dropped.
+        """Select the project's language, correcting one this build cannot offer.
+
+        A legacy short code ("en") is normalized to its canonical form
+        ("en_us") first, the same mapping the runner applies at analysis time.
+        Anything still absent from the list is a language only some models
+        ship, so it falls back to the default. Saved rather than only shown,
+        for the reason given in _set_taxonomy_value.
+        """
         lang = normalize_lang_code(lang)
         idx = self.ui.species_lang_combo.findText(lang)
         if idx >= 0:
             self.ui.species_lang_combo.setCurrentIndex(idx)
-        else:
-            self.ui.species_lang_combo.setEditText(lang)
+            return
+        self.ui.species_lang_combo.setCurrentIndex(
+            max(self.ui.species_lang_combo.findText(DEFAULT_SPECIES_LANG), 0)
+        )
+        self._app_state.save_project_fields(preferred_species_lang=DEFAULT_SPECIES_LANG)
 
     def _set_taxonomy_value(self, taxonomy: str) -> None:
         """Select the project's axis, correcting a value this build cannot honour.
@@ -197,9 +213,9 @@ class ProjectPanel(QWidget):
         self._apply(sdcard_name_pattern=self.ui.sdcard_pattern_edit.text())
 
     def _on_species_lang_changed(self, value: str) -> None:
-        if self._loading:
+        if self._loading or not value:
             return
-        self._apply(preferred_species_lang=value.strip() or "en")
+        self._apply(preferred_species_lang=value)
 
     def _on_min_conf_changed(self, value: int) -> None:
         self._refresh_slider_labels()

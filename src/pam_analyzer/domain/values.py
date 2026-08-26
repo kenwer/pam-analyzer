@@ -18,6 +18,11 @@ DEFAULT_ANALYSIS_MODEL = "BirdNET-2.4"
 # build no longer offers leaves names un-normalized rather than failing.
 DEFAULT_TAXONOMY = "BirdNET-3.0"
 
+# Species-name language a new project starts on, and the value a project
+# naming a language this build does not offer is corrected to. en_us is the
+# one code every model ships, so it is always selectable.
+DEFAULT_SPECIES_LANG = "en_us"
+
 @dataclass(frozen=True, slots=True)
 class LatLon:
     latitude: float

@@ -3,6 +3,7 @@ from .analysis import (
     AnalysisProgressSnapshot,
     AnalysisRunner,
     CancelledError,
+    shared_locales,
 )
 from .analysis_run_result import AnalysisRunResult, CampaignRunResult, RunStatus
 from .audio_import import (
@@ -37,6 +38,7 @@ from .species_filter import ResolvedSpeciesFilter, SpeciesFilter
 from .values import (
     DEFAULT_ANALYSIS_MODEL,
     DEFAULT_MIN_CONF,
+    DEFAULT_SPECIES_LANG,
     DEFAULT_TAXONOMY,
     MAX_OVERLAP_S,
     AnalysisSettings,
@@ -69,6 +71,7 @@ __all__ = [
     "ImportProgress",
     "DEFAULT_ANALYSIS_MODEL",
     "DEFAULT_MIN_CONF",
+    "DEFAULT_SPECIES_LANG",
     "DEFAULT_TAXONOMY",
     "MAX_OVERLAP_S",
     "LatLon",
@@ -77,6 +80,7 @@ __all__ = [
     "ResolvedSpeciesFilter",
     "AnalysisRunResult",
     "RunStatus",
+    "shared_locales",
     "SpeciesFilter",
     "VerifiedState",
     "WeekInventory",

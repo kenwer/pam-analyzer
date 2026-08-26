@@ -7,6 +7,7 @@ the protocol structurally (duck typing).
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
@@ -64,3 +65,17 @@ class AnalysisRunner(Protocol):
         preferred_lang: str,
         progress: AnalysisProgress,
     ) -> AnalysisRunResult: ...
+
+
+def shared_locales(runners: Iterable[AnalysisRunner]) -> tuple[str, ...]:
+    """Locale codes every shipped model can localize into.
+
+    The project's language setting is model-independent and one campaign may
+    be analyzed by several models, so offering a code only some of them ship
+    would put the same bird under two names in the Species column. The
+    intersection is what the setting can promise for any run.
+    """
+    sets = [set(runner.available_locales()) for runner in runners]
+    if not sets:
+        return ()
+    return tuple(sorted(set.intersection(*sets)))

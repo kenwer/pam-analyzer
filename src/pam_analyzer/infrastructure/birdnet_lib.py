@@ -222,16 +222,3 @@ class TaxonomyServices:
 
 TAXONOMY_V2_4 = TaxonomyServices(ACOUSTIC_V2_4)
 TAXONOMY_V3_0 = TaxonomyServices(ACOUSTIC_V3_0)
-
-
-@cache
-def all_available_locales() -> tuple[str, ...]:
-    """Every locale either engine can localize into.
-
-    The project's language setting is model-independent, so the picker
-    offers the union and each run localizes what its own model has labels
-    for. The sets overlap but neither contains the other: v2.4 alone ships
-    Italian and Korean, v3.0 alone ships Catalan and the regional Spanish
-    variants.
-    """
-    return tuple(sorted(set(_available_locales(ACOUSTIC_V2_4)) | set(_available_locales(ACOUSTIC_V3_0))))

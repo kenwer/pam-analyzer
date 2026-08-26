@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from pam_analyzer.domain import Project
+from pam_analyzer.domain import DEFAULT_SPECIES_LANG, Project
 from pam_analyzer.infrastructure.legacy_names import BIRDNET_2_4, TAXONOMIES
 from pam_analyzer.ui.app_state import AppState
 from pam_analyzer.ui.panels.project_panel import ProjectPanel
@@ -137,3 +137,52 @@ def test_overlap_slider_capped_at_max(
     p.ui.overlap_slider.setValue(999)  # clamps to the slider maximum
     assert state.project is not None
     assert state.project.overlap <= 2.9
+
+
+def test_main_combo_is_closed(qtbot, state: AppState):
+    """Typing is off, so a language outside the offered list cannot come back
+    in through the line edit after the panel filtered it out."""
+    p = _panel(qtbot, state)
+    assert not p.ui.species_lang_combo.isEditable()
+
+
+def test_unsupported_main_language_is_corrected_on_disk_not_just_on_screen(
+    qtbot, state: AppState, tmp_path: Path, load_project
+):
+    """A project naming a language not every model ships falls back to en_us.
+
+    Saved rather than only displayed, for the same reason the taxonomy
+    correction is: leaving the combo saying en_us while the next run wrote
+    Italian names would make the panel lie about the CSV.
+    """
+    proj = Project(folder=tmp_path / "p", preferred_species_lang="it")
+    proj.save()
+    p = _panel(qtbot, state)
+    load_project(state, proj.folder)
+
+    assert p.ui.species_lang_combo.currentText() == DEFAULT_SPECIES_LANG
+    assert Project.load(proj.folder).preferred_species_lang == DEFAULT_SPECIES_LANG
+
+
+def test_unsupported_extra_locales_are_dropped_on_disk(
+    qtbot, state: AppState, tmp_path: Path, load_project
+):
+    proj = Project(folder=tmp_path / "p", locales=("it", "de"))
+    proj.save()
+    p = _panel(qtbot, state)
+    load_project(state, proj.folder)
+
+    assert p._locale_checks["de"].isChecked()
+    assert Project.load(proj.folder).locales == ("de",)
+
+
+def test_supported_extra_locales_are_left_alone(
+    qtbot, state: AppState, tmp_path: Path, load_project
+):
+    """No rewrite when every stored locale is offered."""
+    proj = Project(folder=tmp_path / "p", locales=("de", "fr"))
+    proj.save()
+    _panel(qtbot, state)
+    load_project(state, proj.folder)
+
+    assert Project.load(proj.folder).locales == ("de", "fr")
