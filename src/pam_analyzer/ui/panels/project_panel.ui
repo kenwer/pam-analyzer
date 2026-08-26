@@ -343,50 +343,6 @@
     </widget>
    </item>
    <item>
-    <widget class="QGroupBox" name="taxonomy_group">
-     <property name="title">
-      <string>Species taxonomy</string>
-     </property>
-     <layout class="QVBoxLayout" name="taxonomy_layout">
-      <item>
-       <layout class="QHBoxLayout" name="taxonomy_row">
-        <item>
-         <widget class="QLabel" name="taxonomy_label">
-          <property name="text">
-           <string>Normalize species names using the taxonomy of</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QComboBox" name="taxonomy_combo">
-         </widget>
-        </item>
-        <item>
-         <spacer name="taxonomy_spacer">
-          <property name="orientation">
-           <enum>Qt::Orientation::Horizontal</enum>
-          </property>
-         </spacer>
-        </item>
-       </layout>
-      </item>
-      <item>
-       <widget class="QLabel" name="taxonomy_caption_label">
-        <property name="styleSheet">
-         <string>color: gray;</string>
-        </property>
-        <property name="text">
-         <string>Scientific names in the output are written under this taxonomy, so detections from both models line up. Renamed birds (e.g. Accipiter/Astur gentilis) are converted. Pick BirdNET-2.4 to keep extending a time series whose earlier CSVs use the older names.</string>
-        </property>
-        <property name="wordWrap">
-         <bool>true</bool>
-        </property>
-       </widget>
-      </item>
-     </layout>
-    </widget>
-   </item>
-   <item>
     <spacer name="bottom_spacer">
      <property name="orientation">
       <enum>Qt::Orientation::Vertical</enum>

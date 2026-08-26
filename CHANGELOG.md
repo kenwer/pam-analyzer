@@ -2,26 +2,30 @@
 
 ## [Unreleased]
 ### Added
-- BirdNET-3.0-preview3.1 model.
-- Detections with a non-finite confidence are dropped and logged instead of aborting the campaign.
+- Add BirdNET-3.0-preview3.1 model with the following adjustments:
+  - The preview names 27 species twice, under an old and the current genus. Both classes now resolve to the current name, so a segment yields one row instead of two, at the higher confidence.
+  - Location mode now also accepts in-region detections that the preview reports under the old genus.
+  - A language column now shows the translated common name for those 27 birds, where the duplicate class had only an English name or none.
+  - The German name for `Tyto alba` is corrected from `Amerikaschleiereule`, which belongs to `Tyto furcata`.
+  - A window with no signal at all (a dead channel, a dropout) makes the preview score every class as NaN. Those detections are dropped and logged instead of aborting the campaign.
 
 ### Fixed
 - Species lists no longer truncate names that contain an underscore, so Perch's sound-event classes such as `Acoustic_guitar` work as list or must-have entries.
 
+### Removed
+- The project Species taxonomy setting. Detections are always written under BirdNET-3.0 scientific names.
+
 ### Changed
-- The project Species taxonomy setting now chooses between BirdNET-2.4's and v3.0's axis (instead of BirdNET-2.4 and Perch-3.0).
 - Perch-2.0 and BirdNET v2.4 now run on ONNX Runtime.
 - The top_k is now set to 50 for all model runners to lower RAM usage. Results for a large campaign now take about 100 MB of RAM during a run instead of 22 GB.
 - The Main and Extra species language settings both offer the 18 languages every shipped model can produce. A project naming any other language opens on `en_us`, and its unsupported Extra languages are dropped.
+- [Dev] Model labels are mapped to the BirdNET-3.0 set of scientific names as they leave the model, rather than rewritten on the way to the CSV.
 - [Dev] The build converts BirdNET v2.4 from upstream's SavedModel to ONNX, because no upstream ONNX export exists.
 - [Dev] `ai-edge-litert` is no longer installed or bundled. A `[tool.uv]` override drops it along with `ml-dtypes` and `backports-strenum`.
-- Species taxonomy:
-  - The project Species taxonomy setting picks the scientific-name axis detections are written under, BirdNET-3.0 (default) or BirdNET-2.4.
-  - Species lists match under either taxonomy. A name written as `Accipiter gentilis` or `Astur gentilis` is accepted whichever engine runs.
+- Species lists accept a name written under either BirdNET v2.4's or v3.0's spelling. `Accipiter gentilis` and `Astur gentilis` both match whichever engine runs.
 - [Dev] The build fails if the model tree does not reach the finished bundle, instead of shipping a binary that re-downloads on first use.
 - [Dev] `BaseAnalysisRunner` subclasses now bind a `TaxonomyServices`, so the shared pipeline no longer hardcodes one model version's species axis, geo filter and locale set.
-- [Dev] Replace `taxonomy_crosswalk` with the `legacy_names` module. `to_axis` rewrites output in either direction, `expand_species` matches user input in both at once.
-- [Dev] `ParsedRow.match_name` keeps each model's native spelling, so the output axis cannot affect region filtering.
+- [Dev] Replace `taxonomy_crosswalk` with the `species_names` module. Its `canonical` function maps any model label to the one name this app knows it by.
 - [Dev] Drop the `[tool.uv]` environment pins that existed to route around TensorFlow wheels.
 - [Dev] The CI model cache key includes `scripts/build.py`, `scripts/convert_birdnet_2_4_onnx.py` and `scripts/fetch_perch_onnx.py`, so changing the bundled model set, how v2.4 is converted, or the pinned Perch export invalidates it.
 

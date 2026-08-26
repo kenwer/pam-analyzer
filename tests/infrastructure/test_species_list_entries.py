@@ -77,20 +77,21 @@ def test_perch_leaves_a_plain_name_alone() -> None:
 @pytest.mark.parametrize(
     ("runner", "line", "expected"),
     [
-        # Split, then expanded: the v2.4 spelling a user typed also matches the
-        # v3.0 name the running model emits.
+        # Split, then canonicalised: the v2.4 spelling a user typed still
+        # matches the v3.0 name the running model emits, because both sides
+        # of the comparison are canonical.
         pytest.param(
             BirdnetRunner(),
             "Accipiter gentilis_Northern Goshawk",
-            {"Accipiter gentilis", "Astur gentilis"},
+            {"Astur gentilis"},
             marks=pytest.mark.slow,
         ),
         (PerchRunner(), "Acoustic_guitar", {"Acoustic_guitar"}),
-        (PerchRunner(), "Accipiter gentilis", {"Accipiter gentilis", "Astur gentilis"}),
+        (PerchRunner(), "Accipiter gentilis", {"Astur gentilis"}),
     ],
     ids=["birdnet-entry", "perch-sound-event", "perch-legacy-name"],
 )
-def test_resolve_reads_lines_then_expands_across_taxonomies(runner, line: str, expected: set[str]) -> None:  # noqa: ANN001
+def test_resolve_reads_lines_then_canonicalises(runner, line: str, expected: set[str]) -> None:  # noqa: ANN001
     """The runner's contribution to the domain's ResolveNames port, exercised
     through SpeciesFilter.resolve rather than called directly, so the seam the
     runner actually hands over is the one under test."""

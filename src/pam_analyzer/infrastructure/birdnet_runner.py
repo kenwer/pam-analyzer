@@ -24,7 +24,7 @@ from typing import Any, ClassVar
 from ..domain import AnalysisSettings
 from .base_analysis_runner import BaseAnalysisRunner, ParsedRow
 from .birdnet_lib import MODEL_PRECISION, TAXONOMY_V3_0
-from .legacy_names import to_axis
+from .species_names import canonical
 
 # Hardcoded rather than derived from the library because this string is part of
 # the CSV filename on the user's disk. The version suffix has to name the release
@@ -149,28 +149,25 @@ class BirdnetRunner(BaseAnalysisRunner):
     ) -> ParsedRow:
         """Convert one raw lib result row into a ParsedRow.
 
-        Common-name lookups key on the v3.0 spelling because the label maps
-        come from v3.0's own label files. Only the written scientific name
-        moves to the project's axis.
+        The label is canonicalised first, so the common-name lookups key on
+        the same name the row is written under.
         """
         sci, common_en = _split_sci_common(str(raw_row["species_name"]))
-        # v3.0 already emits current-axis names, so this is a no-op on the
-        # default axis and rewrites down to the v2.4 spelling only when the
-        # project asks for that axis. match_name keeps v3.0's own spelling
-        # either way, because the geo allow-list speaks v3.0's taxonomy.
-        out_name = to_axis(sci, settings.canonical_taxonomy)
+        # Canonicalised at the boundary, so every lookup and comparison below
+        # is in the app's namespace rather than the model's.
+        name = canonical(sci)
 
         # Fall back to the lib's en_us common name if the locale lookup misses
         # (e.g. a species not yet translated in the user's language). `or`
         # rather than a .get default because locale_label_map keeps entries
         # whose common name is blank, and a blank translation has to degrade
         # the same way a missing key does.
-        preferred = preferred_lang_map.get(sci) or common_en or out_name
+        preferred = preferred_lang_map.get(name) or common_en or name
 
         # For the en_us column reuse the lib-provided common name directly,
         # avoiding a locale_map lookup that would return the same string.
         locale_commons = {
-            loc: (common_en if loc == "en_us" else locale_maps[loc].get(sci, ""))
+            loc: (common_en if loc == "en_us" else locale_maps[loc].get(name, ""))
             for loc in settings.locales
         }
 
@@ -178,8 +175,7 @@ class BirdnetRunner(BaseAnalysisRunner):
             file_path=Path(str(raw_row["input"])),
             start_time=float(raw_row["start_time"]),
             end_time=float(raw_row["end_time"]),
-            scientific_name=out_name,
-            match_name=sci,
+            scientific_name=name,
             confidence=float(raw_row["confidence"]),
             preferred_common=preferred,
             locale_commons=locale_commons,

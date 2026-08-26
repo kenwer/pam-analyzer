@@ -20,7 +20,7 @@ from pam_analyzer.domain import (
     RunStatus,
 )
 from pam_analyzer.domain.analysis_run_result import CampaignRunResult
-from pam_analyzer.infrastructure.base_analysis_runner import BaseAnalysisRunner
+from pam_analyzer.infrastructure.base_analysis_runner import BaseAnalysisRunner, _SegmentRanker
 
 
 class _CountingProgress:
@@ -128,3 +128,47 @@ def test_failure_keeps_earlier_campaigns_and_carries_message(tmp_path: Path) -> 
     assert [c.campaign_name for c in result.campaigns] == ["a"]
     assert result.error is not None
     assert "boom in b" in result.error
+
+
+def test_ranks_count_up_within_one_segment() -> None:
+    ranker = _SegmentRanker()
+    seg = ("a.flac", 0.0)
+
+    assert ranker.rank_for(seg, "Turdus merula") == 1
+    assert ranker.rank_for(seg, "Parus major") == 2
+
+
+def test_ranks_restart_on_a_new_segment() -> None:
+    ranker = _SegmentRanker()
+
+    assert ranker.rank_for(("a.flac", 0.0), "Turdus merula") == 1
+    assert ranker.rank_for(("a.flac", 3.0), "Parus major") == 1
+
+
+def test_a_species_already_ranked_in_this_segment_is_refused() -> None:
+    """v3.0 carries Charadrius dubius and Thinornis dubius as separate
+    classes for one bird. Both canonicalise to Thinornis dubius, so the
+    second one to arrive must not produce a row.
+    """
+    ranker = _SegmentRanker()
+    seg = ("a.flac", 0.0)
+
+    assert ranker.rank_for(seg, "Thinornis dubius") == 1
+    assert ranker.rank_for(seg, "Thinornis dubius") is None
+
+
+def test_ranks_close_up_after_a_refusal() -> None:
+    """The refused row must not consume a rank, or the CSV shows a gap."""
+    ranker = _SegmentRanker()
+    seg = ("a.flac", 0.0)
+
+    assert ranker.rank_for(seg, "Thinornis dubius") == 1
+    assert ranker.rank_for(seg, "Thinornis dubius") is None
+    assert ranker.rank_for(seg, "Turdus merula") == 2
+
+
+def test_the_same_species_ranks_again_in_the_next_segment() -> None:
+    ranker = _SegmentRanker()
+
+    assert ranker.rank_for(("a.flac", 0.0), "Thinornis dubius") == 1
+    assert ranker.rank_for(("a.flac", 3.0), "Thinornis dubius") == 1

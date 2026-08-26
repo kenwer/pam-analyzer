@@ -1,14 +1,14 @@
-# Legacy scientific-name aliases: names from BirdNET v2.4's eBird-based
-# axis mapped to their BirdNET v3.0 spelling. Read both directions: to
-# rewrite model output onto the project's chosen axis, and to match
-# user-authored species lists written under either axis.
+# Scientific-name supersessions: a spelling that is no longer current, and the
+# spelling this app writes instead. One direction only, superseded to current.
 #
-# Columns: legacy_name<TAB>current_name
+# Columns: superseded_name<TAB>canonical_name
 #
-# Derived from the v2.4/Perch-2.0 crosswalk on 2026-08-21 by keeping
-# every pair whose current-axis name is a live BirdNET v3.0 class
-# (175 of 179; the rest name classes v3.0 does not carry).
-# Regenerate when the acoustic model version changes.
+# Derived from the BirdNET v2.4 and v3.0 label sets, 175 pairs. When
+# regenerating against a new model release, a pair is only valid if the
+# superseded name is NOT a live class of every model that ships. Skipping that
+# check is what produced the duplicate-row bug described in
+# docs/one-species-namespace.md, because BirdNET v3.0 carries 27 of these
+# superseded spellings as classes of its own alongside the current ones.
 Accipiter badius	Tachyspiza badia
 Accipiter bicolor	Astur bicolor
 Accipiter cirrocephalus	Tachyspiza cirrocephala

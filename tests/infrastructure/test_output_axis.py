@@ -15,6 +15,7 @@ import pytest
 from pam_analyzer.infrastructure.birdnet_2_4_runner import Birdnet24Runner
 from pam_analyzer.infrastructure.birdnet_runner import BirdnetRunner
 from pam_analyzer.infrastructure.perch_runner import PerchRunner
+from pam_analyzer.infrastructure.species_names import canonical_set
 
 
 @pytest.mark.slow
@@ -39,13 +40,21 @@ def test_a_birdnet_runner_reports_its_own_taxonomy() -> None:
 
 @pytest.mark.slow
 def test_the_two_birdnet_generations_report_different_axes() -> None:
-    """One shared lookup would hand a v2.4 run v3.0's axis."""
+    """One shared lookup would hand a v2.4 run v3.0's axis.
+
+    Astur gentilis no longer distinguishes the two: it is v2.4's own
+    Accipiter gentilis under its canonical spelling, present in both.
+    Abeillia abeillei is a species v3.0 added outright, so it still tells
+    the axes apart.
+    """
     v3 = BirdnetRunner()._known_output_species()
     v2 = Birdnet24Runner()._known_output_species()
 
     assert v3 != v2
     assert "Astur gentilis" in v3
-    assert "Accipiter gentilis" in v2
+    assert "Astur gentilis" in v2
+    assert "Abeillia abeillei" in v3
+    assert "Abeillia abeillei" not in v2
 
 
 @pytest.mark.slow
@@ -73,3 +82,20 @@ def test_perch_does_not_hand_out_the_label_set_the_model_holds() -> None:
     assert axis is not perch_onnx.labels()
     assert not hasattr(axis, "add"), "a mutable axis invites exactly that mistake"
     assert axis == frozenset(perch_onnx.labels()), "narrowing must not drop names"
+
+
+@pytest.mark.slow
+def test_perch_classes_are_canonicalised_through_the_base_accessor() -> None:
+    """Perch overrides its class list, so the canonicalisation has to happen
+    in the accessor rather than in TaxonomyServices, which Perch bypasses.
+    """
+    runner = PerchRunner()
+
+    assert "Acoustic_guitar" in runner._known_output_species()
+    assert runner._known_output_species() == canonical_set(runner._model_classes())
+
+
+@pytest.mark.slow
+def test_a_birdnet_v3_runner_reports_no_superseded_spelling() -> None:
+    assert "Charadrius dubius" not in BirdnetRunner()._known_output_species()
+    assert "Thinornis dubius" in BirdnetRunner()._known_output_species()

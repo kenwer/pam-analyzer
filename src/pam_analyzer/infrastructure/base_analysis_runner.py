@@ -61,7 +61,7 @@ from ._analysis_helpers import (
     write_species_list_files,
 )
 from .birdnet_lib import TaxonomyServices, normalize_lang_code
-from .legacy_names import expand_species
+from .species_names import canonical_set
 
 
 @dataclass(frozen=True)
@@ -76,16 +76,42 @@ class ParsedRow:
     file_path: Path
     start_time: float
     end_time: float
-    scientific_name: str  # The name written to CSV, on the project's canonical_taxonomy axis
+    scientific_name: str  # canonical name, written to CSV and used for every comparison
     confidence: float  # probability 0-1, after any per-model calibration
     preferred_common: str  # for the "Species" CSV column
     locale_commons: dict[str, str]  # Keyed by locale code without the "Species_" prefix (e.g. "en_us")
-    # The name the species filter matches on, on the running model's own
-    # axis: what the model emitted before to_axis() rewrote scientific_name
-    # onto the project's axis. Both runners set it, since either can be the
-    # one being rewritten depending on which axis the project chose. None
-    # falls back to scientific_name, for a runner that never rewrites.
-    match_name: str | None = None
+
+
+class _SegmentRanker:
+    """Assigns a rank within one segment and merges repeats of a species.
+
+    The lib sorts rows by (file_idx asc, chunk_idx asc, confidence desc), so a
+    streaming pass that resets on key change ranks correctly without
+    re-sorting, and the first row seen for a species is its strongest.
+
+    A repeat arises because canonicalisation collapses the classes a model
+    carries twice for one bird. Refusing it keeps the strongest and closes the
+    ranks up. Max rather than a sum: adding two scores for one species yields
+    a number on no calibrated scale.
+    """
+
+    def __init__(self) -> None:
+        self._key: tuple[str, float] | None = None
+        self._seen: set[str] = set()
+        self._rank = 0
+
+    def rank_for(self, key: tuple[str, float], name: str) -> int | None:
+        """This row's rank, or None if the species is already ranked here."""
+        if key != self._key:
+            self._key = key
+            self._seen = {name}
+            self._rank = 1
+            return self._rank
+        if name in self._seen:
+            return None
+        self._seen.add(name)
+        self._rank += 1
+        return self._rank
 
 
 class BaseAnalysisRunner(ABC):
@@ -345,10 +371,12 @@ class BaseAnalysisRunner(ABC):
 
         detection_count = 0
         # Two reasons a row can be dropped by the per-week allow-list, tracked
-        # apart so a legacy-name mismatch does not hide behind ordinary geography.
+        # apart so a name absent from the model's own axis does not hide
+        # behind ordinary geography.
         out_of_region_count = 0  # a known bird, just not expected here
         unknown_species_count = 0  # name absent from the model's axis entirely
         nonfinite_count = 0  # see the guard in the row loop below
+        merged_duplicate_count = 0  # a second class of a species already written for this segment
         aru_set: set[str] = set()
 
         arr = result.to_structured_array()
@@ -361,14 +389,10 @@ class BaseAnalysisRunner(ABC):
             writer = csv.DictWriter(outfile, fieldnames=fieldnames)
             writer.writeheader()
 
-            # Rank is recomputed per (file, chunk_start) over rows that
-            # survive the per-week allow-list. The lib already sorts rows by
-            # (file_idx asc, chunk_idx asc, confidence desc). Dropping
-            # out-of-region rows preserves that order, so a streaming pass
-            # that resets on key change yields the right rank without
-            # re-sorting.
-            prev_key: tuple[str, float] | None = None
-            rank = 0
+            # Rank is assigned per (file, chunk_start) over rows that survive
+            # the per-week allow-list, and a species already ranked in the
+            # segment is merged away. See _SegmentRanker.
+            ranker = _SegmentRanker()
             for raw_row in arr:
                 parsed = self._parse_row(
                     raw_row,
@@ -388,14 +412,11 @@ class BaseAnalysisRunner(ABC):
                     nonfinite_count += 1
                     continue
 
-                # Match on the model's own axis as the allow-list came from the
-                # geo model of the same generation, so both sides speak the
-                # same taxonomy even when scientific_name has been rewritten
-                # onto the project's axis for output.
-                match_name = parsed.match_name or parsed.scientific_name
+                # Both sides are canonical, so this is membership in one
+                # namespace rather than a bridge between two.
                 allowed = resolved.allowed_for(parsed.file_path)
-                if allowed is not None and match_name not in allowed:
-                    if match_name in self._known_output_species():
+                if allowed is not None and parsed.scientific_name not in allowed:
+                    if parsed.scientific_name in self._known_output_species():
                         out_of_region_count += 1
                     else:
                         unknown_species_count += 1
@@ -417,12 +438,12 @@ class BaseAnalysisRunner(ABC):
                 recording_time = parse_recording_time(parsed.file_path.stem)
                 file_week = week_from_path(parsed.file_path)
 
-                key = (str(parsed.file_path), parsed.start_time)
-                if key != prev_key:
-                    prev_key = key
-                    rank = 1
-                else:
-                    rank += 1
+                rank = ranker.rank_for(
+                    (str(parsed.file_path), parsed.start_time), parsed.scientific_name
+                )
+                if rank is None:
+                    merged_duplicate_count += 1
+                    continue
 
                 # Serialize through the schema's Detection path so this
                 # writer cannot drift from what the repo and table read.
@@ -467,12 +488,19 @@ class BaseAnalysisRunner(ABC):
         if out_of_region_count or unknown_species_count:
             logging.info(
                 "%s: per-week species filter dropped %d row(s): %d out-of-region, "
-                "%d not on the model's axis (legacy name or non-bird). %d kept",
+                "%d absent from the model's axis entirely. %d kept",
                 self.log_prefix,
                 out_of_region_count + unknown_species_count,
                 out_of_region_count,
                 unknown_species_count,
                 detection_count,
+            )
+
+        if merged_duplicate_count:
+            logging.info(
+                "%s: merged %d row(s) whose model class duplicates another class of the same species",
+                self.log_prefix,
+                merged_duplicate_count,
             )
 
         emit_progress(
@@ -524,26 +552,33 @@ class BaseAnalysisRunner(ABC):
             logging.warning("%s: failed to copy birdnet session log: %s", self.log_prefix, exc)
 
     def _known_output_species(self) -> AbstractSet[str]:
-        """Every scientific name this runner's model can emit.
+        """Every canonical species name this runner's model can emit.
 
-        Separate from taxonomy.known_species_scientific() because a runner may
-        borrow another generation's taxonomy for geo lookups and locale labels
-        while emitting its own, wider set of classes. Overridden where that is
-        the case, and the only per-engine fact the shared pipeline needs
-        beyond the three abstract methods: it classifies a filter drop and it
-        settles how a species-list line is read.
+        Canonicalised here rather than in TaxonomyServices because a runner
+        may override _model_classes with a label set that never passes
+        through it. It classifies a filter drop and it settles how a
+        species-list line is read, and both compare against canonical names.
+        """
+        return canonical_set(self._model_classes())
+
+    def _model_classes(self) -> AbstractSet[str]:
+        """This model's own class labels, before canonicalisation.
+
+        Defaults to the bound taxonomy's set. Overridden by a runner that
+        borrows another generation's taxonomy for geo lookups and locale
+        labels while emitting its own, wider set of classes.
         """
         return self.taxonomy.known_species_scientific()
 
     def _resolve_list_names(self, lines: frozenset[str]) -> frozenset[str]:
         """The domain's ResolveNames port for this runner.
 
-        Reads each line the way this engine spells a list entry, then adds the
-        other taxonomy's spelling of each name so a list written for one
-        BirdNET generation still matches the other. A spelling the running
-        model does not emit simply never matches.
+        Reads each line the way this engine spells a list entry, then
+        canonicalises it. Both sides of the comparison are canonical, so a
+        name typed under either BirdNET generation matches whichever model
+        runs without the set having to carry every spelling.
         """
-        return expand_species(frozenset(self._read_list_entry(line) for line in lines))
+        return canonical_set(self._read_list_entry(line) for line in lines)
 
     def _read_list_entry(self, line: str) -> str:
         """Read one line of a user's species list as a name this model emits.

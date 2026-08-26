@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from pam_analyzer.domain import DEFAULT_SPECIES_LANG, Project
-from pam_analyzer.infrastructure.legacy_names import BIRDNET_2_4, TAXONOMIES
 from pam_analyzer.ui.app_state import AppState
 from pam_analyzer.ui.panels.project_panel import ProjectPanel
 
@@ -76,42 +75,6 @@ def test_locale_selection_persists_to_project(
     assert state.project.locales == ("de",)
 
 
-def test_taxonomy_combo_offers_both_axes(qtbot, state: AppState):
-    p = _panel(qtbot, state)
-    items = [p.ui.taxonomy_combo.itemText(i) for i in range(p.ui.taxonomy_combo.count())]
-    assert items == list(TAXONOMIES)
-
-
-def test_taxonomy_selection_persists_to_project(
-    qtbot, state: AppState, loaded_project: Project, load_project
-):
-    p = _panel(qtbot, state)
-    load_project(state, loaded_project.folder)
-
-    p.ui.taxonomy_combo.setCurrentText(BIRDNET_2_4)
-    assert state.project is not None
-    assert state.project.analysis_taxonomy == BIRDNET_2_4
-    # Persisted, not just held in memory: the next run reads it from disk.
-    assert Project.load(loaded_project.folder).analysis_taxonomy == BIRDNET_2_4
-
-
-def test_stale_taxonomy_is_corrected_on_disk_not_just_on_screen(
-    qtbot, state: AppState, tmp_path: Path, load_project
-):
-    """A project naming a dropped axis (Perch-2.0) is rewritten to the default.
-
-    Only displaying the fallback would leave the combo saying BirdNET-3.0
-    while the next run wrote un-normalized names, so the correction is saved.
-    """
-    proj = Project(folder=tmp_path / "p", analysis_taxonomy="Perch-2.0")
-    proj.save()
-    p = _panel(qtbot, state)
-    load_project(state, proj.folder)
-
-    assert p.ui.taxonomy_combo.currentText() == TAXONOMIES[0]
-    assert Project.load(proj.folder).analysis_taxonomy == TAXONOMIES[0]
-
-
 def test_main_combo_uses_model_locales(qtbot, state: AppState, tmp_path: Path, load_project):
     """Main and Extra draw from the same model locale list: no bare 'en', and a
     legacy stored 'en' displays as its canonical 'en_us'."""
@@ -151,9 +114,8 @@ def test_unsupported_main_language_is_corrected_on_disk_not_just_on_screen(
 ):
     """A project naming a language not every model ships falls back to en_us.
 
-    Saved rather than only displayed, for the same reason the taxonomy
-    correction is: leaving the combo saying en_us while the next run wrote
-    Italian names would make the panel lie about the CSV.
+    Saved rather than only displayed: leaving the combo saying en_us while
+    the next run wrote Italian names would make the panel lie about the CSV.
     """
     proj = Project(folder=tmp_path / "p", preferred_species_lang="it")
     proj.save()

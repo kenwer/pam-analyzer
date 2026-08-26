@@ -34,8 +34,9 @@ ResolveNames = Callable[[frozenset[str]], frozenset[str]]
 A callable because reading a line depends on the running engine's list format,
 which lives in infrastructure: 'Turdus merula_Blackbird' is one BirdNET entry
 with a common name attached, while 'Acoustic_guitar' is one whole Perch label.
-Expanding a name across the two BirdNET taxonomies happens on the same side,
-for the same reason.
+Once a line is read as a name, it is canonicalised on the same side, so it
+matches model output in the one namespace every engine's labels are mapped
+into, without needing to carry every spelling of a renamed species.
 """
 
 
@@ -128,10 +129,11 @@ class SpeciesFilter:
         during the runner's 'preparing' phase, not mid-inference.
 
         The user-authored lines (the LIST text and the must-have text) go
-        through resolve_names, which reads each one as a name and adds the
-        spellings of the other taxonomy, so a bird typed under either matches
-        whichever model runs. The region_species output does not, so LOCATION
-        mode's regional list stays on BirdNET's axis.
+        through resolve_names, which reads each one as a name and canonicalises
+        it, so a bird typed under any spelling matches whichever model runs.
+        region_species returns canonical names too, so both sides of the
+        match, the user's lines and the region's species, speak the same one
+        namespace.
         """
         if self.mode == FilterMode.LIST and self.list_text:
             fixed = resolve_names(species_list_lines(self.list_text))

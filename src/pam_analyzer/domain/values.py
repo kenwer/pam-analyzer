@@ -12,12 +12,6 @@ DEFAULT_MIN_CONF = 0.25
 # longer ships, so this string going stale degrades gracefully.
 DEFAULT_ANALYSIS_MODEL = "BirdNET-2.4"
 
-# Scientific-name axis a new project writes its detections under. Also a
-# literal, for the same layering reason, and matching the axis identifiers
-# in infrastructure.legacy_names.TAXONOMIES. A project naming an axis this
-# build no longer offers leaves names un-normalized rather than failing.
-DEFAULT_TAXONOMY = "BirdNET-3.0"
-
 # Species-name language a new project starts on, and the value a project
 # naming a language this build does not offer is corrected to. en_us is the
 # one code every model ships, so it is always selectable.
@@ -42,4 +36,3 @@ class AnalysisSettings:
     min_conf: float = DEFAULT_MIN_CONF
     overlap: float = 0.0
     locales: tuple[str, ...] = ()  # frozen for hashability
-    canonical_taxonomy: str = DEFAULT_TAXONOMY  # axis every model's output is written under

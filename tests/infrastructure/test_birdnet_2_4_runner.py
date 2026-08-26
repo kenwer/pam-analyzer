@@ -20,14 +20,13 @@ from pathlib import Path
 
 import pytest
 
-from pam_analyzer.domain import DEFAULT_TAXONOMY, AnalysisSettings, Campaign, FilterMode
+from pam_analyzer.domain import AnalysisSettings, Campaign, FilterMode
 from pam_analyzer.infrastructure.birdnet_2_4_runner import (
     MODEL_KEY,
     SESSION_THREADS,
     Birdnet24Runner,
     _n_workers,
 )
-from pam_analyzer.infrastructure.legacy_names import BIRDNET_2_4, BIRDNET_3_0
 from tests.infrastructure.test_birdnet_runner import (
     _campaign_with_one_wav,
     _RecordingProgress,
@@ -39,11 +38,7 @@ LEGACY_NAME = "Accipiter gentilis"
 CURRENT_NAME = "Astur gentilis"
 
 
-def _parse_one(
-    species_name: str,
-    preferred_lang_map: dict[str, str] | None = None,
-    taxonomy: str = DEFAULT_TAXONOMY,
-):
+def _parse_one(species_name: str, preferred_lang_map: dict[str, str] | None = None):
     """Run _parse_row on a single synthetic result row.
 
     Needs no model: the hook takes its label maps as arguments.
@@ -58,62 +53,33 @@ def _parse_one(
         },
         preferred_lang_map=preferred_lang_map or {},
         locale_maps={"en_us": {}},
-        settings=AnalysisSettings(
-            min_conf=0.25, overlap=0.0, locales=("en_us",), canonical_taxonomy=taxonomy
-        ),
+        settings=AnalysisSettings(min_conf=0.25, overlap=0.0, locales=("en_us",)),
     )
 
 
-def test_legacy_name_is_written_on_the_current_axis() -> None:
-    """A v2.4 spelling is rewritten for output but kept for matching.
-
-    Both halves matter: writing the current spelling is what makes the two
-    engines' rows line up in the Examine grid, and keeping the native one in
-    match_name is what lets the v2.4 geo allow-list still recognize the row.
+def test_legacy_name_is_canonicalised_on_output() -> None:
+    """A v2.4 spelling is canonicalised, so the two engines' rows line up in
+    the Examine grid under one spelling.
     """
     parsed = _parse_one(f"{LEGACY_NAME}_Eurasian Goshawk")
     assert parsed.scientific_name == CURRENT_NAME
-    assert parsed.match_name == LEGACY_NAME
-
-
-def test_legacy_name_is_kept_when_the_project_chose_the_v2_4_axis() -> None:
-    """A study with years of v2.4 CSVs behind it keeps its spellings.
-
-    This is the case the taxonomy setting exists for: without it the same
-    campaign, analysed by the same model, would gain a second spelling for
-    one bird the first time it is re-run on a newer build.
-    """
-    parsed = _parse_one(f"{LEGACY_NAME}_Eurasian Goshawk", taxonomy=BIRDNET_2_4)
-    assert parsed.scientific_name == LEGACY_NAME
-    assert parsed.match_name == LEGACY_NAME
-
-
-def test_match_name_is_the_native_spelling_on_either_axis() -> None:
-    """The geo allow-list speaks v2.4, whatever axis the output uses.
-
-    match_name has to stay pinned to the model's own axis, or choosing the
-    v3.0 axis would quietly change which detections survive the filter.
-    """
-    for taxonomy in (BIRDNET_2_4, BIRDNET_3_0):
-        parsed = _parse_one(f"{LEGACY_NAME}_Eurasian Goshawk", taxonomy=taxonomy)
-        assert parsed.match_name == LEGACY_NAME
 
 
 def test_name_without_an_alias_passes_through() -> None:
     """The large majority of species are spelled the same on both axes."""
     parsed = _parse_one("Turdus merula_Eurasian Blackbird")
     assert parsed.scientific_name == "Turdus merula"
-    assert parsed.match_name == "Turdus merula"
 
 
-def test_common_name_lookup_keys_on_the_native_spelling() -> None:
-    """Label maps come from v2.4's own files, so they key on v2.4 names.
+def test_common_name_lookup_keys_on_the_canonical_spelling() -> None:
+    """Label maps are canonicalised too, so the lookup has to key on the
+    canonical name rather than the raw label v2.4 emits.
 
-    Looking the common name up under the rewritten name would miss for every
-    renamed species and silently fall back to English.
+    Keying on the raw label would miss for every renamed species and
+    silently fall back to English.
     """
     parsed = _parse_one(
-        f"{LEGACY_NAME}_Eurasian Goshawk", preferred_lang_map={LEGACY_NAME: "Habicht"}
+        f"{LEGACY_NAME}_Eurasian Goshawk", preferred_lang_map={CURRENT_NAME: "Habicht"}
     )
     assert parsed.preferred_common == "Habicht"
     assert parsed.scientific_name == CURRENT_NAME

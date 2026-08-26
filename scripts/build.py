@@ -70,10 +70,10 @@ MODULES: tuple[str, ...] = (
 DATA: tuple[tuple[Path, str], ...] = (
     (ROOT_DIR / 'CHANGELOG.md', '.'),
     (ROOT_DIR / 'src' / 'pam_analyzer' / 'widgets' / 'map_picker.qml', 'widgets'),
-    # legacy_names.py reads this via importlib.resources.files(__package__),
+    # species_names.py reads this via importlib.resources.files(__package__),
     # so it must land at its real package path, not a bespoke top-level folder.
     (
-        ROOT_DIR / 'src' / 'pam_analyzer' / 'infrastructure' / 'data' / 'legacy_species_aliases.tsv',
+        ROOT_DIR / 'src' / 'pam_analyzer' / 'infrastructure' / 'data' / 'species_aliases.tsv',
         'pam_analyzer/infrastructure/data',
     ),
     # perch_onnx.labels() reads this the same way. REQUIRED_MODEL_FILES checks

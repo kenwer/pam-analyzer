@@ -23,14 +23,12 @@ from pathlib import Path
 import pytest
 
 from pam_analyzer.domain import (
-    DEFAULT_TAXONOMY,
     AnalysisSettings,
     Campaign,
     FilterMode,
     RunStatus,
 )
 from pam_analyzer.infrastructure.birdnet_lib import TAXONOMY_V3_0
-from pam_analyzer.infrastructure.legacy_names import BIRDNET_2_4
 from pam_analyzer.infrastructure.perch_runner import (
     MODEL_KEY,
     SESSION_THREADS,
@@ -48,10 +46,9 @@ from tests.infrastructure.test_birdnet_runner import (
 # change to the constant has to be a deliberate edit of this expectation too.
 CALIBRATED_OFFSET = 11.2
 
-# Perch shares BirdNET v3.0's spelling for this bird, and v2.4 spells it the
-# other way, which is what makes it the useful case for axis rewriting.
+# Perch shares BirdNET v3.0's spelling for this bird, which is also the
+# canonical one.
 CURRENT_NAME = "Astur gentilis"
-LEGACY_NAME = "Accipiter gentilis"
 
 # A real Perch class from the FSD50k half of its label set. It is not a species
 # and it contains underscores, which is exactly what a BirdNET-style
@@ -63,7 +60,6 @@ def _parse_one(
     species_name: str,
     confidence: float,
     preferred_lang_map: dict[str, str] | None = None,
-    taxonomy: str = DEFAULT_TAXONOMY,
 ):
     """Run _parse_row on a single synthetic result row.
 
@@ -81,7 +77,7 @@ def _parse_one(
         },
         preferred_lang_map=preferred_lang_map or {},
         locale_maps={"en_us": {}},
-        settings=AnalysisSettings(locales=("en_us",), canonical_taxonomy=taxonomy),
+        settings=AnalysisSettings(locales=("en_us",)),
     )
 
 
@@ -127,36 +123,18 @@ def test_parse_row_keeps_underscores_in_non_species_labels() -> None:
     """
     parsed = _parse_one(SOUND_EVENT_LABEL, confidence=CALIBRATED_OFFSET)
     assert parsed.scientific_name == SOUND_EVENT_LABEL
-    assert parsed.match_name == SOUND_EVENT_LABEL
-
-
-def test_parse_row_rewrites_onto_the_projects_axis() -> None:
-    """Perch emits v3.0-axis names, so a v2.4 project gets the older spelling."""
-    parsed = _parse_one(CURRENT_NAME, confidence=CALIBRATED_OFFSET, taxonomy=BIRDNET_2_4)
-    assert parsed.scientific_name == LEGACY_NAME
-
-
-def test_parse_row_matches_the_filter_on_perchs_own_axis() -> None:
-    """match_name keeps the model's spelling even when the output is rewritten.
-
-    The per-week allow-list comes from the v3.0 geo model, so the filter check
-    has to run against the v3.0 spelling whichever axis the project writes.
-    """
-    parsed = _parse_one(CURRENT_NAME, confidence=CALIBRATED_OFFSET, taxonomy=BIRDNET_2_4)
-    assert parsed.match_name == CURRENT_NAME
 
 
 def test_parse_row_takes_common_names_from_the_v3_labels() -> None:
     """Perch ships no common names, so they come from BirdNET v3.0's label map.
 
-    The lookup keys on the model's own spelling, which is the v3.0 one, so a
-    project writing the v2.4 axis still resolves a common name.
+    The lookup keys on the canonical spelling, which for this bird is the
+    v3.0 one Perch itself emits.
     """
     parsed = _parse_one(
         CURRENT_NAME,
         confidence=CALIBRATED_OFFSET,
         preferred_lang_map={CURRENT_NAME: "Northern Goshawk"},
-        taxonomy=BIRDNET_2_4,
     )
     assert parsed.preferred_common == "Northern Goshawk"
 

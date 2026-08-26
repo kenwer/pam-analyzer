@@ -1,10 +1,11 @@
 """How the row loop classifies a detection the species filter drops.
 
-Two counters are logged apart so a legacy-name mismatch does not hide behind
-ordinary geography: out-of-region (a class the model knows, just not expected
-here) and not-on-axis (a name the model cannot emit at all). Telling them
-apart needs the axis of the model that actually ran, which for PerchRunner is
-not the BirdNET v3.0 axis it borrows for geo lookups and locale labels.
+Two counters are logged apart so a name absent from the model's own axis
+does not hide behind ordinary geography: out-of-region (a class the model
+knows, just not expected here) and not-on-axis (a name the model cannot
+emit at all). Telling them apart needs the axis of the model that actually
+ran, which for PerchRunner is not the BirdNET v3.0 axis it borrows for geo
+lookups and locale labels.
 
 The stub here drives the real _run_campaign row loop with a fake session, so
 no model is loaded and nothing is downloaded.
@@ -12,6 +13,7 @@ no model is loaded and nothing is downloaded.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from contextlib import contextmanager
 from pathlib import Path
@@ -21,6 +23,7 @@ import pytest
 
 from pam_analyzer.domain import AnalysisSettings, Campaign, FilterMode
 from pam_analyzer.infrastructure.base_analysis_runner import BaseAnalysisRunner, ParsedRow
+from pam_analyzer.infrastructure.species_names import canonical
 
 # The model's own axis is wider than the one it borrows for geo and locales,
 # which is exactly PerchRunner's situation.
@@ -87,13 +90,14 @@ class _AxisStubRunner(BaseAnalysisRunner):
         yield _FakeSession(self._rows)
 
     def _parse_row(self, raw_row: Any, **kwargs: Any) -> ParsedRow:
-        name = str(raw_row["species_name"])
+        # Canonicalised here too, matching every real _parse_row, so a stub
+        # row exercises the same namespace the row loop actually compares in.
+        name = canonical(str(raw_row["species_name"]))
         return ParsedRow(
             file_path=Path("a.wav"),
             start_time=0.0,
             end_time=3.0,
             scientific_name=name,
-            match_name=name,
             confidence=0.9,
             preferred_common=name,
             locale_commons={},
@@ -133,3 +137,39 @@ def test_the_two_drop_reasons_are_counted_apart(
         )
 
     assert _drop_counts(caplog) == (2, 1)
+
+
+def test_a_superseded_class_survives_an_allow_list_holding_only_the_canonical_name(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The v3.0 geo model carries Thinornis dubius and not Charadrius dubius,
+    so before canonicalisation a detection of the superseded class was
+    dropped as out-of-region against an allow-list holding only the
+    canonical spelling. Both sides are canonical now, so it survives, and
+    this drives the real row loop rather than just checking canonical_set
+    membership in isolation.
+    """
+    (tmp_path / "a.wav").write_bytes(b"")
+    (tmp_path / "species_list.txt").write_text("Thinornis dubius\n", encoding="utf-8")
+
+    runner = _AxisStubRunner(["Charadrius dubius"])
+    campaign = Campaign(name="c1", folder=tmp_path, species_filter_mode=FilterMode.LIST)
+
+    with caplog.at_level(logging.INFO):
+        result = runner.run(
+            campaigns=[campaign],
+            settings=AnalysisSettings(min_conf=0.1, overlap=0.0, locales=()),
+            preferred_lang="en_us",
+            progress=_SilentProgress(),
+        )
+
+    assert result.campaigns[0].detection_count == 1
+    assert not any("species filter dropped" in str(r.msg) for r in caplog.records)
+
+
+def test_parsed_row_has_no_separate_match_name():
+    """Output and matching share one namespace, so the second name that
+    existed to bridge them is gone. A field left behind would be a name
+    downstream code could wrongly compare on.
+    """
+    assert "match_name" not in {f.name for f in dataclasses.fields(ParsedRow)}

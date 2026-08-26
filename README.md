@@ -288,16 +288,25 @@ All three are bundled in the distributables. BirdNET v2.4 uses the geographic mo
 ### Species names
 BirdNET v3.0 names species under a newer taxonomy than v2.4 did, so a handful of birds changed genus: the Northern Goshawk is `Astur gentilis` where v2.4 called it `Accipiter gentilis`, and the same applies to `Charadrius`/`Anarhynchus` plovers, `Ciccaba`/`Strix` owls, `Ixobrychus`/`Botaurus` bitterns, and others.
 
-**Detections are written under one taxonomy, whichever model produced them.** Both engines' output is mapped through a bundled alias table (`infrastructure/data/legacy_species_aliases.tsv`, 175 pairs) before it reaches the CSV, so the same bird appears under one spelling across both engines and sorts together in the Examine grid. The `Model` column still records which engine produced each row.
+**Detections are written under one set of scientific names, whichever model
+produced them.** Each engine's labels are mapped through a bundled table
+(`infrastructure/data/species_aliases.tsv`, 175 pairs) as they leave the
+model, so the same bird appears under one spelling across all three engines
+and sorts together in the Examine grid. The `Model` column still records which
+engine produced each row.
 
-Which taxonomy that is, is a project setting: **Project > Species taxonomy**. It applies to the next run, not to CSVs already written.
+Species lists work the same way. A name you type is mapped through the same
+table before it is matched, so `Accipiter gentilis` and `Astur gentilis` both
+match whichever model runs.
 
-- **BirdNET-3.0** (default) is the right choice for a new study as it matches current ornithological taxonomy standards. A v2.4 run is rewritten up to the current spellings.
-- **BirdNET-2.4** is for a study whose earlier CSVs already use the older names. Picking it keeps a re-run on the same spellings the existing time series uses, instead of splitting one bird across two names partway through. A v3.0 run is rewritten down to match.
-
-The setting changes only what is written, never what is matched. Each run still filters detections against the geographic model of its own generation, on that model's own axis, so the chosen output taxonomy cannot change which detections survive region filtering.
-
-Species lists work under either taxonomy regardless of the setting. Each name you type is expanded to cover both spellings, so `Accipiter gentilis` and `Astur gentilis` both match whichever model runs. This applies only to names you type: the species-list file and the must-have list.
+The bundled BirdNET v3.0 build is a developer preview, and its own release
+notes list "Species list needs cleanup" as a known limitation. It carries 27
+birds as two separate classes, one under a current scientific name and one
+under a superseded one. Where both fire on the same segment the app keeps the
+stronger detection and discards the weaker duplicate, so a segment yields one
+row per species. The app also corrects the German name of `Tyto alba`, which
+upstream's taxonomy gives the name belonging to `Tyto furcata`. Both are worth
+knowing if you compare this app's CSVs against raw BirdNET output.
 
 Detection CSVs written by earlier versions of the app are not rewritten. A campaign analyzed before the upgrade keeps its `detections-Perch-2.0.csv` under its original name, and the Examine panel still loads it.
 
@@ -307,7 +316,7 @@ Perch's classification head emits raw logits, not probabilities, and they do not
 ### Region filtering
 In location mode the runner filters detections against a per-week species list from the geographic model of the same generation as the acoustic model, so both sides speak the same taxonomy. For v3.0 that model carries 14,082 classes to the acoustic model's 11,560. The overlap is 10,653 names, so **907 acoustic classes have no geographic entry and are always dropped in location mode**: mostly narrowly-distributed birds, genus-level entries such as `Acris`, and insects and frogs.
 
-To keep those detections, run in species-list mode, which applies no regional filter, or add the specific names to the must-have box in location mode. The debug log reports the split per campaign, for example `birdnet: per-week species filter dropped 412 row(s): 190 out-of-region, 222 not on the model's axis (legacy name or non-bird). 1391 kept`. A large second number points at the acoustic/geographic gap rather than at geography.
+To keep those detections, run in species-list mode, which applies no regional filter, or add the specific names to the must-have box in location mode. The debug log reports the split per campaign, for example `birdnet: per-week species filter dropped 412 row(s): 402 out-of-region, 10 absent from the model's axis entirely. 1391 kept`. The out-of-region count covers the acoustic/geographic gap along with ordinary geography, since a class the model itself carries counts as out-of-region whether the geo model never lists it at all or simply does not expect it at this location and week. The second count is now rare: every model label is mapped into one namespace before this comparison runs, so it only fires for a name the running model does not claim as one of its own classes at all.
 
 
 ## Troubleshooting

@@ -35,6 +35,8 @@ from dataclasses import dataclass
 from functools import cache, lru_cache
 from typing import Any
 
+from .species_names import canonical, canonical_set
+
 # FP32 over FP16: onnxruntime's CPU provider upcasts FP16 per-op, so the
 # smaller download would cost throughput on the hardware this app targets.
 # Imported by the runners: the acoustic model each loads and the label maps
@@ -153,7 +155,29 @@ def _locale_label_map(version: str, lang: str) -> dict[str, str]:
         sci, common = _split_sci_common(entry)
         if sci:
             mapping[sci] = common
-    return mapping
+    return _canonicalise_labels(mapping, version, lang)
+
+
+def _canonicalise_labels(mapping: dict[str, str], version: str, lang: str) -> dict[str, str]:
+    """Re-key a label map onto canonical species names.
+
+    An entry already keyed on the canonical name wins, otherwise the
+    superseded entry is promoted under it. That one rule serves both
+    generations: v3.0 has a real Thinornis dubius entry to win with, and
+    v2.4 has only Charadrius dubius, which is promoted carrying its
+    translation.
+    """
+    out: dict[str, str] = {}
+    for sci, common in mapping.items():
+        key = canonical(sci)
+        if key not in out or sci == key:
+            out[key] = common
+
+    if version == ACOUSTIC_V3_0 and lang == "de":
+        # Upstream's taxonomy gives Tyto alba (Western Barn Owl) the German
+        # name of Tyto furcata. Remove when upstream corrects common_name_de.
+        out["Tyto alba"] = "Schleiereule"
+    return out
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,11 +192,17 @@ class TaxonomyServices:
     version: str
 
     def region_species_scientific(self, lat: float, lon: float, week: int) -> frozenset[str]:
-        """Scientific names the geo model considers possible at (lat, lon, week).
+        """Canonical species names the geo model considers possible at
+        (lat, lon, week).
 
         A `week` of -1 means 'no week filter' and is translated to the lib's
         `week=None`. Threshold 0.03 matches the lib's own default for the
         species-filter step.
+
+        Canonicalised on the way out so the allow-list and the detection rows
+        it is compared against speak one namespace. The geo model carries only
+        current spellings, so an acoustic class under a superseded spelling
+        would otherwise never match.
         """
         geo = _geo_model_cached(self.version)
         result = geo.predict(
@@ -181,7 +211,7 @@ class TaxonomyServices:
             week=(None if week == -1 else week),
             min_confidence=0.03,
         )
-        return frozenset(_split_sci_common(name)[0] for name in result.to_set())
+        return canonical_set(_split_sci_common(name)[0] for name in result.to_set())
 
     def known_species_scientific(self) -> frozenset[str]:
         """Every scientific name on this model's label axis, ignoring region.

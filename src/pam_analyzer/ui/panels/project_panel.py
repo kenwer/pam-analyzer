@@ -10,7 +10,6 @@ from PySide6.QtWidgets import QCheckBox, QWidget
 
 from ...domain import DEFAULT_MIN_CONF, DEFAULT_SPECIES_LANG, MAX_OVERLAP_S, Project, paths
 from ...infrastructure.birdnet_lib import normalize_lang_code
-from ...infrastructure.legacy_names import TAXONOMIES
 from ..app_state import AppState
 from .ui_project_panel import Ui_ProjectPanel
 
@@ -42,7 +41,6 @@ class ProjectPanel(QWidget):
         # Single source of truth for the overlap cap: size the slider from it.
         self.ui.overlap_slider.setMaximum(int(round(MAX_OVERLAP_S * 10)))
         self._populate_locale_combo()
-        self._populate_taxonomy_combo()
         self._build_locales_grid()
         self._wire_signals()
         self._render(app_state.project)
@@ -60,7 +58,6 @@ class ProjectPanel(QWidget):
         self.ui.sdcard_pattern_edit.textChanged.connect(self._refresh_regex_indicator)
         self.ui.sdcard_pattern_edit.editingFinished.connect(self._on_sdcard_pattern_changed)
         self.ui.species_lang_combo.currentTextChanged.connect(self._on_species_lang_changed)
-        self.ui.taxonomy_combo.currentTextChanged.connect(self._on_taxonomy_changed)
         self.ui.folder_label.linkActivated.connect(self._open_folder)
         # Sliders fire continuously while dragged, so these save silently
         # (no projectChanged broadcast) to avoid re-rendering every panel
@@ -72,9 +69,6 @@ class ProjectPanel(QWidget):
         # Same source as the extra-languages grid, so both controls offer the
         # locale codes every model ships (see domain.shared_locales).
         self.ui.species_lang_combo.addItems(sorted(self._available_locales))
-
-    def _populate_taxonomy_combo(self) -> None:
-        self.ui.taxonomy_combo.addItems(list(TAXONOMIES))
 
     def _build_locales_grid(self) -> None:
         """Lay the model's locale codes out as a checkbox grid.
@@ -102,7 +96,6 @@ class ProjectPanel(QWidget):
             for w in (
                 self.ui.sdcard_pattern_edit,
                 self.ui.species_lang_combo,
-                self.ui.taxonomy_combo,
                 self.ui.min_conf_slider,
                 self.ui.overlap_slider,
             ):
@@ -114,7 +107,6 @@ class ProjectPanel(QWidget):
                 self.ui.folder_label.clear()
                 self.ui.sdcard_pattern_edit.clear()
                 self.ui.species_lang_combo.setCurrentText("")
-                self.ui.taxonomy_combo.setCurrentIndex(0)
                 self._refresh_regex_indicator("")
                 self._set_slider_values(min_conf=DEFAULT_MIN_CONF, overlap=0.0)
                 self._set_locale_checks(())
@@ -124,7 +116,6 @@ class ProjectPanel(QWidget):
             self.ui.folder_label.setText(f'<a href="open">{folder_text}</a>')
             self.ui.sdcard_pattern_edit.setText(project.sdcard_name_pattern)
             self._set_combo_value(project.preferred_species_lang)
-            self._set_taxonomy_value(project.analysis_taxonomy)
             self._set_slider_values(min_conf=project.min_conf, overlap=project.overlap)
             self._set_locale_checks(project.locales)
 
@@ -173,7 +164,8 @@ class ProjectPanel(QWidget):
         ("en_us") first, the same mapping the runner applies at analysis time.
         Anything still absent from the list is a language only some models
         ship, so it falls back to the default. Saved rather than only shown,
-        for the reason given in _set_taxonomy_value.
+        so the panel does not display en_us while the next run still writes
+        names in a language it no longer offers.
         """
         lang = normalize_lang_code(lang)
         idx = self.ui.species_lang_combo.findText(lang)
@@ -184,28 +176,6 @@ class ProjectPanel(QWidget):
             max(self.ui.species_lang_combo.findText(DEFAULT_SPECIES_LANG), 0)
         )
         self._app_state.save_project_fields(preferred_species_lang=DEFAULT_SPECIES_LANG)
-
-    def _set_taxonomy_value(self, taxonomy: str) -> None:
-        """Select the project's axis, correcting a value this build cannot honour.
-
-        A project.toml predating 0.6 can name an axis that no longer ships
-        (Perch-2.0), and one written by 0.6.x names none at all. Showing the
-        default while the next run would leave names un-normalized is worse
-        than a silent write, so the fallback is saved rather than only
-        displayed. The save is skipped when the value already matches, so
-        this is a no-op for every project on a current axis.
-        """
-        idx = self.ui.taxonomy_combo.findText(taxonomy)
-        if idx >= 0:
-            self.ui.taxonomy_combo.setCurrentIndex(idx)
-            return
-        self.ui.taxonomy_combo.setCurrentIndex(0)
-        self._app_state.save_project_fields(analysis_taxonomy=TAXONOMIES[0])
-
-    def _on_taxonomy_changed(self, value: str) -> None:
-        if self._loading or not value:
-            return
-        self._app_state.save_project_fields(analysis_taxonomy=value) # Silent save (like the sliders)
 
     def _on_sdcard_pattern_changed(self) -> None:
         if self._loading:

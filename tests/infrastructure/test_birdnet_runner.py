@@ -32,7 +32,6 @@ from pam_analyzer.domain import (
     RunStatus,
 )
 from pam_analyzer.infrastructure.birdnet_runner import MODEL_KEY, BirdnetRunner
-from pam_analyzer.infrastructure.legacy_names import BIRDNET_2_4, BIRDNET_3_0
 
 
 class _RecordingProgress:
@@ -122,8 +121,8 @@ def test_scientific_name_is_the_last_resort() -> None:
     assert _parse_one("Parus major_", {"Parus major": ""}) == "Parus major"
 
 
-def _parse_row_on_axis(species_name: str, taxonomy: str):
-    """Run _parse_row on a synthetic row under a given output taxonomy."""
+def _parse_full(species_name: str):
+    """Run _parse_row on a synthetic row, returning the full ParsedRow."""
     return BirdnetRunner()._parse_row(
         {
             "species_name": species_name,
@@ -134,33 +133,19 @@ def _parse_row_on_axis(species_name: str, taxonomy: str):
         },
         preferred_lang_map={},
         locale_maps={"en_us": {}},
-        settings=AnalysisSettings(
-            min_conf=0.5, overlap=0.0, locales=("en_us",), canonical_taxonomy=taxonomy
-        ),
+        settings=AnalysisSettings(min_conf=0.5, overlap=0.0, locales=("en_us",)),
     )
 
 
-def test_v3_output_is_untouched_on_its_own_axis() -> None:
-    """The default axis is v3.0's, so the rewrite must cost this runner nothing."""
-    parsed = _parse_row_on_axis("Astur gentilis_Eurasian Goshawk", BIRDNET_3_0)
-    assert parsed.scientific_name == "Astur gentilis"
-
-
-def test_v3_output_is_rewritten_down_to_the_v2_4_axis() -> None:
-    """A project pinned to v2.4 names gets them from the v3.0 engine too.
-
-    Otherwise pinning the axis would only half work: v2.4 runs would land on
-    the chosen axis and v3.0 runs would not, splitting the same bird across
-    two spellings inside one project.
+def test_a_superseded_v3_class_is_canonicalised() -> None:
+    """v3.0's label file still carries Charadrius dubius, the superseded
+    spelling of Thinornis dubius, as its own class. Canonicalising at the
+    boundary means a row emitted under either spelling lands on the same
+    name, so the geo allow-list, built from the current spelling, still
+    matches it.
     """
-    parsed = _parse_row_on_axis("Astur gentilis_Eurasian Goshawk", BIRDNET_2_4)
-    assert parsed.scientific_name == "Accipiter gentilis"
-
-
-def test_v3_match_name_stays_on_the_v3_axis() -> None:
-    """v3.0's geo allow-list speaks v3.0, so the filter must not see the rewrite."""
-    parsed = _parse_row_on_axis("Astur gentilis_Eurasian Goshawk", BIRDNET_2_4)
-    assert parsed.match_name == "Astur gentilis"
+    parsed = _parse_full("Charadrius dubius_Little Ringed Plover")
+    assert parsed.scientific_name == "Thinornis dubius"
 
 
 @pytest.mark.slow

@@ -48,7 +48,7 @@ from typing import Any, ClassVar
 from ..domain import AnalysisSettings
 from .base_analysis_runner import BaseAnalysisRunner, ParsedRow
 from .birdnet_lib import TAXONOMY_V3_0
-from .legacy_names import to_axis
+from .species_names import canonical
 
 # Hardcoded rather than derived from the model, because this string is part of
 # the CSV filename on the user's disk.
@@ -117,7 +117,7 @@ class PerchRunner(BaseAnalysisRunner):
     log_prefix: ClassVar[str] = "perch"
     taxonomy = TAXONOMY_V3_0
 
-    def _known_output_species(self) -> AbstractSet[str]:
+    def _model_classes(self) -> AbstractSet[str]:
         """Perch's own classes.
 
         Thousands of them are insects, amphibians, mammals and FSD50k sound
@@ -217,9 +217,8 @@ class PerchRunner(BaseAnalysisRunner):
         non-bird half of its label set contains underscores that a
         'Scientific_Common' split would truncate.
 
-        Common-name lookups key on Perch's own spelling, which is v3.0's,
-        because the label maps come from v3.0's files. Only the written
-        scientific name moves to the project's axis.
+        Common-name lookups key on the canonicalised name, since that is what
+        the label maps (v3.0's files) are keyed on too.
         """
         sci = str(raw_row["species_name"])
         # The lib returned a raw logit because the session set
@@ -227,22 +226,21 @@ class PerchRunner(BaseAnalysisRunner):
         # the same units the BirdNET runners write.
         conf = _perch_logit_to_prob(float(raw_row["confidence"]))
 
-        out_name = to_axis(sci, settings.canonical_taxonomy)
+        name = canonical(sci)
 
         # `or` rather than a .get default, because locale_label_map keeps
         # entries whose common name is blank and a blank translation has to
         # degrade the same way a missing key does. Perch classes outside
         # v3.0's axis, the insects and sound events, fall through to the
         # scientific name.
-        preferred = preferred_lang_map.get(sci) or out_name
-        locale_commons = {loc: locale_maps[loc].get(sci, "") for loc in settings.locales}
+        preferred = preferred_lang_map.get(name) or name
+        locale_commons = {loc: locale_maps[loc].get(name, "") for loc in settings.locales}
 
         return ParsedRow(
             file_path=Path(str(raw_row["input"])),
             start_time=float(raw_row["start_time"]),
             end_time=float(raw_row["end_time"]),
-            scientific_name=out_name,
-            match_name=sci,
+            scientific_name=name,
             confidence=conf,
             preferred_common=preferred,
             locale_commons=locale_commons,
