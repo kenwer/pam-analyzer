@@ -34,6 +34,7 @@ import shutil
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from collections.abc import Set as AbstractSet
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
@@ -213,7 +214,7 @@ class BaseAnalysisRunner(ABC):
         resolved = campaign.load_species_filter().resolve(
             wav_files,
             self.taxonomy.region_species_scientific,
-            expand_synonyms=expand_species,
+            resolve_names=self._resolve_list_names,
         )
         lat = resolved.location.latitude if resolved.location else None
         lon = resolved.location.longitude if resolved.location else None
@@ -387,18 +388,14 @@ class BaseAnalysisRunner(ABC):
                     nonfinite_count += 1
                     continue
 
-                # Match on the model's own axis: the allow-list came from the
+                # Match on the model's own axis as the allow-list came from the
                 # geo model of the same generation, so both sides speak the
                 # same taxonomy even when scientific_name has been rewritten
                 # onto the project's axis for output.
                 match_name = parsed.match_name or parsed.scientific_name
                 allowed = resolved.allowed_for(parsed.file_path)
                 if allowed is not None and match_name not in allowed:
-                    # known_species_scientific() is called lazily here, in the
-                    # drop path, so a species-only run (allowed is always None)
-                    # never forces the en_us label read just to classify drops
-                    # it will not make.
-                    if match_name in self.taxonomy.known_species_scientific():
+                    if match_name in self._known_output_species():
                         out_of_region_count += 1
                     else:
                         unknown_species_count += 1
@@ -525,6 +522,43 @@ class BaseAnalysisRunner(ABC):
             logging.info("%s: copied birdnet session log to %s", self.log_prefix, dest)
         except Exception as exc:  # noqa: BLE001  best-effort: never shadow the real error
             logging.warning("%s: failed to copy birdnet session log: %s", self.log_prefix, exc)
+
+    def _known_output_species(self) -> AbstractSet[str]:
+        """Every scientific name this runner's model can emit.
+
+        Separate from taxonomy.known_species_scientific() because a runner may
+        borrow another generation's taxonomy for geo lookups and locale labels
+        while emitting its own, wider set of classes. Overridden where that is
+        the case, and the only per-engine fact the shared pipeline needs
+        beyond the three abstract methods: it classifies a filter drop and it
+        settles how a species-list line is read.
+        """
+        return self.taxonomy.known_species_scientific()
+
+    def _resolve_list_names(self, lines: frozenset[str]) -> frozenset[str]:
+        """The domain's ResolveNames port for this runner.
+
+        Reads each line the way this engine spells a list entry, then adds the
+        other taxonomy's spelling of each name so a list written for one
+        BirdNET generation still matches the other. A spelling the running
+        model does not emit simply never matches.
+        """
+        return expand_species(frozenset(self._read_list_entry(line) for line in lines))
+
+    def _read_list_entry(self, line: str) -> str:
+        """Read one line of a user's species list as a name this model emits.
+
+        A line that already names one of the model's classes is that class,
+        which is what keeps Perch's underscored sound events ('Acoustic_guitar')
+        whole. Anything else came from a BirdNET species list, which spells one
+        entry 'Scientific_Common', and loses its common-name half. That is also
+        the right reading for a typo.
+
+        One rule for every engine rather than one per engine: a line without an
+        underscore splits to itself, so the two branches can only disagree
+        about an underscored line, which is exactly what the axis settles.
+        """
+        return line if line in self._known_output_species() else line.split("_", 1)[0].strip()
 
     @abstractmethod
     def _load_model(self) -> Any:

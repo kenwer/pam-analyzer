@@ -118,6 +118,16 @@ def _available_locales(version: str) -> tuple[str, ...]:
     return tuple(sorted(_label_base(version).AVAILABLE_LANGUAGES))
 
 
+@cache
+def _known_species(version: str) -> frozenset[str]:
+    """One version's full species axis, built once per process.
+
+    The label map below is already cached, but building a frozenset over its
+    keys is not, and the analysis row loop asks per dropped detection.
+    """
+    return frozenset(_locale_label_map(version, "en_us"))
+
+
 @lru_cache(maxsize=16)
 def _locale_label_map(version: str, lang: str) -> dict[str, str]:
     lang = normalize_lang_code(lang)
@@ -185,7 +195,7 @@ class TaxonomyServices:
         set. en_us is present in both versions' locale sets, so this never
         degrades to an empty set the way an arbitrary locale could.
         """
-        return frozenset(self.locale_label_map("en_us"))
+        return _known_species(self.version)
 
     def locale_label_map(self, lang: str) -> dict[str, str]:
         """{scientific_name: localized_common_name} for one language.

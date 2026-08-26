@@ -5,13 +5,13 @@ pasted back into an input species list, otherwise the documented round-
 trip would break silently.
 """
 
-from pam_analyzer.domain.species_filter import parse_species_lines
+from pam_analyzer.domain.species_filter import species_list_lines
 from pam_analyzer.infrastructure._analysis_helpers import _format_species_lines
 
 
 def test_parse_strips_hash_comments() -> None:
     text = "Parus major  # must-have\nCorvus corone\n# whole-line comment\n"
-    assert parse_species_lines(text) == frozenset({"Parus major", "Corvus corone"})
+    assert species_list_lines(text) == frozenset({"Parus major", "Corvus corone"})
 
 
 def test_format_tags_must_haves_only() -> None:
@@ -29,4 +29,18 @@ def test_format_then_parse_round_trips() -> None:
     species = frozenset({"Parus major", "Corvus corone", "Erithacus rubecula"})
     must_haves = frozenset({"Parus major"})
     formatted = _format_species_lines(species, must_haves)
-    assert parse_species_lines(formatted) == species
+    assert species_list_lines(formatted) == species
+
+
+def test_lines_come_back_verbatim() -> None:
+    """The splitter strips comments and blanks and nothing else.
+
+    A line carrying an underscore is either one of BirdNET's
+    'Scientific_Common' entries or one whole Perch sound-event label, and only
+    the running engine's list format settles which. That decision belongs to
+    the runner, so a line must reach it intact.
+    """
+    text = "Turdus merula_Eurasian Blackbird\n\n  Acoustic_guitar  # keep\n"
+    assert species_list_lines(text) == frozenset(
+        {"Turdus merula_Eurasian Blackbird", "Acoustic_guitar"}
+    )

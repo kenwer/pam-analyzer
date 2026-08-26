@@ -115,6 +115,16 @@ def labels():  # noqa: ANN201
     return names
 
 
+@cache
+def label_set() -> frozenset[str]:
+    """Immutable set of species label names for membership tests.
+
+    A Perch run asks this both to classify a filter drop and to tell one of
+    the underscored sound-event classes apart from a BirdNET list entry.
+    """
+    return frozenset(labels())
+
+
 def model_path() -> Path:
     """Where the fetched weights live.
 

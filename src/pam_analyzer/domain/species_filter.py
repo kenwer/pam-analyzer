@@ -9,7 +9,9 @@ the analysis runner filters detections against.
 Resolution needs a region_species lookup: given lat, lon, and a birdnet week,
 which species occur there. That lookup reaches the birdnet lib, so it is passed
 in as a plain callable rather than imported here, keeping this module Qt-free
-and infrastructure-free.
+and infrastructure-free. Reading a user's list lines into names arrives the
+same way, for the same reason: this module owns the file format, not what a
+name on the running model is.
 """
 
 from __future__ import annotations
@@ -26,29 +28,28 @@ from .values import LatLon
 RegionSpecies = Callable[[float, float, int], frozenset[str]]
 """Given (latitude, longitude, birdnet week), the scientific names that occur there."""
 
-ExpandSynonyms = Callable[[frozenset[str]], frozenset[str]]
-"""Expand a set of scientific names to include their cross-taxonomy equivalents."""
+ResolveNames = Callable[[frozenset[str]], frozenset[str]]
+"""Turn a user's species-list lines into names to match model output against.
+
+A callable because reading a line depends on the running engine's list format,
+which lives in infrastructure: 'Turdus merula_Blackbird' is one BirdNET entry
+with a common name attached, while 'Acoustic_guitar' is one whole Perch label.
+Expanding a name across the two BirdNET taxonomies happens on the same side,
+for the same reason.
+"""
 
 
-def _identity_synonyms(names: frozenset[str]) -> frozenset[str]:
-    return names
+def species_list_lines(text: str) -> frozenset[str]:
+    """Strip comments and blank lines from a user-supplied species blob.
 
-
-def parse_species_lines(text: str) -> frozenset[str]:
-    """Parse a user-supplied species blob into a set of scientific names.
-
-    Accepts plain Latin names or 'Scientific_Common' entries copied from a
-    BirdNET-style species list, so users can paste either format without
-    converting. Everything after a '#' on a line is treated as a comment, so
-    users can annotate their lists or paste back lines a runner emitted with
-    '  # must-have' markers.
+    Everything after a '#' on a line is treated as a comment.
+    Reading a line into a name is ResolveNames' job.
     """
     out: set[str] = set()
     for raw in text.splitlines():
         line = raw.split("#", 1)[0].strip()
-        if not line:
-            continue
-        out.add(line.split("_", 1)[0].strip())
+        if line:
+            out.add(line)
     return frozenset(out)
 
 
@@ -113,7 +114,7 @@ class SpeciesFilter:
         self,
         wav_files: list[Path],
         region_species: RegionSpecies,
-        expand_synonyms: ExpandSynonyms = _identity_synonyms,
+        resolve_names: ResolveNames,
     ) -> ResolvedSpeciesFilter:
         """Compute the allow-list this filter applies to a run's audio files.
 
@@ -126,18 +127,18 @@ class SpeciesFilter:
         The per-week sets are computed eagerly here so a geo download happens
         during the runner's 'preparing' phase, not mid-inference.
 
-        expand_synonyms bridges the two model taxonomies for the user-authored
-        names only (the LIST text and the must-have text): each name is expanded
-        to include its cross-taxonomy equivalent, so a bird typed in either
-        spelling matches whichever model runs. The region_species output is left
-        as-is, so LOCATION mode's regional list stays on BirdNET's axis.
+        The user-authored lines (the LIST text and the must-have text) go
+        through resolve_names, which reads each one as a name and adds the
+        spellings of the other taxonomy, so a bird typed under either matches
+        whichever model runs. The region_species output does not, so LOCATION
+        mode's regional list stays on BirdNET's axis.
         """
         if self.mode == FilterMode.LIST and self.list_text:
-            fixed = expand_synonyms(parse_species_lines(self.list_text))
+            fixed = resolve_names(species_list_lines(self.list_text))
             return ResolvedSpeciesFilter(None, fixed, {}, frozenset())
         if self.mode == FilterMode.LOCATION and self.location is not None:
             lat, lon = self.location.latitude, self.location.longitude
-            must_haves = expand_synonyms(parse_species_lines(self.must_have_text))
+            must_haves = resolve_names(species_list_lines(self.must_have_text))
             weeks_present: set[int] = set()
             for f in wav_files:
                 week = week_from_path(f)

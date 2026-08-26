@@ -20,7 +20,13 @@ Perch labels its classes with bare names, where BirdNET uses
 'Scientific_Common'. Its label set also reaches past birds into insects,
 amphibians and FSD50k sound events, some of which carry underscores of their
 own. A row parser that split on the first underscore, as the BirdNET runners
-must, would silently truncate those. Nothing is split here.
+must, would silently truncate those, so model output is never split here.
+
+A line of a user's species list is a different matter, because it may have
+been written for either engine. The base class reads one against the axis
+below: a line that already names a Perch class stays whole, and anything else
+is read the BirdNET way, so a hand-written list survives a switch to this
+engine.
 
 Perch's species axis converges with BirdNET v3.0's: 10916 of v3.0's 11560
 classes are spelled identically in Perch's 14795. That is why this runner can
@@ -34,6 +40,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
+from collections.abc import Set as AbstractSet
 from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Any, ClassVar
@@ -109,6 +116,17 @@ class PerchRunner(BaseAnalysisRunner):
     model_key: ClassVar[str] = MODEL_KEY
     log_prefix: ClassVar[str] = "perch"
     taxonomy = TAXONOMY_V3_0
+
+    def _known_output_species(self) -> AbstractSet[str]:
+        """Perch's own classes.
+
+        Thousands of them are insects, amphibians, mammals and FSD50k sound
+        events that BirdNET-3.0, bound above as `taxonomy`, has no name for.
+        """
+        # lazy load to prevent perch_onnx to pull in the birdnet lib at app startup via _load_model
+        from .perch_onnx import label_set
+
+        return label_set()
 
     def _load_model(self) -> Any:
         """Load Perch v2 on onnxruntime.

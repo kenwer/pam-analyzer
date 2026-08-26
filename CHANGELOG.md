@@ -5,6 +5,9 @@
 - BirdNET-3.0-preview3.1 model.
 - Detections with a non-finite confidence are dropped and logged instead of aborting the campaign.
 
+### Fixed
+- Species lists no longer truncate names that contain an underscore, so Perch's sound-event classes such as `Acoustic_guitar` work as list or must-have entries.
+
 ### Changed
 - The project Species taxonomy setting now chooses between BirdNET-2.4's and v3.0's axis (instead of BirdNET-2.4 and Perch-3.0).
 - Perch-2.0 and BirdNET v2.4 now run on ONNX Runtime.
