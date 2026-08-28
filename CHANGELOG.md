@@ -28,6 +28,7 @@
 - [Dev] Replace `taxonomy_crosswalk` with the `species_names` module. Its `canonical` function maps any model label to the one name this app knows it by.
 - [Dev] Drop the `[tool.uv]` environment pins that existed to route around TensorFlow wheels.
 - [Dev] The CI model cache key includes `scripts/build.py`, `scripts/convert_birdnet_2_4_onnx.py` and `scripts/fetch_perch_onnx.py`, so changing the bundled model set, how v2.4 is converted, or the pinned Perch export invalidates it.
+- [Dev] Upgrade dependencies.
 
 ## [0.6.0] - 2026-08-04
 ### Added
