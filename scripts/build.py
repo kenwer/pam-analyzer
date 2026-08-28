@@ -77,7 +77,6 @@ MODULES: tuple[str, ...] = (
 # package-relative lookup at runtime, which resolves the same way in
 # a compiled build as in a source run.
 DATA: tuple[tuple[Path, str], ...] = (
-    (ROOT_DIR / 'CHANGELOG.md', 'CHANGELOG.md'),
     (
         ROOT_DIR / 'src' / 'pam_analyzer' / 'widgets' / 'map_picker.qml',
         'pam_analyzer/widgets/map_picker.qml',
