@@ -1,0 +1,9 @@
+# Keeps hashFiles() agreeing across runners via ensuring consistent line
+# ending handling across platforms. It prevents Git for Windows from
+# checking out files with CRLF.
+* text=auto eol=lf
+
+# Verbatim copy of the labels.csv in Google's Kaggle release, CRLF included.
+# See infrastructure/perch_onnx.py. The reader strips each line, so the endings
+# do not matter to parsing, only to keeping the file byte-identical upstream.
+src/pam_analyzer/infrastructure/data/perch_v2_labels.csv -text
