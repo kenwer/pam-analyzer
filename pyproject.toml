@@ -30,6 +30,11 @@ dev = [
     "py-spy>=0.3",
 ]
 
+# Only scripts/build.py needs these, so they stay out of the default groups a plain `uv sync` installs.
+build = [
+    "nuitka>=4.2", # need at least 4.2 for Python 3.14
+]
+
 [tool.uv]
 # birdnet depends on ai-edge-litert to run TFLite weights but this app runs all 
 # models on ONNX Runtime, so nothing in this app reaches that interpreter.
@@ -85,6 +90,8 @@ test-slow = { cmd = "pytest -m slow", deps = ["compile-ui", "compile-qrc"], help
 lint = "ruff check src tests"
 fmt = "ruff format src tests"
 install-hooks = { cmd = "git config core.hooksPath .githooks", help = "Point git at the repo's tracked hooks (pre-push runs test-fast)" }
+build = { cmd = "uv run --script scripts/build.py", help = "Compile a standalone distributable for the current platform" }
+prewarm = { cmd = "uv run --script scripts/build.py --prewarm-only", help = "Download every bundled model into dist/.birdnet-models, then exit" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

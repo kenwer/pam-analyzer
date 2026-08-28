@@ -59,7 +59,7 @@ Note: On any supported OS you can also easily run PAM Analyzer from source using
 
 
 ## Usage
-Download and execute the binary for your platform from the [Download](#download) section.
+Download the archive for your platform from the [Download](#download) section and unpack it.
 
 Upon first launch, use `New Project` and pick (or create) the folder that will hold your data such as recordings and detection CSVs. The app marks it as a project by writing a `pam-analyzer.toml` settings file into it. Then create at least one campaign in the `Campaigns` panel (audio import from SD cards is also handled there), run species detection in the `BirdNET` panel, and review detections in the `Examine` panel. More details are in the workflow section below.
 

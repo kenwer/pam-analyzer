@@ -2,7 +2,7 @@ import logging
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, Qt, QThread, QUrl
+from PySide6.QtCore import Qt, QThread, QUrl
 from PySide6.QtGui import QAction, QCloseEvent, QColor, QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
@@ -106,7 +106,6 @@ class MainWindow(QMainWindow):
         self._rebuild_recent_menu()
         self.setWindowTitle(f"PAM Analyzer {__version__}")
         self._show_welcome()
-        self._splash_closed = False  # track whether we've already closed the splash
 
     def _mount_tab(self, placeholder: QWidget, panel: QWidget, label: str) -> None:
         idx = self.ui.tab_widget.indexOf(placeholder)
@@ -555,21 +554,3 @@ class MainWindow(QMainWindow):
             QApplication.restoreOverrideCursor()
             self.ui.status_bar.clearMessage()
 
-    # splash screen
-
-    def showEvent(self, event: QEvent) -> None:  # noqa: N802  Qt API
-        """Close the PyInstaller splash screen once the main window is shown."""
-        super().showEvent(event)
-        if not self._splash_closed:
-            self._splash_closed = True
-            self._close_splash()
-
-    @staticmethod
-    def _close_splash() -> None:
-        """Close the PyInstaller splash screen if it exists."""
-        try:
-            import pyi_splash  # type: ignore[import]  # only exists in PyInstaller builds
-
-            pyi_splash.close()
-        except ImportError:
-            pass

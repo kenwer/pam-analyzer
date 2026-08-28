@@ -1,27 +1,27 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.14,<3.15"
-# dependencies = ["packaging"]
+# dependencies = []
 # ///
-"""Build PAM Analyzer distributable using PyInstaller.
+"""Build PAM Analyzer distributable using Nuitka.
 
-Creates an isolated venv, installs the project and PyInstaller into it,
+Creates an isolated venv, installs the project and Nuitka into it,
 pre-downloads every model the app needs at runtime into a build-local
-cache directory, then runs PyInstaller with that cache bundled into the
-binary.
+cache directory, then compiles the app with that cache bundled next to
+the binary.
 
 One environment variable controls where the model files land during the
 download phase:
 
 - BIRDNET_APP_DATA -> acoustic + geo weights for both shipped engines (both
   on ONNX), plus the per-locale label files. Honored by the birdnet>=1.1
-  library. v3.0 downloads a vendor build; v2.4 has no upstream ONNX export
+  library. v3.0 downloads a vendor build. v2.4 has no upstream ONNX export
   and is converted here by convert_birdnet_2_4_onnx.py.
 
 That directory sits inside the MODEL_CACHE root and ships as a single
---add-data entry. At runtime app/__main__.py points the same env var at the
-bundled location inside _MEIPASS, so the frozen app never touches the user's
-home directory or the network for model loading.
+--include-data-dir entry. At runtime app/__main__.py points the same env var
+at the bundled location next to the binary, so the compiled app never touches
+the user's home directory or the network for model loading.
 
 Usage:
     uv run --script scripts/build.py
@@ -30,6 +30,7 @@ Usage:
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -37,13 +38,15 @@ import textwrap
 import tomllib
 from pathlib import Path
 
-from packaging.requirements import Requirement
-
 PACKAGING_DIR = Path(__file__).parent
 ROOT_DIR = PACKAGING_DIR.parent
 
 APP_ICON_PNG = ROOT_DIR / 'assets' / 'icon.png'
 APP_NAME = 'pam-analyzer'
+# Matches the reverse-DNS style already used for --macos-signed-app-name.
+# On Windows/Linux this also names a path component of the onefile cache
+# directory (--onefile-cache-mode=cached expands {COMPANY}/{PRODUCT}/{VERSION}).
+COMPANY_NAME = 'de.ken'
 DIST_DIR = ROOT_DIR / 'dist'
 BUILD_DIR = DIST_DIR / 'build' / APP_NAME
 VENV_DIR = DIST_DIR / 'venv'
@@ -53,45 +56,51 @@ VENV_DIR = DIST_DIR / 'venv'
 MODEL_CACHE = DIST_DIR / '.birdnet-models'
 BIRDNET_APP_DATA_CACHE = MODEL_CACHE / 'birdnet-app-data'
 
-# Modules to collect via --collect-all
-# QtQuick, QtQuick.Controls, QtLocation, QtPositioning are required by the MapPickerWidget
+# Modules to pull in explicitly via --include-module, so the Qt libraries
+# backing map_picker.qml ship even though no Python code imports them.
+# These are the Python modules behind the QML file's own import lines
+# (QtQuick, QtQuick.Controls, QtLocation, QtPositioning). The QML namespace
+# names are not importable module names, and Nuitka rejects them.
 MODULES: tuple[str, ...] = (
+    'PySide6.QtQml',
     'PySide6.QtQuick',
-    'PySide6.QtQuick.Controls',
-    'PySide6.QtQuick.Window',
+    'PySide6.QtQuickControls2',
+    'PySide6.QtQuickWidgets',
     'PySide6.QtLocation',
     'PySide6.QtPositioning',
 )
 
-# Extra data files to bundle via --add-data.
-# Each entry is (source, dest) where
-#  *source* is an absolute Path and
-#  *dest* is the folder inside the frozen bundle (or "." for the top-level _MEIPASS).
+# Extra data files to bundle via --include-data-files.
+# Each entry is (source, dest) where *source* is an absolute Path and *dest*
+# is the file's path inside the output tree, relative to the binary.
+# The files use the real package paths because each is read through a
+# package-relative lookup at runtime, which resolves the same way in
+# a compiled build as in a source run.
 DATA: tuple[tuple[Path, str], ...] = (
-    (ROOT_DIR / 'CHANGELOG.md', '.'),
-    (ROOT_DIR / 'src' / 'pam_analyzer' / 'widgets' / 'map_picker.qml', 'widgets'),
-    # species_names.py reads this via importlib.resources.files(__package__),
-    # so it must land at its real package path, not a bespoke top-level folder.
+    (ROOT_DIR / 'CHANGELOG.md', 'CHANGELOG.md'),
+    (
+        ROOT_DIR / 'src' / 'pam_analyzer' / 'widgets' / 'map_picker.qml',
+        'pam_analyzer/widgets/map_picker.qml',
+    ),
+    # species_names.py reads this via importlib.resources.files(__package__).
     (
         ROOT_DIR / 'src' / 'pam_analyzer' / 'infrastructure' / 'data' / 'species_aliases.tsv',
-        'pam_analyzer/infrastructure/data',
+        'pam_analyzer/infrastructure/data/species_aliases.tsv',
     ),
     # perch_onnx.labels() reads this the same way. REQUIRED_MODEL_FILES checks
     # the model cache, a different tree, so nothing else catches its absence.
     (
         ROOT_DIR / 'src' / 'pam_analyzer' / 'infrastructure' / 'data' / 'perch_v2_labels.csv',
-        'pam_analyzer/infrastructure/data',
+        'pam_analyzer/infrastructure/data/perch_v2_labels.csv',
     ),
 )
 
 
-def _load_dependencies() -> list[str]:
-    """Load dependency list from pyproject.toml and return importable module names."""
-    pyproject_path = ROOT_DIR / "pyproject.toml"
-    with open(pyproject_path, "rb") as f:
+def _app_version() -> str:
+    """Read the project version from pyproject.toml, for the bundle metadata."""
+    with open(ROOT_DIR / "pyproject.toml", "rb") as f:
         data = tomllib.load(f)
-    raw_deps = data.get("project", {}).get("dependencies", [])
-    return [Requirement(d).name.replace("-", "_") for d in raw_deps]
+    return data["project"]["version"]
 
 
 # Single prewarm script: load every model the app reaches for, so the
@@ -234,51 +243,31 @@ REQUIRED_MODEL_FILES: tuple[str, ...] = (
 )
 
 
-def _verify_bundle(is_onefile: bool) -> None:
-    """Fail the build if the model tree did not make it into the output.
+def _verify_bundle(app_root: Path) -> None:
+    """Fail the build if the bundled data did not make it into the output.
 
-    A frozen app whose models are missing still starts and still runs: it
-    just re-downloads ~660 MB on the user's first Analyze click, with the
-    lib's progress bar going to a stderr that a windowed build sends to
-    devnull. That failure has shipped before, from a malformed --add-data
-    separator, and it is invisible from the build log. So it is checked here.
+    A compiled app whose models are missing still starts and still runs: it
+    just re-downloads model files on the user's first Analyze click, with the
+    lib's progress bar going to a stderr that a GUI user won't see. So it is
+    checked here.
 
-    The two output shapes need different checks. An onedir build (the macOS
-    .app) keeps the tree on disk, so the files are located and their sizes
-    compared exactly. A onefile build seals its payload inside the
-    executable, where the files cannot be stat'd without unpacking, so the
-    binary is instead required to be larger than the models it should carry.
-    The threshold is deliberately loose, since it only has to separate a
-    bundle holding the weights from one that dropped them.
+    app_root is a directory tree with every file present: the macOS .app, or,
+    on Windows/Linux, the standalone .dist tree Nuitka builds on its way to
+    the single-file executable. The onefile binary itself seals its payload
+    and cannot be stat'd, so --remove-output is skipped on those platforms
+    and the caller checks the .dist tree before deleting it.
     """
     expected = {
         rel: (BIRDNET_APP_DATA_CACHE / rel).stat().st_size for rel in REQUIRED_MODEL_FILES
     }
     payload = sum(expected.values())
 
-    if is_onefile:
-        binaries = [
-            f for f in DIST_DIR.iterdir() if f.is_file() and f.stem == APP_NAME
-        ]
-        if not binaries:
-            raise SystemExit(f'No {APP_NAME} binary found in {DIST_DIR}')
-        size = max(f.stat().st_size for f in binaries)
-        floor = int(payload * 0.6)
-        if size < floor:
-            raise SystemExit(
-                f'The built binary is {size / 1e6:.0f} MB, below the {floor / 1e6:.0f} MB '
-                f'floor for a bundle carrying {payload / 1e6:.0f} MB of models. '
-                'The model tree is probably missing from --add-data.'
-            )
-        print(f'  Verified bundle: {size / 1e6:.0f} MB, carries the model payload')
-        return
-
     for rel, size in expected.items():
-        found = list(DIST_DIR.glob(f'**/birdnet-models/birdnet-app-data/{rel}'))
+        found = list(app_root.glob(f'**/birdnet-models/birdnet-app-data/{rel}'))
         if not found:
             raise SystemExit(
                 f'{rel} is missing from the bundle. The model tree did not survive '
-                'PyInstaller; check the --add-data entry for MODEL_CACHE.'
+                'Nuitka. Check the --include-data-dir entry for MODEL_CACHE.'
             )
         actual = found[0].stat().st_size
         if actual != size:
@@ -286,7 +275,14 @@ def _verify_bundle(is_onefile: bool) -> None:
                 f'{rel} is {actual} bytes in the bundle, expected {size}. '
                 'The bundled copy is truncated or stale.'
             )
-    print(f'  Verified bundle: {payload / 1e6:.0f} MB of models present')
+
+    for _src, dest in DATA:
+        if not list(app_root.glob(f'**/{dest}')):
+            raise SystemExit(
+                f'{dest} is missing from the bundle. Check its --include-data-files entry.'
+            )
+
+    print(f'  Verified bundle: {payload / 1e6:.0f} MB of models, {len(DATA)} data files')
 
 
 def main() -> None:
@@ -331,23 +327,29 @@ def main() -> None:
     DIST_DIR.mkdir(parents=True, exist_ok=True)
     run(['uv', 'venv', '--python', '3.14', '--clear', VENV_DIR])
 
-    print('  Syncing build venv (project + dev deps)')
-    # uv sync installs the project + all dependency groups.
-    # --no-install-project skips editable install so we can compile .ui/.qrc
-    # before the package is installed (compiled files are picked up by pip install).
+    print('  Syncing build venv (runtime deps + nuitka)')
+    # The app is never installed. Nuitka compiles it straight from src/, which
+    # is also the only way the gitignored ui_*.py and *_rc.py modules reach the
+    # build: a wheel would omit them, since hatchling selects files via git.
+    # nuitka comes from the build group so uv.lock pins it.
+    # --no-default-groups drops dev, which the build does not use: the compile
+    # scripts call pyside6-uic and pyside6-rcc, both shipped with PySide6.
     run(
-        ['uv', 'sync', '--python', str(python), '--group', 'dev', '--no-install-project'],
+        [
+            'uv', 'sync',
+            '--python', str(python),
+            '--no-install-project',
+            '--no-default-groups',
+            '--group', 'build',
+        ],
         env=build_env,
     )
 
-    print('  Compiling Qt resources and UI files (before install)')
-    # Compile .ui -> ui_*.py and .qrc -> *_rc.py before installing the package
-    # so that `uv pip install` picks them up as part of the source tree.
+    print('  Compiling Qt resources and UI files')
+    # .ui -> ui_*.py and .qrc -> *_rc.py must exist in src/ before Nuitka reads
+    # that tree, since it compiles the sources rather than an installed copy.
     run(['uv', 'run', '--no-project', 'python', str(PACKAGING_DIR / 'compile_ui.py')], env=build_env)
     run(['uv', 'run', '--no-project', 'python', str(PACKAGING_DIR / 'compile_qrc.py')], env=build_env)
-
-    print('  Installing project + pyinstaller')
-    run(['uv', 'pip', 'install', '--quiet', ROOT_DIR, 'pyinstaller', '--python', python], env=build_env)
 
     download_env = {
         **build_env,
@@ -358,6 +360,7 @@ def main() -> None:
     print('  Generating app icon')
     BUILD_DIR.mkdir(parents=True, exist_ok=True)
     src_png = APP_ICON_PNG
+    icon = src_png  # Nuitka takes a PNG directly on Linux
     if is_mac:
         iconset_sizes = [16, 32, 128, 256, 512]
         with tempfile.TemporaryDirectory() as tmp:
@@ -368,7 +371,7 @@ def main() -> None:
                 run(['sips', '-z', str(s * 2), str(s * 2), src_png, '--out', str(iconset / f'icon_{s}x{s}@2x.png')])
             icon = BUILD_DIR / 'app.icns'
             run(['iconutil', '-c', 'icns', '-o', icon, iconset])
-    else:
+    elif is_win:
         icon = BUILD_DIR / 'app.ico'
         run(
             [
@@ -394,85 +397,124 @@ def main() -> None:
         print('  Generating splash screen')
         run(['uv', 'run', '--script', PACKAGING_DIR / 'make_splash.py', splash_png])
 
-    print('  Running PyInstaller')
+    print('  Running Nuitka')
+    # Remove any output from previous builds
+    for pattern in ('*.dist', '*.app', '*.build'):
+        for stale in BUILD_DIR.glob(pattern):
+            shutil.rmtree(stale)
+    binary_name = f'{APP_NAME}.exe' if is_win else APP_NAME
     cmd = [
         'uv',
         'run',
         '--no-project',
-        'pyinstaller',
-        '--distpath',
-        DIST_DIR,
-        '--workpath',
-        BUILD_DIR,
-        '--specpath',
-        BUILD_DIR,
-        '--clean',
-        '--noconfirm',
-        '--name',
-        APP_NAME,
-        '--icon',
-        icon,
-        # Include any non-Python data the birdnet package itself ships.
-        # Model weights and labels live outside the package under
-        # BIRDNET_APP_DATA; that tree is added via --add-data below.
-        '--collect-data',
-        'birdnet',
-        # birdnet imports ai_edge_litert inside load_lib_litert_model, and
-        # PyInstaller follows function-level imports, so it would bundle the
-        # interpreter for a backend this app never selects. The [tool.uv]
-        # override in pyproject.toml already keeps it out of the venv. This
-        # states the same intent at the bundle, so removing the override
-        # cannot silently add 32 MB back.
-        '--exclude-module',
-        'ai_edge_litert',
+        'python',
+        '-m',
+        'nuitka',
+        '--standalone',
+        '--enable-plugin=pyside6',
+        '--include-qt-plugins=platforminputcontexts,geoservices,multimedia,position,qml',
+        '--noinclude-qt-translations',
+        '--noinclude-dlls=*.cpp.o',
+        '--noinclude-dlls=*.qsb',
+        # birdnet imports ai_edge_litert inside load_lib_litert_model to run
+        # TFLite weights, a backend this app never selects. The [tool.uv]
+        # override in pyproject.toml already keeps it out of the venv. Saying
+        # so here too means dropping that override cannot silently add 32 MB.
+        '--nofollow-import-to=ai_edge_litert',
+        # birdnet resolves backends by name at runtime, so following its
+        # imports statically does not reach every module it loads.
+        '--include-package=birdnet',
+        '--include-package-data=birdnet',
+        '--assume-yes-for-downloads',
+        # Compiling the package directory rather than __main__.py keeps the
+        # package context, so the relative imports inside the package resolve
+        # as they do under `python -m pam_analyzer`.
+        '--python-flag=-m',
+        f'--output-dir={BUILD_DIR}',
+        f'--output-filename={binary_name}',
     ]
-    # Inject hidden imports from pyproject.toml dependencies:
-    # --hidden-import <module> --hidden-import <module> ...
-    for mod in _load_dependencies():
-        cmd += ['--hidden-import', mod]
-    # Collect modules (PySide6 QML modules, etc.) so QQuickWidget can resolve
-    # the QML imports used by MapPickerWidget.
-    for module in MODULES:
-        cmd += ['--collect-all', module]
-    # Bundle the model cache as a single tree at <bundle>/birdnet-models.
-    # app/__main__.py reads sys._MEIPASS at startup and points
-    # BIRDNET_APP_DATA at a subdir of that path.
-    # PyInstaller splits --add-data on os.pathsep, which is ';' on Windows
-    # and ':' on POSIX. A hardcoded ':' is malformed on Windows (the source
-    # path also starts with a drive-letter colon), so the tree never lands
-    # in the bundle and the frozen app re-downloads every model at runtime.
-    cmd += ['--add-data', f'{MODEL_CACHE}{os.pathsep}birdnet-models']
-    # Bundle extra data files (CHANGELOG, QML, etc.).
-    for src, dest in DATA:
-        cmd += ['--add-data', f'{src}{os.pathsep}{dest}']
+    cmd += [f'--include-module={module}' for module in MODULES]
+    # The model tree lands next to the binary, where app/__main__.py points
+    # BIRDNET_APP_DATA at startup.
+    cmd.append(f'--include-data-dir={MODEL_CACHE}=birdnet-models')
+    cmd += [f'--include-data-files={src}={dest}' for src, dest in DATA]
     if is_mac:
-        cmd += ['--windowed']  # creates .app bundle, no Terminal window
-    else:
-        cmd += ['--onefile']  # single .exe on Windows / binary on Linux
-    if is_win:
+        # Standalone .app, not onefile
         cmd += [
-            '--splash',
-            splash_png,
-        ]  # not supported on macOS/Linux: PyInstaller's splash uses Tcl/Tk internally, which forbids secondary GUI threads on macOS
-    if is_win:
-        # Build as a GUI subsystem executable so Windows never allocates a
-        # console window on double-click launch (avoids a console flash before
-        # the runtime hook can hide it).
-        cmd += ['--noconsole']
-        # Runtime hook runs before any app code and handles two things:
-        # - Prepends _MEIPASS to PATH so TensorFlow's self_check.py can find
-        #   its DLLs via ctypes.WinDLL() (which searches %PATH%, not sys.path).
-        # - Reattaches stdout/stderr to the parent console via AttachConsole(-1)
-        #   so output is visible when the app is launched from a terminal
-        #   (--noconsole detaches streams for double-click launches).
-        cmd += ['--runtime-hook', PACKAGING_DIR / 'rthook_win_dll_path.py']
-    cmd.append(ROOT_DIR / 'src' / 'pam_analyzer' / '__main__.py')
+            '--remove-output',
+            '--macos-create-app-bundle',
+            f'--macos-app-icon={icon}',
+            f'--macos-app-name={APP_NAME}',
+            f'--macos-app-version={_app_version()}',
+            f'--macos-signed-app-name={COMPANY_NAME}.{APP_NAME}',
+        ]
+    else:
+        # onefile-cache-mode=cached unpacks the app into
+        # {CACHE_DIR}/{COMPANY}/{PRODUCT}/{VERSION} and reuses it on later
+        # launches.
+        # --company-name/--product-name/--product-version are what fill in
+        # those placeholders, so the cache path only depends on the version.
+        # --remove-output is skipped here: the onefile binary seals its
+        # payload, so _verify_bundle checks the intermediate .dist tree
+        # before main() deletes it.
+        cmd += [
+            '--onefile',
+            '--onefile-cache-mode=cached',
+            f'--company-name={COMPANY_NAME}',
+            f'--product-name={APP_NAME}',
+            f'--product-version={_app_version()}',
+        ]
+        if is_win:
+            cmd += [
+                f'--windows-icon-from-ico={icon}',
+                '--windows-console-mode=attach',  # Reuses parent console on terminal launch, no console on double-click
+                '--msvc=latest',
+                f'--onefile-windows-splash-screen-image={splash_png}',
+            ]
+        else:
+            cmd.append(f'--linux-icon={icon}')
+    cmd.append(ROOT_DIR / 'src' / 'pam_analyzer')
     run(cmd, env=build_env)
 
-    print('  Verifying bundled models')
-    _verify_bundle(is_onefile=not is_mac)
+    print('  Moving output into place')
+    if is_mac:
+        # Nuitka names the tree after the compiled package, so it arrives as
+        # pam_analyzer.app. Globbing rather than hardcoding that name keeps
+        # the rename working if Nuitka changes how it derives it.
+        produced = list(BUILD_DIR.glob('*.app'))
+        if len(produced) != 1:
+            raise SystemExit(f'Expected exactly one *.app in {BUILD_DIR}, found {produced}')
+        final = DIST_DIR / f'{APP_NAME}.app'
+        if final.exists():
+            shutil.rmtree(final)
+        shutil.move(str(produced[0]), str(final))
 
-    print(f'\nDone. Binary is in {DIST_DIR}/')
+        print('  Verifying bundled models')
+        _verify_bundle(final)
+    else:
+        # --remove-output was skipped for onefile, so the standalone .dist
+        # tree Nuitka built on its way to the single-file binary is still
+        # here. Verify the exact per-file bundle against it, the same check
+        # macOS gets, then discard it: only the sealed onefile binary ships.
+        dist_trees = list(BUILD_DIR.glob('*.dist'))
+        if len(dist_trees) != 1:
+            raise SystemExit(f'Expected exactly one *.dist in {BUILD_DIR}, found {dist_trees}')
+        print('  Verifying bundled models')
+        _verify_bundle(dist_trees[0])
+        shutil.rmtree(dist_trees[0])
+        build_trees = list(BUILD_DIR.glob('*.build'))
+        for stale in build_trees:
+            shutil.rmtree(stale)
+
+        produced_file = BUILD_DIR / binary_name
+        if not produced_file.is_file():
+            raise SystemExit(f'Expected {binary_name} in {BUILD_DIR}, not found')
+        final = DIST_DIR / binary_name
+        if final.exists():
+            final.unlink()
+        shutil.move(str(produced_file), str(final))
+
+    print(f'\nDone. Output is in {final}')
 
 
 if __name__ == '__main__':

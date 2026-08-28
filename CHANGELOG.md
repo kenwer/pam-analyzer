@@ -16,6 +16,7 @@
 - The project Species taxonomy setting. Detections are always written under BirdNET-3.0 scientific names.
 
 ### Changed
+- [Dev] The distributables are built with Nuitka.
 - Perch-2.0 and BirdNET v2.4 now run on ONNX Runtime.
 - The top_k is now set to 50 for all model runners to lower RAM usage. Results for a large campaign now take about 100 MB of RAM during a run instead of 22 GB.
 - The Main and Extra species language settings both offer the 18 languages every shipped model can produce. A project naming any other language opens on `en_us`, and its unsupported Extra languages are dropped.

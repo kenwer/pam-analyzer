@@ -3,7 +3,7 @@
 # requires-python = ">=3.13"
 # dependencies = ["pillow"]
 # ///
-"""Generate the PyInstaller splash screen PNG for PAM Analyzer from assets/icon.svg.
+"""Generate the splash screen PNG for PAM Analyzer from assets/icon.svg.
 
 Requires Inkscape on PATH for SVG to PNG rendering.
 
@@ -89,7 +89,7 @@ draw.text(
     anchor='mm',
 )
 
-# Thin teal line at bottom (leaves room for pyi_splash text overlay)
+# Thin teal line at bottom (leaves room for splash text overlay)
 draw.rectangle([0, H - 3, W, H], fill=TEAL)
 
 OUT.parent.mkdir(parents=True, exist_ok=True)

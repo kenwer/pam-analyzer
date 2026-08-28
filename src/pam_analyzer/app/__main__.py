@@ -5,16 +5,17 @@ import logging
 import logging.handlers
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 
 def _configure_frozen_model_paths() -> None:
     """Point the birdnet lib at the bundled model cache.
 
-    PyInstaller stages our bundled birdnet-models/ tree under sys._MEIPASS at
-    runtime. BIRDNET_APP_DATA has to be set before any `import birdnet` call
-    triggers a model load, or the frozen app will try to write to the user's
-    home directory and re-download.
+    The build stages the birdnet-models/ tree next to the compiled binary.
+    BIRDNET_APP_DATA has to be set before any `import birdnet` call triggers a
+    model load, or the frozen app will try to write to the user's home
+    directory and re-download.
 
     setdefault() rather than [] = so a user can still override the variable
     from the shell for development or one-off builds.
@@ -22,9 +23,13 @@ def _configure_frozen_model_paths() -> None:
     No-op when not running frozen, so dev runs still use the per-user
     cache and stay independent of the build artifact.
     """
-    if not getattr(sys, "frozen", False):
+    # Nuitka sets neither sys.frozen nor sys._MEIPASS. It defines __compiled__
+    # in the globals of every compiled module, and sys.executable points at a
+    # python stub beside the binary whose parent holds the payload, inside a
+    # macOS .app too.
+    if "__compiled__" not in globals():
         return
-    bundled = Path(getattr(sys, "_MEIPASS", ".")) / "birdnet-models"
+    bundled = Path(sys.executable).parent / "birdnet-models"
     os.environ.setdefault("BIRDNET_APP_DATA", str(bundled / "birdnet-app-data"))
 
 
@@ -94,12 +99,25 @@ def _setup_logging(level: int) -> None:
 def main() -> int:
     level_name = os.environ.get("PAM_LOG_LEVEL", "WARNING").upper()
     _setup_logging(getattr(logging, level_name, logging.WARNING))
+    logging.getLogger(__name__).debug(
+        "BIRDNET_APP_DATA=%s", os.environ.get("BIRDNET_APP_DATA", "<unset, per-user cache>")
+    )
 
     app = QApplication(sys.argv)
     app.setApplicationName("PAM Analyzer")
     app.setOrganizationName("PAM Analyzer")
     app.setWindowIcon(QIcon(":/icons/icon.svg"))
     window = build_main_window()
+
+    # Signal the splash screen removal to nuitka
+    if "NUITKA_ONEFILE_PARENT" in os.environ:
+        splash_filename = os.path.join(
+            tempfile.gettempdir(),
+            f"onefile_{int(os.environ['NUITKA_ONEFILE_PARENT'])}_splash_feedback.tmp",
+        )
+        if os.path.exists(splash_filename):
+            os.unlink(splash_filename)
+
     window.show()
     exit_code = app.exec()
     # Destroy Qt objects while Python is fully operational. Without this,

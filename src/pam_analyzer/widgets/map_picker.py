@@ -1,4 +1,3 @@
-import sys
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, QTimer, QUrl, Signal, Slot
@@ -13,12 +12,9 @@ _DEFAULT_ZOOM = 10.0
 def _resolve_qml_path() -> Path:
     """Return the filesystem path to *map_picker.qml*.
 
-    When running from a PyInstaller one-file bundle the QML file is extracted
-    to the ``widgets/`` sub-directory inside ``sys._MEIPASS``.  When running
-    directly from source it sits next to this module.
+    The compiled build bundles the file at this package's path, so __file__
+    resolves next to it there as well as in a source run.
     """
-    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        return Path(sys._MEIPASS) / "widgets" / "map_picker.qml"
     return Path(__file__).with_name("map_picker.qml")
 
 
