@@ -31,7 +31,7 @@ class Campaign:
     location: LatLon | None = None  # required when mode == LOCATION
 
     @classmethod
-    def load(cls, name: str, folder: Path) -> "Campaign":
+    def load(cls, name: str, folder: Path) -> Campaign:
         with open(paths.campaign_toml(folder), "rb") as f:
             data = tomllib.load(f)
         mode = FilterMode(data.get("species_filter_mode", FilterMode.LOCATION.value))
@@ -44,7 +44,7 @@ class Campaign:
         return cls(name=name, folder=folder, species_filter_mode=mode, location=location)
 
     @classmethod
-    def discover(cls, project_folder: Path) -> list["Campaign"]:
+    def discover(cls, project_folder: Path) -> list[Campaign]:
         """Every campaign under a project folder, newest folder first."""
         dbg = _log.isEnabledFor(logging.DEBUG)
 
@@ -82,7 +82,7 @@ class Campaign:
         if self.folder.exists():
             shutil.rmtree(self.folder)
 
-    def rename(self, new_name: str) -> "Campaign":
+    def rename(self, new_name: str) -> Campaign:
         """Rename this campaign's folder and return the moved campaign.
 
         Returns a new instance because Campaign is frozen; the old one still

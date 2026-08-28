@@ -80,13 +80,13 @@ class DetectionSet:
     fieldnames_by_path: dict[Path, list[str]] = field(default_factory=dict)
 
     @classmethod
-    def load_for_campaign(cls, campaign_folder: Path) -> "DetectionSet":
+    def load_for_campaign(cls, campaign_folder: Path) -> DetectionSet:
         ds = cls([])
         ds._extend_from_campaign(campaign_folder)
         return ds
 
     @classmethod
-    def load_combined(cls, project_folder: Path) -> "DetectionSet":
+    def load_combined(cls, project_folder: Path) -> DetectionSet:
         """Concatenate every campaign's detections into one aggregate.
 
         Each campaign CSV carries its own annotations, so the concatenation

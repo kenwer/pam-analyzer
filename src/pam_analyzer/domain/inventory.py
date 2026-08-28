@@ -53,7 +53,7 @@ class WeekInventory:
         """True while this scope's byte total is still awaiting the size pass."""
         return self.total_bytes is None
 
-    def with_sizes(self, sizes: Mapping[Path, int]) -> "WeekInventory":
+    def with_sizes(self, sizes: Mapping[Path, int]) -> WeekInventory:
         """Return a copy with per-file sizes and the byte total filled in.
 
         A pure transform: sizes is a path-to-bytes map the caller has already
@@ -78,7 +78,7 @@ class CardInventory:
         """True while this scope's byte total is still awaiting the size pass."""
         return self.total_bytes is None
 
-    def with_sizes(self, sizes: Mapping[Path, int]) -> "CardInventory":
+    def with_sizes(self, sizes: Mapping[Path, int]) -> CardInventory:
         weeks = tuple(week.with_sizes(sizes) for week in self.weeks)
         return replace(self, weeks=weeks, total_bytes=sum(week.total_bytes for week in weeks))
 
@@ -97,7 +97,7 @@ class CampaignInventory:
         """True while this scope's byte total is still awaiting the size pass."""
         return self.total_bytes is None
 
-    def with_sizes(self, sizes: Mapping[Path, int]) -> "CampaignInventory":
+    def with_sizes(self, sizes: Mapping[Path, int]) -> CampaignInventory:
         cards = tuple(card.with_sizes(sizes) for card in self.cards)
         return replace(self, cards=cards, total_bytes=sum(card.total_bytes for card in cards))
 
@@ -125,7 +125,7 @@ class AudioInventory:
                 for week in card.weeks:
                     yield from week.files
 
-    def with_sizes(self, sizes: Mapping[Path, int]) -> "AudioInventory":
+    def with_sizes(self, sizes: Mapping[Path, int]) -> AudioInventory:
         """Return a fully sized copy: the size pass stats iter_files(), then hands
         the resulting path-to-bytes map here to fill in every total_bytes."""
         return AudioInventory(campaigns=tuple(c.with_sizes(sizes) for c in self.campaigns))

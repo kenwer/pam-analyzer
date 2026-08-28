@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.13,<3.14"
+# requires-python = ">=3.14,<3.15"
 # dependencies = ["birdnet>=1.1,<1.2", "ai-edge-litert", "numpy"]
 # ///
 """Capture BirdNET v2.4 reference output from the TFLite model on ai-edge-litert.

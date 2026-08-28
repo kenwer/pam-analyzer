@@ -21,7 +21,7 @@ class _SignalProgress:
     across to the UI thread because the worker QObject was moved there.
     """
 
-    def __init__(self, worker: "AnalysisWorker") -> None:
+    def __init__(self, worker: AnalysisWorker) -> None:
         self._worker = worker
 
     def report(self, snapshot: AnalysisProgressSnapshot) -> None:

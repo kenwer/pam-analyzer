@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.13,<3.14"
+# requires-python = ">=3.14,<3.15"
 # dependencies = ["packaging"]
 # ///
 """Build PAM Analyzer distributable using PyInstaller.
@@ -329,7 +329,7 @@ def main() -> None:
 
     print('  Creating venv')
     DIST_DIR.mkdir(parents=True, exist_ok=True)
-    run(['uv', 'venv', '--python', '3.13', '--clear', VENV_DIR])
+    run(['uv', 'venv', '--python', '3.14', '--clear', VENV_DIR])
 
     print('  Syncing build venv (project + dev deps)')
     # uv sync installs the project + all dependency groups.

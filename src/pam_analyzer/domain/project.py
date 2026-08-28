@@ -71,7 +71,7 @@ class Project:
         )
 
     @classmethod
-    def from_table(cls, folder: Path, table: dict) -> "Project":
+    def from_table(cls, folder: Path, table: dict) -> Project:
         """Build a Project from a [project] TOML table, dropping unknown keys.
 
         Shared with the legacy .pamproj migration, whose settings keys are a
@@ -93,7 +93,7 @@ class Project:
         )
 
     @classmethod
-    def load(cls, folder: Path) -> "Project":
+    def load(cls, folder: Path) -> Project:
         with open(paths.project_toml(folder), "rb") as f:
             data = tomllib.load(f)
         return cls.from_table(folder, data.get("project", {}))
@@ -114,7 +114,7 @@ class Project:
             tomli_w.dump({"project": asdict(raw)}, f)
 
     @classmethod
-    def create(cls, folder: Path) -> "Project":
+    def create(cls, folder: Path) -> Project:
         """Initialize folder as a project by writing a default pam-analyzer.toml."""
         project = cls(folder=folder)
         project.save()

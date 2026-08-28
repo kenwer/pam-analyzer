@@ -3,7 +3,7 @@ name = "pam-analyzer"
 version = "0.6.0"
 description = "Automated bird species detection from acoustic recordings."
 readme = "README.md"
-requires-python = ">=3.13,<3.14"  # onnxruntime ships cp314 wheels everywhere except Intel macOS; revisit once PySide6 follows
+requires-python = ">=3.14,<3.15"
 dependencies = [
     "PySide6>=6.11.0",
     "birdnet>=1.1,<1.2",  # Pinned as birdnet_2_4_onnx builds on lib internals that are not public API (AcousticModelV2_4.load, OnnxBackend, the backend protocols)

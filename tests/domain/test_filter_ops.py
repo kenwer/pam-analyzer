@@ -144,7 +144,8 @@ def test_parse_date_range(text, expected):
     [
         ("04:00", time(4, 0)),
         ("04:00:30", time(4, 0, 30)),
-        ("24:00", None),
+        ("24:00", time(0, 0)),
+        ("24:00:01", None),
         ("garbage", None),
     ],
 )
