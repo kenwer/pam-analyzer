@@ -205,12 +205,9 @@ class HeaderFilterRow(QObject):
         edit.setPlaceholderText("…")
         # Reserve room on the right for the funnel button.
         edit.setTextMargins(0, 0, self._button_size + _BUTTON_PAD * 2, 0)
-        edit.setStyleSheet(
-            "QLineEdit { padding: 1px 3px; "
-            "border: 1px solid #ccc; border-radius: 2px; background: white; }"
-            "QLineEdit:focus { border-color: #4a90d9; }"
-            "QLineEdit:disabled { background: #f3f3f3; color: #888; }"
-        )
+        # Geometry only. Naming a colour here would override the palette and
+        # keep the cell white under a dark theme.
+        edit.setStyleSheet("QLineEdit { padding: 1px 3px; }")
 
         button = _FunnelButton(edit)
         op = default_op(kind)

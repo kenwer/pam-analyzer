@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QItemSelectionModel, QLocale, QModelIndex, QPoint, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QColor, QKeySequence, QPainter, QShortcut
+from PySide6.QtGui import QAction, QKeySequence, QPainter, QPalette, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QMenu,
@@ -81,7 +81,7 @@ class _PlayDelegate(QStyledItemDelegate):
 
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
-        painter.setPen(QColor("#555"))
+        painter.setPen(option.palette.color(QPalette.ColorRole.PlaceholderText))
         painter.drawText(option.rect, Qt.AlignmentFlag.AlignCenter, icon)
         painter.restore()
 

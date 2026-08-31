@@ -12,12 +12,28 @@ import html
 from dataclasses import dataclass
 from datetime import datetime
 
+from PySide6.QtGui import QPalette
+from PySide6.QtWidgets import QApplication
+
 from ...domain import CampaignInventory, CardInventory, merge_date_ranges
 from .audio_inventory_tree_model import SIZE_PENDING, format_bytes
 
 _INDENT = "&nbsp;" * 4
-_ARU_COLOR = "#666"
-_MUTED_COLOR = "#888"
+
+
+def _muted() -> str:
+    """CSS colour for the secondary lines, resolved as the block is built.
+
+    Inline HTML cannot name a palette role, so the role is read here instead.
+    It carries an alpha that QColor.name() would drop, hence rgba(). Falls back
+    to a fixed grey when no application exists, which is how the formatting
+    tests import this module.
+    """
+    app = QApplication.instance()
+    if app is None:
+        return "rgba(136, 136, 136, 255)"
+    colour = app.palette().color(QPalette.ColorRole.PlaceholderText)
+    return f"rgba({colour.red()}, {colour.green()}, {colour.blue()}, {colour.alpha()})"
 
 
 @dataclass(frozen=True)
@@ -64,7 +80,7 @@ def _campaign_block(entry: CampaignOverviewEntry) -> str:
     name = f"<b>{html.escape(entry.name)}</b>"
     suffix = f" &middot; {html.escape(entry.filter_text)}" if entry.filter_text else ""
     if inv is None or inv.file_count == 0:
-        body = f"{name} &nbsp; <span style='color:{_MUTED_COLOR}'>no audio imported</span>{suffix}"
+        body = f"{name} &nbsp; <span style='color:{_muted()}'>no audio imported</span>{suffix}"
         return f"<p style='margin:0 0 6px 0'>{body}</p>"
 
     head = f"{name} &nbsp; {_stats(inv)}{suffix}"
@@ -72,7 +88,7 @@ def _campaign_block(entry: CampaignOverviewEntry) -> str:
     for card in inv.cards:
         stats = _stats(card)
         lines.append(
-            f"<span style='color:{_ARU_COLOR}'>{_INDENT}{html.escape(card.name)} &nbsp; {stats}</span>"
+            f"<span style='color:{_muted()}'>{_INDENT}{html.escape(card.name)} &nbsp; {stats}</span>"
         )
     return f"<p style='margin:0 0 6px 0'>{'<br>'.join(lines)}</p>"
 

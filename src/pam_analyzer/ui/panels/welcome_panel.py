@@ -8,7 +8,7 @@ main window owns AppSettings and the open/create handlers.
 from pathlib import Path
 
 from PySide6.QtCore import QModelIndex, QRect, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QIcon, QPainter, QPalette
+from PySide6.QtGui import QFont, QFontMetrics, QIcon, QPainter, QPalette
 from PySide6.QtWidgets import (
     QListWidgetItem,
     QStyle,
@@ -116,7 +116,7 @@ class _RecentProjectDelegate(QStyledItemDelegate):
         painter.setPen(option.palette.color(QPalette.ColorRole.Text))
         painter.drawText(name_rect, Qt.AlignmentFlag.AlignCenter, Path(path_str).stem)
         painter.setFont(option.font)
-        painter.setPen(QColor("#9ca3af"))
+        painter.setPen(option.palette.color(QPalette.ColorRole.PlaceholderText))
         painter.drawText(path_rect, Qt.AlignmentFlag.AlignCenter, paths.contract_user_path(path_str))
         painter.restore()
 

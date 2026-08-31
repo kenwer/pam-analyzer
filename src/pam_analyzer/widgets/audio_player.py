@@ -362,7 +362,7 @@ class AudioPlayerPanel(QWidget):
         self._jump_btn.clicked.connect(self.jump_to_detection)
 
         self._time_label = QLabel("0:00 / 0:00")
-        self._time_label.setStyleSheet("font-size: 10px; color: #666;")
+        self._time_label.setStyleSheet("font-size: 10px;")
 
         btns_row = QHBoxLayout()
         btns_row.setContentsMargins(0, 0, 0, 0)
@@ -384,7 +384,6 @@ class AudioPlayerPanel(QWidget):
         main_layout.addLayout(controls)
         main_layout.addWidget(self._spectrogram, 1)
 
-        self.setStyleSheet("background: #f5f5f5; border-top: 1px solid #ddd;")
         self.setMinimumHeight(60)
 
 

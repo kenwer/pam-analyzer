@@ -73,7 +73,7 @@
       <set>Qt::AlignmentFlag::AlignCenter</set>
      </property>
      <property name="styleSheet">
-      <string>color: #6b7280;</string>
+      <string>color: palette(placeholder-text);</string>
      </property>
     </widget>
    </item>
@@ -192,7 +192,7 @@ QPushButton#open_project_folder_button:pressed { background-color: rgba(90, 141,
       <set>Qt::AlignmentFlag::AlignCenter</set>
      </property>
      <property name="styleSheet">
-      <string>color: #6b7280;</string>
+      <string>color: palette(placeholder-text);</string>
      </property>
     </widget>
    </item>

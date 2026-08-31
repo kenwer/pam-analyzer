@@ -145,7 +145,7 @@ class TimeRangePopup(QWidget):
             self._to.setTime(QTime(23, 59))
 
         hint = QLabel("End before start = overnight range", self)
-        hint.setStyleSheet("color: #777; font-size: 11px;")
+        hint.setStyleSheet("color: palette(placeholder-text); font-size: 11px;")
 
         layout = QFormLayout(self)
         layout.addRow("From:", self._from)
