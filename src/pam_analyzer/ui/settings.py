@@ -7,6 +7,7 @@ Pre-upgrade entries pointing at legacy .pamproj files are kept so the main
 window can offer migration when they are opened.
 """
 
+import logging
 from pathlib import PurePath
 from typing import TypeVar, cast
 
@@ -30,8 +31,10 @@ class AppSettings:
     KEY_RECENT_PROJECTS = "projects"
     KEY_HIDDEN_COLUMNS = "hidden_columns"
     KEY_CAMPAIGN_SORT_ORDER = "sort_order"
+    KEY_LOG_LEVEL = "log_level"
     MAX_RECENT_PROJECTS = 8
     DEFAULT_CAMPAIGN_SORT_ORDER = "name_asc"
+    DEFAULT_LOG_LEVEL = "WARNING"
 
     def __init__(self) -> None:
         self._settings = QSettings(self.ORGANIZATION, self.APPLICATION)
@@ -92,6 +95,23 @@ class AppSettings:
     def window_geometry(self, value: QByteArray) -> None:
         self._settings.beginGroup(self.GROUP_UI)
         self._settings.setValue(self.KEY_WINDOW_GEOMETRY, value)
+        self._settings.endGroup()
+
+    # diagnostics
+
+    @property
+    def log_level(self) -> str:
+        """Name of the level the user picked in the Help menu, such as WARNING."""
+        self._settings.beginGroup(self.GROUP_UI)
+        value = self._settings.value(self.KEY_LOG_LEVEL, self.DEFAULT_LOG_LEVEL, type=str)
+        self._settings.endGroup()
+        name = cast(str, value).upper()
+        return name if name in logging.getLevelNamesMapping() else self.DEFAULT_LOG_LEVEL
+
+    @log_level.setter
+    def log_level(self, value: str) -> None:
+        self._settings.beginGroup(self.GROUP_UI)
+        self._settings.setValue(self.KEY_LOG_LEVEL, value.upper())
         self._settings.endGroup()
 
     # examine panel state

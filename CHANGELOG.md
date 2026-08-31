@@ -8,6 +8,7 @@
   - A language column now shows the translated common name for those 27 birds, where the duplicate class had only an English name or none.
   - The German name for `Tyto alba` is corrected from `Amerikaschleiereule`, which belongs to `Tyto furcata`.
   - A window with no signal at all (a dead channel, a dropout) makes the preview score every class as NaN. Those detections are dropped and logged instead of aborting the campaign.
+- `Help -> Log Level` allows to change how much detail will be in the log.
 
 ### Fixed
 - Species lists no longer truncate names that contain an underscore, so Perch's sound-event classes such as `Acoustic_guitar` work as list or must-have entries.

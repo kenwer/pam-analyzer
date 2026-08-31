@@ -2,7 +2,6 @@
 
 import gc
 import logging
-import logging.handlers
 import os
 import sys
 import tempfile
@@ -39,7 +38,7 @@ _configure_frozen_model_paths()
 from PySide6.QtGui import QIcon  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from ..domain import paths  # noqa: E402
+from ..domain import logging_setup, paths  # noqa: E402
 from ..infrastructure import (  # noqa: E402
     AudioImporter,
     Birdnet24Runner,
@@ -55,7 +54,7 @@ from ..ui.settings import AppSettings  # noqa: E402
 from ..workers import ImportOrchestrator  # noqa: E402
 
 
-def build_main_window() -> MainWindow:
+def build_main_window(settings: AppSettings) -> MainWindow:
     audio_extractor = SoundfileAudioExtractor()
     analysis_runners = {r.model_key: r for r in (Birdnet24Runner(), BirdnetRunner(), PerchRunner())} # Insertion order is the combo order
     sdcard_scanner = PsutilSdCardScanner()
@@ -63,7 +62,6 @@ def build_main_window() -> MainWindow:
     import_orchestrator = ImportOrchestrator(audio_importer, sdcard_scanner)
 
     app_state = AppState()
-    settings = AppSettings()
     return MainWindow(
         app_state,
         analysis_runners,
@@ -73,32 +71,14 @@ def build_main_window() -> MainWindow:
     )
 
 
-def _setup_logging(level: int) -> None:
-    log_dir = paths.log_dir()
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = log_dir / "pam-analyzer.log"
-
-    file_handler = logging.handlers.RotatingFileHandler(
-        log_file, maxBytes=1_000_000, backupCount=1, encoding="utf-8"
-    )
-    file_handler.setLevel(level)
-    file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
-
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(level)
-    console_handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
-
-    root = logging.getLogger()
-    root.setLevel(level)
-    root.addHandler(file_handler)
-    root.addHandler(console_handler)
-
-    logging.getLogger(__name__).debug("Logging to %s", log_file)
-
-
 def main() -> int:
-    level_name = os.environ.get("PAM_LOG_LEVEL", "WARNING").upper()
-    _setup_logging(getattr(logging, level_name, logging.WARNING))
+    settings = AppSettings()
+    levels = logging.getLevelNamesMapping()
+    env_level = os.environ.get("PAM_LOG_LEVEL", "").upper()
+    # An explicit env var is the developer override. It wins over the persisted choice and locks the menu.
+    locked = env_level in levels
+    level = levels[env_level] if locked else levels[settings.log_level]
+    logging_setup.configure(paths.log_dir() / "pam-analyzer.log", level, locked=locked)
     logging.getLogger(__name__).debug(
         "BIRDNET_APP_DATA=%s", os.environ.get("BIRDNET_APP_DATA", "<unset, per-user cache>")
     )
@@ -107,7 +87,7 @@ def main() -> int:
     app.setApplicationName("PAM Analyzer")
     app.setOrganizationName("PAM Analyzer")
     app.setWindowIcon(QIcon(":/icons/icon.svg"))
-    window = build_main_window()
+    window = build_main_window(settings)
 
     # Signal the splash screen removal to nuitka
     if "NUITKA_ONEFILE_PARENT" in os.environ:

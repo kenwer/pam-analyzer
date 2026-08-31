@@ -3,34 +3,37 @@ Automated bird species detection from acoustic recordings.
 
 <!--TOC-->
 
-- [About](#about)
-- [Download](#download)
-- [Features](#features)
-- [Usage](#usage)
-  - [Migrating legacy projects](#migrating-legacy-projects)
-- [Workflow](#workflow)
-  - [Project Settings](#project-settings)
-  - [Campaigns](#campaigns)
-  - [Run bird species detection](#run-bird-species-detection)
-  - [Output files](#output-files)
-  - [Examine Detections](#examine-detections)
-- [Keyboard shortcuts](#keyboard-shortcuts)
-  - [Global](#global)
-  - [Campaigns panel](#campaigns-panel)
-  - [Examine panel: detection row selected](#examine-panel-detection-row-selected)
-- [Core Concepts](#core-concepts)
-  - [Project](#project)
-  - [Campaign](#campaign)
-  - [ARU (Autonomous Recording Unit)](#aru-autonomous-recording-unit)
-- [Models](#models)
-  - [Species names](#species-names)
-  - [Perch confidence](#perch-confidence)
-  - [Region filtering](#region-filtering)
-- [Troubleshooting](#troubleshooting)
-- [Changelog](#changelog)
-- [Acknowledgements](#acknowledgements)
-- [Citation](#citation)
-- [License](#license)
+- [PAM Analyzer](#pam-analyzer)
+  - [About](#about)
+  - [Download](#download)
+  - [Features](#features)
+  - [Usage](#usage)
+    - [Migrating legacy projects](#migrating-legacy-projects)
+  - [Workflow](#workflow)
+    - [Project Settings](#project-settings)
+    - [Campaigns](#campaigns)
+    - [Run bird species detection](#run-bird-species-detection)
+    - [Output files](#output-files)
+    - [Examine Detections](#examine-detections)
+  - [Keyboard shortcuts](#keyboard-shortcuts)
+    - [Global](#global)
+    - [Campaigns panel](#campaigns-panel)
+    - [Examine panel: detection row selected](#examine-panel-detection-row-selected)
+  - [Core Concepts](#core-concepts)
+    - [Project](#project)
+    - [Campaign](#campaign)
+    - [ARU (Autonomous Recording Unit)](#aru-autonomous-recording-unit)
+  - [Models](#models)
+    - [Species names](#species-names)
+    - [Perch confidence](#perch-confidence)
+    - [Region filtering](#region-filtering)
+  - [Troubleshooting](#troubleshooting)
+    - [Changing the log level](#changing-the-log-level)
+      - [Overriding the level from the environment](#overriding-the-level-from-the-environment)
+  - [Changelog](#changelog)
+  - [Acknowledgements](#acknowledgements)
+  - [Citation](#citation)
+  - [License](#license)
 
 <!--TOC-->
 
@@ -331,11 +334,16 @@ The easiest way to find it is **Help > Open Log Folder** in the app, which opens
 On Windows, `%LOCALAPPDATA%` lives under a hidden `AppData` folder that File Explorer doesn't show by default, so browsing there manually is not straightforward. If you don't have access to the app's menu, paste the path above into File Explorer's address bar (not the search box) and press Enter; Explorer will expand `%LOCALAPPDATA%` and navigate straight there.
 
 
-### Running with debug logging
-The app logs at `WARNING` by default. Set the `PAM_LOG_LEVEL` environment variable to
-`DEBUG` (or `INFO`, `ERROR`, `CRITICAL`) to change that. An unrecognised value falls back
-to `WARNING`. Debug output goes to `pam-analyzer.log` and, when the app is started from a
+### Changing the log level
+**Help > Log Level** sets how much detail the app records: `Debug`, `Info`,
+`Warning`, `Error` or `Critical`. New installs start at `Warning`. The change takes effect immediately and is remembered for the next launch.
+
+Log output goes to `pam-analyzer.log` and, when the app is started from a
 terminal, to that terminal as well.
+
+#### Overriding the level from the environment
+Setting the `PAM_LOG_LEVEL` environment variable to a level name overrides the
+menu for that run.
 
 **macOS**, from the folder you unpacked the app bundle into:
 ```sh

@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, QUrl
-from PySide6.QtGui import QAction, QCloseEvent, QColor, QDesktopServices, QPalette
+from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QColor, QDesktopServices, QPalette
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from .. import __version__
-from ..domain import AnalysisRunner, paths, shared_locales
+from ..domain import AnalysisRunner, logging_setup, paths, shared_locales
 from ..domain.audio_import import ImportSource
 from ..infrastructure import (
     AudioRootNotFound,
@@ -37,6 +37,8 @@ from .settings import AppSettings
 from .ui_main_window import Ui_MainWindow
 
 _log = logging.getLogger(__name__)
+
+LOG_LEVEL_NAMES = ("Debug", "Info", "Warning", "Error", "Critical")
 
 
 class MainWindow(QMainWindow):
@@ -139,6 +141,23 @@ class MainWindow(QMainWindow):
         self.ui.action_quit.triggered.connect(self.close)
         self.ui.action_open_log_folder.triggered.connect(self._on_open_log_folder)
         self.ui.action_about.triggered.connect(self._on_about)
+        self._wire_log_level_menu()
+
+    def _wire_log_level_menu(self) -> None:
+        levels = logging.getLevelNamesMapping()
+        current = logging_setup.current_level()
+        group = QActionGroup(self)
+        for name in LOG_LEVEL_NAMES:
+            action = self.ui.menu_log_level.addAction(name)
+            action.setCheckable(True)
+            action.setData(levels[name.upper()])
+            action.setChecked(action.data() == current)
+            group.addAction(action)
+        group.setEnabled(not logging_setup.is_locked())
+        # triggered, not toggled: it fires only on user activation, so the
+        # setChecked above cannot write the setting straight back.
+        group.triggered.connect(self._on_log_level_chosen)
+        self._log_level_group = group
 
     def _wire_state(self) -> None:
         self._app_state.statusMessage.connect(lambda msg: self.ui.status_bar.showMessage(msg, 5000))
@@ -446,6 +465,11 @@ class MainWindow(QMainWindow):
     def _on_clear_recent(self) -> None:
         self._settings.clear_recent_projects()
         self._rebuild_recent_menu()
+
+    def _on_log_level_chosen(self, action: QAction) -> None:
+        level = action.data()
+        self._settings.log_level = logging.getLevelName(level)
+        logging_setup.set_level(level)
 
     def _on_open_log_folder(self) -> None:
         log_dir = paths.log_dir()
