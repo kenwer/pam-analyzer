@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import enum
+import functools
 import logging
 import time
 from collections.abc import Iterator
@@ -10,7 +11,7 @@ import numpy as np
 import soundfile as sf
 from PySide6.QtCore import QObject, QRect, Qt, QThread, Signal, Slot
 from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
-from PySide6.QtWidgets import QApplication, QToolTip, QWidget
+from PySide6.QtWidgets import QToolTip, QWidget
 from scipy.signal import ShortTimeFFT
 from scipy.signal.windows import hann
 
@@ -130,6 +131,17 @@ class _RenderSpectroWorker(QObject):
             self.failed.emit(str(e), req.seq)
 
 
+def _stop_render_thread(thread: QThread) -> None:
+    """Stop a render thread without holding a reference to its widget.
+
+    Runs from the widget's destroyed signal, so it takes the thread as an
+    argument. A bound method would keep the widget alive past its own
+    destruction.
+    """
+    thread.quit()
+    thread.wait()
+
+
 class SpectrogramWidget(QWidget):
     """Static spectrogram image with a draggable playback position marker.
 
@@ -173,18 +185,11 @@ class SpectrogramWidget(QWidget):
         self._worker.failed.connect(self._on_render_failed)
         self._thread.finished.connect(self._worker.deleteLater)
         self._thread.start()
-
-        app = QApplication.instance()
-        if app is not None:
-            app.aboutToQuit.connect(self._stop_thread)
+        self.destroyed.connect(functools.partial(_stop_render_thread, self._thread))
 
         self.setMinimumHeight(30)
         self.setCursor(Qt.CursorShape.SizeHorCursor)
         self.setMouseTracking(True)
-
-    def _stop_thread(self) -> None:
-        self._thread.quit()
-        self._thread.wait()
 
     def set_colormap(self, colormap: Colormap) -> None:
         """Change the colormap and re-render if audio is already loaded."""

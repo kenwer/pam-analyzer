@@ -19,7 +19,6 @@ from PySide6.QtWidgets import QLineEdit, QPushButton
 from pam_analyzer.widgets.audio_player import AudioPlayerPanel
 from pam_analyzer.widgets.header_filter_row import HeaderFilterRow
 from pam_analyzer.widgets.multi_column_sort_table import MultiColumnSortTable
-from pam_analyzer.widgets.spectrogram_widget import SpectrogramWidget
 
 
 def _palette(background: QColor, text: QColor) -> QPalette:
@@ -69,14 +68,12 @@ def theme(qapp, qtbot):
     {label: (light_colour, dark_colour)}.
     """
     original = qapp.palette()
-    roots = []
 
     def _both(build):
         painted: dict[str, list[QColor]] = {}
         for index, palette in enumerate((LIGHT, DARK)):
             qapp.setPalette(palette)
             root, targets = build()
-            roots.append(root)
             qtbot.addWidget(root)
             for label, widget in targets.items():
                 painted.setdefault(label, [None, None])[index] = _centre_colour(widget)
@@ -85,9 +82,6 @@ def theme(qapp, qtbot):
     yield _both
 
     qapp.setPalette(original)
-    for root in roots:
-        for spectrogram in root.findChildren(SpectrogramWidget):
-            spectrogram._stop_thread()
 
 
 def _build_line_edit(style: str = ""):

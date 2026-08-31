@@ -16,6 +16,7 @@
 - Fix the Windows exe exiting when launched from a terminal.
 - [Dev] On Windows, log lines that Qt writes to the console are no longer garbled into CJK characters when the .exe is launched from a terminal.
 - UI should now also work in dark mode.
+- [Dev] SpectrogramWidget stops its render thread when the widget is destroyed, not only when the application quits.
 
 ### Removed
 - The project Species taxonomy setting. Detections are always written under BirdNET-3.0 scientific names.
