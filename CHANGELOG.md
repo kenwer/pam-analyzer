@@ -11,6 +11,7 @@
 
 ### Fixed
 - Species lists no longer truncate names that contain an underscore, so Perch's sound-event classes such as `Acoustic_guitar` work as list or must-have entries.
+- On Windows, the selected tab in the main window is now visibly highlighted.
 
 ### Removed
 - The project Species taxonomy setting. Detections are always written under BirdNET-3.0 scientific names.

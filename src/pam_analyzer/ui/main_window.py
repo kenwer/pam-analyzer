@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, QUrl
-from PySide6.QtGui import QAction, QCloseEvent, QColor, QDesktopServices
+from PySide6.QtGui import QAction, QCloseEvent, QColor, QDesktopServices, QPalette
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -52,6 +52,7 @@ class MainWindow(QMainWindow):
         super().__init__(parent)
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
+        self._widen_tab_selection_contrast()  # TODO: Recheck on the next Qt upgrade, this may be fixed upstream
 
         self._app_state = app_state
         self._settings = settings
@@ -106,6 +107,21 @@ class MainWindow(QMainWindow):
         self._rebuild_recent_menu()
         self.setWindowTitle(f"PAM Analyzer {__version__}")
         self._show_welcome()
+
+    def _widen_tab_selection_contrast(self) -> None:
+        """Make the current tab visible under the Windows 11 style.
+
+        That style fills the selected tab with 70% white over palette.base(),
+        which is white as well, so the tabs come out pixel-identical. Giving the
+        tab bar the window color as its base restores the intended contrast.
+        Recheck on the next Qt upgrade, this may be fixed upstream by then.
+        """
+        if sys.platform != "win32":
+            return
+        tab_bar = self.ui.tab_widget.tabBar()
+        palette = tab_bar.palette()
+        palette.setColor(QPalette.ColorRole.Base, palette.color(QPalette.ColorRole.Window))
+        tab_bar.setPalette(palette)
 
     def _mount_tab(self, placeholder: QWidget, panel: QWidget, label: str) -> None:
         idx = self.ui.tab_widget.indexOf(placeholder)
