@@ -3,37 +3,36 @@ Automated bird species detection from acoustic recordings.
 
 <!--TOC-->
 
-- [PAM Analyzer](#pam-analyzer)
-  - [About](#about)
-  - [Download](#download)
-  - [Features](#features)
-  - [Usage](#usage)
-    - [Migrating legacy projects](#migrating-legacy-projects)
-  - [Workflow](#workflow)
-    - [Project Settings](#project-settings)
-    - [Campaigns](#campaigns)
-    - [Run bird species detection](#run-bird-species-detection)
-    - [Output files](#output-files)
-    - [Examine Detections](#examine-detections)
-  - [Keyboard shortcuts](#keyboard-shortcuts)
-    - [Global](#global)
-    - [Campaigns panel](#campaigns-panel)
-    - [Examine panel: detection row selected](#examine-panel-detection-row-selected)
-  - [Core Concepts](#core-concepts)
-    - [Project](#project)
-    - [Campaign](#campaign)
-    - [ARU (Autonomous Recording Unit)](#aru-autonomous-recording-unit)
-  - [Models](#models)
-    - [Species names](#species-names)
-    - [Perch confidence](#perch-confidence)
-    - [Region filtering](#region-filtering)
-  - [Troubleshooting](#troubleshooting)
-    - [Changing the log level](#changing-the-log-level)
-      - [Overriding the level from the environment](#overriding-the-level-from-the-environment)
-  - [Changelog](#changelog)
-  - [Acknowledgements](#acknowledgements)
-  - [Citation](#citation)
-  - [License](#license)
+- [About](#about)
+- [Download](#download)
+- [Features](#features)
+- [Usage](#usage)
+  - [Migrating legacy projects](#migrating-legacy-projects)
+- [Workflow](#workflow)
+  - [Project Settings](#project-settings)
+  - [Campaigns](#campaigns)
+  - [Run bird species detection](#run-bird-species-detection)
+  - [Output files](#output-files)
+  - [Examine Detections](#examine-detections)
+- [Keyboard shortcuts](#keyboard-shortcuts)
+  - [Global](#global)
+  - [Campaigns panel](#campaigns-panel)
+  - [Examine panel: detection row selected](#examine-panel-detection-row-selected)
+- [Core Concepts](#core-concepts)
+  - [Project](#project)
+  - [Campaign](#campaign)
+  - [ARU (Autonomous Recording Unit)](#aru-autonomous-recording-unit)
+- [Models](#models)
+  - [Species names](#species-names)
+  - [Perch confidence](#perch-confidence)
+  - [Region filtering](#region-filtering)
+- [Troubleshooting](#troubleshooting)
+  - [Changing the log level](#changing-the-log-level)
+    - [Overriding the level from the environment](#overriding-the-level-from-the-environment)
+- [Changelog](#changelog)
+- [Acknowledgements](#acknowledgements)
+- [Citation](#citation)
+- [License](#license)
 
 <!--TOC-->
 
@@ -397,7 +396,7 @@ If you use PAM Analyzer in your work, you can [cite](CITATION.cff) it:
   author  = {Werner, Ken},
   title   = {PAM Analyzer},
   url     = {https://github.com/kenwer/pam-analyzer},
-  version = {0.6.0},
+  version = {0.7.0},
   year    = {2026}
 }
 ```

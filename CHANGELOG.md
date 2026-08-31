@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.7.0] - 2026-08-31
 ### Added
 - Add BirdNET-3.0-preview3.1 model with the following adjustments:
   - The preview names 27 species twice, under an old and the current genus. Both classes now resolve to the current name, so a segment yields one row instead of two, at the higher confidence.
