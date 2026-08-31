@@ -4,6 +4,28 @@ import multiprocessing
 import os
 import sys
 
+# Nuitka's --windows-console-mode=attach leaves the console streams in the
+# CRT's wide _O_U8TEXT mode, which garbles Qt's narrow fprintf lines into CJK
+# and ends the process (0xC0000409) on the first one of odd byte length.
+# Not on fds 1 and 2: _NO_CONSOLE_FILENO already holds those slots in a GUI
+# subsystem process, so Nuitka's freopen lands the console on the first free
+# descriptors instead, and CPython builds these streams from the same FILE*.
+if sys.platform == "win32":
+    import msvcrt
+
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _fd = _stream.fileno()
+        except (AttributeError, OSError, ValueError):
+            continue  # no console at all, or a stream with no descriptor
+        try:
+            # _O_BINARY alone clears the flag setmode reports back but leaves
+            # the wide mode that the write path actually checks.
+            msvcrt.setmode(_fd, os.O_TEXT)
+            msvcrt.setmode(_fd, os.O_BINARY)
+        except OSError:
+            pass  # invalid descriptor, nothing to correct
+
 # On Windows GUI builds (pythonw.exe / a windowed compiled build) the
 # process has no console, so sys.stdout and sys.stderr are None. Any bare
 # print() then raises "'NoneType' object has no attribute 'write'". The

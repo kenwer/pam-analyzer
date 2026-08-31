@@ -331,6 +331,33 @@ The easiest way to find it is **Help > Open Log Folder** in the app, which opens
 On Windows, `%LOCALAPPDATA%` lives under a hidden `AppData` folder that File Explorer doesn't show by default, so browsing there manually is not straightforward. If you don't have access to the app's menu, paste the path above into File Explorer's address bar (not the search box) and press Enter; Explorer will expand `%LOCALAPPDATA%` and navigate straight there.
 
 
+### Running with debug logging
+The app logs at `WARNING` by default. Set the `PAM_LOG_LEVEL` environment variable to
+`DEBUG` (or `INFO`, `ERROR`, `CRITICAL`) to change that. An unrecognised value falls back
+to `WARNING`. Debug output goes to `pam-analyzer.log` and, when the app is started from a
+terminal, to that terminal as well.
+
+**macOS**, from the folder you unpacked the app bundle into:
+```sh
+PAM_LOG_LEVEL=DEBUG "pam-analyzer-<version>-macos-arm64.app/Contents/MacOS/pam-analyzer"
+```
+Double-clicking the app or starting it with `open` will not pass the
+variable through, because those go via LaunchServices rather than your shell.
+
+**Windows**, in PowerShell:
+```powershell
+$env:PAM_LOG_LEVEL = "DEBUG"
+.\pam-analyzer-<version>-windows-x86_64.exe
+```
+The `.\` prefix is required. PowerShell does not run programs from the current directory
+without it.
+
+**Linux**:
+```sh
+PAM_LOG_LEVEL=DEBUG ./pam-analyzer-<version>-linux-x86_64
+```
+
+
 ## Changelog
 The changelog can be found at the [CHANGELOG page](CHANGELOG.md).
 
