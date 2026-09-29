@@ -191,7 +191,7 @@ def test_completed_run_toasts_with_a_link_to_the_results(panel: BirdNetPanel, st
     assert kwargs["duration"] == 0
     requested: list[bool] = []
     panel.showResultsRequested.connect(lambda: requested.append(True))
-    kwargs["on_link"]()
+    dict(kwargs["links"])["Show results"]()
     assert requested == [True]
 
 

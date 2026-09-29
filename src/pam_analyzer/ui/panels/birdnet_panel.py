@@ -340,8 +340,7 @@ class BirdNetPanel(QWidget):
                 "Analysis finished",
                 f"{detections:,} detection{'s' if detections != 1 else ''} "
                 f"in {campaigns} campaign{'s' if campaigns != 1 else ''}.",
-                link_text="Show results",
-                on_link=self.showResultsRequested.emit,
+                links=[("Show results", self.showResultsRequested.emit)],
                 duration=0,
             )
         QApplication.alert(self.window())

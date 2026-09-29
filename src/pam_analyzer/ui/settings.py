@@ -67,6 +67,16 @@ class AppSettings:
         self._settings.setValue(self.KEY_RECENT_PROJECTS, recent)
         self._settings.endGroup()
 
+    def replace_recent_project(self, old: str, new: str) -> None:
+        """Swap *old* for *new* at old's position, dropping any other entry for *new*."""
+        recent = [p for p in self.recent_projects if p != new]
+        if old not in recent:
+            return
+        recent[recent.index(old)] = new
+        self._settings.beginGroup(self.GROUP_RECENT)
+        self._settings.setValue(self.KEY_RECENT_PROJECTS, recent)
+        self._settings.endGroup()
+
     def clear_recent_projects(self) -> None:
         self._settings.beginGroup(self.GROUP_RECENT)
         self._settings.remove(self.KEY_RECENT_PROJECTS)

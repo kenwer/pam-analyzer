@@ -218,6 +218,8 @@ class MainWindow(QMainWindow):
         self._welcome_panel.newRequested.connect(self._on_new)
         self._welcome_panel.openProjectFolderRequested.connect(self._on_open_project_folder)
         self._welcome_panel.recentRequested.connect(self._open_recent)
+        self._welcome_panel.removeRecentRequested.connect(self._forget_recent)
+        self._welcome_panel.locateRecentRequested.connect(self._locate_recent)
         self._welcome_panel.folderDropped.connect(self._on_folder_dropped)
 
     # File menu handlers
@@ -534,7 +536,37 @@ class MainWindow(QMainWindow):
             # A pre-upgrade recent entry pointing at a legacy project file.
             self._migrate_legacy(path)
             return
-        show_warning_toast(self, "Project not found", f"The project is no longer accessible:\n{path}")
+
+        show_warning_toast(
+            self,
+            "Project not found",
+            f"The project is no longer accessible:\n{path}\n",
+            links=[
+                ("Locate…", lambda: self._locate_recent(path_str)),
+                ("Remove from list", lambda: self._forget_recent(path_str)),
+            ],
+            duration=0,
+        )
+
+    def _forget_recent(self, path_str: str) -> None:
+        self._settings.remove_recent_project(path_str)
+        self._rebuild_recent_menu()
+
+    def _locate_recent(self, path_str: str) -> None:
+        """Point a recent entry at the folder its project moved to, then open it."""
+        if self._project_open_in_progress():
+            return
+        start = next((p for p in Path(path_str).parents if p.is_dir()), Path(self._settings.last_directory))
+        folder_str = QFileDialog.getExistingDirectory(self, "Locate project folder", str(start))
+        if not folder_str:
+            return
+        folder = Path(folder_str)
+        if not paths.project_toml(folder).exists():
+            show_warning_toast(self, "Not a project folder", f"{folder} does not contain a PAM Analyzer project.")
+            return
+        self._settings.replace_recent_project(path_str, str(folder))
+        self._rebuild_recent_menu()
+        self._load_and_remember(folder)
 
     # state reactions
 

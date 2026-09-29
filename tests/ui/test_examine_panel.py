@@ -480,7 +480,7 @@ def test_export_csv_toasts_success_with_folder_link(
     [(kind, _title, text, kwargs)] = toasts
     assert kind == "success"
     assert "6 rows" in text
-    kwargs["on_link"]()
+    dict(kwargs["links"])["Show in file manager"]()
     assert opened == [tmp_path]
 
 
@@ -581,7 +581,7 @@ def test_export_snippets_toasts_success(
     [(kind, _title, text, kwargs)] = toasts
     assert kind == "success"
     assert "6 snippets" in text
-    kwargs["on_link"]()
+    dict(kwargs["links"])["Show in file manager"]()
     assert opened == [folder]
 
 

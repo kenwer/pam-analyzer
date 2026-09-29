@@ -10,6 +10,7 @@
   - an SD card or folder import finishes or fails
   - errors and notices occur that previously opened a modal dialog
 - Exporting audio snippets shows a cancellable progress dialog.
+- Recent projects on the welcome screen can be removed from the list or pointed to a new folder via `Locate…`.
 
 ### Changed
 - Values of editable cells in the Examine panel can be changed using a single click.

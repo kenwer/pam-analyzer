@@ -76,3 +76,66 @@ def test_drop_ignored_while_loading(qtbot, panel: WelcomePanel, tmp_path: Path):
     assert not _drag_enter(panel, mime)
     with qtbot.assertNotEmitted(panel.folderDropped):
         _drop(panel, mime)
+
+
+def _choose_from_context_menu(panel: WelcomePanel, row: int, label: str) -> list[str]:
+    """Open the recent list's context menu on *row*, trigger *label*, and return the menu's labels."""
+    from PySide6.QtCore import QTimer
+    from PySide6.QtWidgets import QApplication
+
+    recent_list = panel.ui.recent_list
+    labels: list[str] = []
+
+    def choose() -> None:
+        popup = QApplication.activePopupWidget()
+        if popup is None:
+            return
+        labels.extend(a.text() for a in popup.actions())
+        for action in popup.actions():
+            if action.text() == label:
+                action.trigger()
+        popup.close()
+
+    QTimer.singleShot(0, choose)
+    panel._on_recent_context_menu(recent_list.visualItemRect(recent_list.item(row)).center())
+    return labels
+
+
+def test_context_menu_removes_the_clicked_recent_project(qtbot, panel: WelcomePanel):
+    panel.set_recent_projects(["/a/one", "/b/two"])
+    with qtbot.waitSignal(panel.removeRecentRequested) as removed:
+        labels = _choose_from_context_menu(panel, 1, "Remove from list")
+
+    assert labels == ["Locate…", "Remove from list"]
+    assert removed.args == ["/b/two"]
+
+
+def test_context_menu_locates_the_clicked_recent_project(qtbot, panel: WelcomePanel):
+    panel.set_recent_projects(["/a/one", "/b/two"])
+    with qtbot.waitSignal(panel.locateRecentRequested) as located:
+        _choose_from_context_menu(panel, 0, "Locate…")
+    assert located.args == ["/a/one"]
+
+
+def test_context_menu_on_placeholder_does_nothing(qtbot, panel: WelcomePanel):
+    panel.set_recent_projects([])
+    with qtbot.assertNotEmitted(panel.removeRecentRequested):
+        labels = _choose_from_context_menu(panel, 0, "Remove from list")
+    assert labels == []
+
+
+def test_delete_key_removes_the_current_recent_project(qtbot, panel: WelcomePanel):
+    from PySide6.QtWidgets import QApplication
+
+    panel.set_recent_projects(["/a/one", "/b/two"])
+    recent_list = panel.ui.recent_list
+    panel.show()
+    qtbot.waitExposed(panel)
+    panel.activateWindow()
+    recent_list.setFocus()
+    qtbot.waitUntil(lambda: QApplication.focusWidget() is recent_list)
+    recent_list.setCurrentRow(0)
+
+    with qtbot.waitSignal(panel.removeRecentRequested) as removed:
+        qtbot.keyClick(recent_list, Qt.Key.Key_Delete)
+    assert removed.args == ["/a/one"]

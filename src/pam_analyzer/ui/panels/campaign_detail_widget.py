@@ -723,12 +723,10 @@ def _toast_import_result(parent: QWidget, result: CardImportResult) -> None:
     """Report one card's import outcome. The worker marks a user cancel with error "Cancelled"."""
     name = result.card.name
     copied = f"{result.files_copied:,} file{'s' if result.files_copied != 1 else ''}"
-    link = {}
-    if result.dest_dir is not None:
-        dest = result.dest_dir
-        link = {"link_text": "Show in file manager", "on_link": lambda: open_in_file_manager(dest)}
+    dest = result.dest_dir
+    links = [("Show in file manager", lambda: open_in_file_manager(dest))] if dest is not None else []
     if result.error == "Cancelled":
-        show_warning_toast(parent, "Import cancelled", f"{name}: copied {copied} before cancelling.", **link)
+        show_warning_toast(parent, "Import cancelled", f"{name}: copied {copied} before cancelling.", links=links)
     elif result.error:
         # Sticky: in watch mode the user may be busy swapping cards.
         title = "Import incomplete" if result.files_copied else "Import failed"
@@ -737,4 +735,4 @@ def _toast_import_result(parent: QWidget, result: CardImportResult) -> None:
         text = f"{name}: copied {copied} ({format_bytes(result.bytes_copied)})"
         if result.files_skipped:
             text += f", skipped {result.files_skipped:,} already imported"
-        show_success_toast(parent, "Import finished", text + ".", **link)
+        show_success_toast(parent, "Import finished", text + ".", links=links)

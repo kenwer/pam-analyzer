@@ -4,13 +4,16 @@ Wraps pyqt-toast-notification so callers get a one-line helper and the
 version-specific link handling stays in a single place.
 """
 
-from collections.abc import Callable
+import html
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from pyqttoast import Toast, ToastPreset
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QFont
 from PySide6.QtWidgets import QApplication, QWidget
+
+Links = Sequence[tuple[str, Callable[[], None]]]
 
 
 def _show_toast(
@@ -19,8 +22,7 @@ def _show_toast(
     text: str,
     preset: ToastPreset,
     *,
-    link_text: str | None = None,
-    on_link: Callable[[], None] | None = None,
+    links: Links = (),
     duration: int | None = None,
 ) -> Toast:
     """Build and show a toast with the given preset.
@@ -28,8 +30,8 @@ def _show_toast(
     The default toast position is bottom-right (pyqttoast's own default), so it
     does not steal focus from the main window.
 
-    When link_text and on_link are given, the text label is switched to rich
-    text and a trailing link is appended. Clicking it invokes on_link. pyqttoast
+    When links are given, the text label is switched to rich text and the links
+    are appended after the text. Clicking one invokes its callback. pyqttoast
     1.3.3 has no public rich-text API, so the internal text label is accessed via
     its name-mangled attribute. If a future version renames it, the toast falls
     back to plain text instead of raising.
@@ -39,8 +41,7 @@ def _show_toast(
         title: Bold title line.
         text: Body text.
         preset: pyqttoast style preset (success, error, warning, ...).
-        link_text: Visible text of the trailing link, or None for no link.
-        on_link: Callback invoked when the link is clicked.
+        links: (visible text, callback) pairs, shown in order after the text.
         duration: Auto-dismiss time in milliseconds. None keeps pyqttoast's
             default (5000). 0 disables auto-dismiss.
 
@@ -66,13 +67,17 @@ def _show_toast(
     toast.setTitleFont(title_font)
 
     label = getattr(toast, "_Toast__text_label", None)
-    if link_text and on_link is not None and label is not None:
+    if links and label is not None:
         label.setTextFormat(Qt.TextFormat.RichText)
         label.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
         # Keep openExternalLinks off so the click reaches us via linkActivated
-        # instead of the label trying to open the placeholder href itself.
-        label.linkActivated.connect(lambda _href: on_link())
-        toast.setText(f'{text} <a href="#">{link_text}</a>')
+        # instead of the label trying to open the href (the link's index) itself.
+        callbacks = [callback for _text, callback in links]
+        label.linkActivated.connect(lambda href: callbacks[int(href)]())
+        # Rich text reads '&' and '<' in paths as markup and drops newlines.
+        body = html.escape(text).replace("\n", "<br>")
+        anchors = " · ".join(f'<a href="{i}">{html.escape(t)}</a>' for i, (t, _cb) in enumerate(links))
+        toast.setText(f"{body} {anchors}")
     else:
         toast.setText(text)
 
@@ -85,20 +90,11 @@ def show_success_toast(
     title: str,
     text: str,
     *,
-    link_text: str | None = None,
-    on_link: Callable[[], None] | None = None,
+    links: Links = (),
     duration: int | None = None,
 ) -> Toast:
-    """Show a success toast, optionally ending in a clickable link."""
-    return _show_toast(
-        parent,
-        title,
-        text,
-        ToastPreset.SUCCESS,
-        link_text=link_text,
-        on_link=on_link,
-        duration=duration,
-    )
+    """Show a success toast, optionally ending in clickable links."""
+    return _show_toast(parent, title, text, ToastPreset.SUCCESS, links=links, duration=duration)
 
 
 def show_info_toast(
@@ -128,20 +124,11 @@ def show_warning_toast(
     title: str,
     text: str,
     *,
-    link_text: str | None = None,
-    on_link: Callable[[], None] | None = None,
+    links: Links = (),
     duration: int | None = None,
 ) -> Toast:
-    """Show a non-blocking warning toast, optionally ending in a clickable link."""
-    return _show_toast(
-        parent,
-        title,
-        text,
-        ToastPreset.WARNING,
-        link_text=link_text,
-        on_link=on_link,
-        duration=duration,
-    )
+    """Show a non-blocking warning toast, optionally ending in clickable links."""
+    return _show_toast(parent, title, text, ToastPreset.WARNING, links=links, duration=duration)
 
 
 def open_in_file_manager(folder: Path) -> None:

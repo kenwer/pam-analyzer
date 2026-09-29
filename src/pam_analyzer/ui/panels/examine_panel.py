@@ -372,8 +372,7 @@ class ExaminePanel(QWidget):
             self.window(),
             "CSV exported",
             f"Exported {_plural(rows.height, 'row')} to {path.name}.",
-            link_text="Show in file manager",
-            on_link=lambda: open_in_file_manager(folder),
+            links=[("Show in file manager", lambda: open_in_file_manager(folder))],
         )
 
     def _on_export_snippets_clicked(self) -> None:
@@ -427,28 +426,28 @@ class ExaminePanel(QWidget):
         cancelled = progress.wasCanceled()
         progress.close()
 
-        link = {"link_text": "Show in file manager", "on_link": lambda: open_in_file_manager(folder)} if ok else {}
+        links = [("Show in file manager", lambda: open_in_file_manager(folder))] if ok else []
         if errors:
             show_warning_toast(
                 self.window(),
                 "Snippet export incomplete",
                 f"Exported {ok} of {_plural(total, 'snippet')}, {len(errors)} failed. First error: {errors[0]}",
+                links=links,
                 duration=0,
-                **link,
             )
         elif cancelled:
             show_warning_toast(
                 self.window(),
                 "Snippet export cancelled",
                 f"Exported {ok} of {_plural(total, 'snippet')} before cancelling.",
-                **link,
+                links=links,
             )
         else:
             show_success_toast(
                 self.window(),
                 "Snippets exported",
                 f"Exported {_plural(ok, 'snippet')} to {folder.name}.",
-                **link,
+                links=links,
             )
 
     # helpers

@@ -322,7 +322,7 @@ def test_import_success_toast_links_to_the_destination(qtbot, tmp_path: Path, mo
     [(kind, _title, text, kwargs)] = toasts
     assert kind == "success"
     assert text == "MSD-1: copied 3 files (6.0 MB), skipped 2 already imported."
-    kwargs["on_link"]()
+    dict(kwargs["links"])["Show in file manager"]()
     assert opened == [tmp_path]
 
 

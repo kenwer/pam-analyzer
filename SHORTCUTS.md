@@ -6,6 +6,11 @@
 | Ctrl+W | ⌘W | **Close Project** | Close the current project and return to the welcome screen |
 | Ctrl+Q | ⌘Q | **Quit** | Exit the application |
 
+## Welcome screen
+| Windows/Linux | macOS | Action | Description |
+| --- | --- | --- | --- |
+| Delete | ⌦ (Fn+⌫) | **Remove from List** | Remove the selected recent project from the list. The project folder is not touched |
+
 ## Campaigns panel
 | Windows/Linux | macOS | Action | Description |
 | --- | --- | --- | --- |

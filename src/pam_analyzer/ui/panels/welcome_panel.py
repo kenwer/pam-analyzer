@@ -1,14 +1,16 @@
 """Welcome screen shown when no project is loaded.
 
-Offers buttons to create / open a project plus a list of recent projects,
-and accepts a project folder dropped from the file manager. The panel itself
+Offers buttons to create / open a project plus a list of recent projects.
+An entry's context menu relocates or removes it, and Delete removes the
+selected one. The panel also accepts a project folder dropped from the file
+manager. The panel itself
 is stateless about persistence, it emits signals. The main window owns
 AppSettings and the open/create handlers.
 """
 
 from pathlib import Path
 
-from PySide6.QtCore import QMimeData, QModelIndex, QRect, QSize, Qt, Signal
+from PySide6.QtCore import QMimeData, QModelIndex, QPoint, QRect, QSize, Qt, Signal
 from PySide6.QtGui import (
     QDragEnterEvent,
     QDragLeaveEvent,
@@ -16,11 +18,14 @@ from PySide6.QtGui import (
     QFont,
     QFontMetrics,
     QIcon,
+    QKeySequence,
     QPainter,
     QPalette,
+    QShortcut,
 )
 from PySide6.QtWidgets import (
     QListWidgetItem,
+    QMenu,
     QStyle,
     QStyledItemDelegate,
     QStyleOptionViewItem,
@@ -36,6 +41,8 @@ class WelcomePanel(QWidget):
     newRequested = Signal()
     openProjectFolderRequested = Signal()
     recentRequested = Signal(str)  # path str
+    removeRecentRequested = Signal(str)  # path str
+    locateRecentRequested = Signal(str)  # path str
     folderDropped = Signal(str)  # path str
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -54,6 +61,11 @@ class WelcomePanel(QWidget):
         self.ui.open_project_folder_button.clicked.connect(self.openProjectFolderRequested.emit)
         self.ui.recent_list.itemActivated.connect(self._on_recent_activated)
         self.ui.recent_list.itemClicked.connect(self._on_recent_activated)
+        self.ui.recent_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.ui.recent_list.customContextMenuRequested.connect(self._on_recent_context_menu)
+        remove = QShortcut(QKeySequence(Qt.Key.Key_Delete), self.ui.recent_list)
+        remove.setContext(Qt.ShortcutContext.WidgetShortcut)
+        remove.activated.connect(lambda: self._remove_recent(self.ui.recent_list.currentItem()))
 
     def set_loading(self, project_name: str) -> None:
         """Show a loading state in place of the usual tagline while a folder
@@ -123,6 +135,23 @@ class WelcomePanel(QWidget):
         path = item.data(Qt.ItemDataRole.UserRole)
         if isinstance(path, str):
             self.recentRequested.emit(path)
+
+    def _on_recent_context_menu(self, pos: QPoint) -> None:
+        item = self.ui.recent_list.itemAt(pos)
+        path = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+        if not isinstance(path, str):
+            return
+        menu = QMenu(self)
+        # Connected to the action rather than read from exec()'s return value,
+        # so a programmatic trigger (tests) takes the same path as a click.
+        menu.addAction("Locate…").triggered.connect(lambda: self.locateRecentRequested.emit(path))
+        menu.addAction("Remove from list").triggered.connect(lambda: self._remove_recent(item))
+        menu.exec(self.ui.recent_list.viewport().mapToGlobal(pos))
+
+    def _remove_recent(self, item: QListWidgetItem | None) -> None:
+        path = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+        if isinstance(path, str):
+            self.removeRecentRequested.emit(path)
 
 
 def _dropped_folder(mime: QMimeData) -> Path | None:
