@@ -22,8 +22,9 @@ from .detection import Detection
 from .enums import VerifiedState
 
 _VERIFIED_VALUES = [v.value for v in VerifiedState]
-# A leading slash or a drive letter, the two forms Path.is_absolute accepts.
-_ABSOLUTE_FILE = r"^(/|[A-Za-z]:[\\/])"
+# Mirrors Path.is_absolute on this platform. On Windows that means a drive
+# with a root, or a UNC share, and a bare leading slash is not absolute.
+_ABSOLUTE_FILE = r"^([A-Za-z]:[\\/]|[\\/]{2})" if os.name == "nt" else r"^/"
 
 
 def empty_detections_frame() -> pl.DataFrame:
