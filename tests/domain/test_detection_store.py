@@ -32,7 +32,7 @@ _ROWS = [
 def _write_raw(folder: Path, rows: list[str], header: str = _HEADER) -> Path:
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / "detections-BirdNET-2.4.csv"
-    path.write_text(header + "\r\n" + "\r\n".join(rows) + "\r\n", encoding="utf-8")
+    path.write_text(header + "\r\n" + "\r\n".join(rows) + "\r\n", encoding="utf-8", newline="")
     return path
 
 
