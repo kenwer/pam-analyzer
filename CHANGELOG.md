@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 ### Added
+- New help menu entry `Keyboard Shortcuts` that shows the list of shortcuts.
 - Open a project by drag&drop its folder onto the welcome screen.
 
 ### Changed

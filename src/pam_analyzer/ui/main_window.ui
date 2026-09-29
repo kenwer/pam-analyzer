@@ -132,6 +132,7 @@
     <addaction name="menu_log_level"/>
     <addaction name="action_open_log_folder"/>
     <addaction name="separator"/>
+    <addaction name="action_keyboard_shortcuts"/>
     <addaction name="action_about"/>
    </widget>
    <addaction name="menu_file"/>
@@ -183,6 +184,11 @@
   <action name="action_open_log_folder">
    <property name="text">
     <string>&amp;Open Log Folder</string>
+   </property>
+  </action>
+  <action name="action_keyboard_shortcuts">
+   <property name="text">
+    <string>&amp;Keyboard Shortcuts</string>
    </property>
   </action>
   <action name="action_about">

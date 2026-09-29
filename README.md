@@ -15,9 +15,6 @@ Automated bird species detection from acoustic recordings.
   - [Output files](#output-files)
   - [Examine Detections](#examine-detections)
 - [Keyboard shortcuts](#keyboard-shortcuts)
-  - [Global](#global)
-  - [Campaigns panel](#campaigns-panel)
-  - [Examine panel: detection row selected](#examine-panel-detection-row-selected)
 - [Core Concepts](#core-concepts)
   - [Project](#project)
   - [Campaign](#campaign)
@@ -167,37 +164,7 @@ Both suffixes can appear together, e.g. `…_corrected_confirmed.wav`.
 
 ## Keyboard shortcuts
 
-### Global
-| Windows/Linux | macOS | Action | Description |
-| --- | --- | --- | --- |
-| Ctrl+N        | ⌘N   | **New Project Folder**        | Initialize a folder as a new project |
-| Ctrl+O        | ⌘O   | **Open Project Folder...**    | Open an existing project folder |
-| Ctrl+W        | ⌘W   | **Close Project**      | Close the current project and return to the welcome screen |
-| Ctrl+Q        | ⌘Q   | **Quit**               | Exit the application |
-
-### Campaigns panel
-| Key | Action |
-| --- | --- |
-| `Ctrl+N` / `⌘N` | Create a new campaign |
-| `F2` | Rename the selected campaign |
-| `Delete` | Delete the selected campaign |
-| `Escape` | Leave campaign details and return to the overview |
-
-### Examine panel: detection row selected
-These shortcuts work whenever a row is selected in the Examine panel and no cell editor is open.
-
-| Key | Action |
-| --- | --- |
-| `Space` | Play / pause the current detection's audio |
-| `J` | Jump to the detection start marker in the audio player |
-| `B` | Seek to the beginning of the audio file |
-| `T` | Set **Verified** to `true` |
-| `F` | Set **Verified** to `false` |
-| `U` | Set **Verified** to `uncertain` |
-| `C` | Open the **Comment** field for text editing |
-| `S` | Open the **Corrected Species** dropdown |
-
-> **Tip:** While the Comment field or the Corrected Species dropdown is open, all single-key shortcuts are automatically suspended so you can type freely. Press `Escape` or `Enter` / `Return` to confirm and return to normal navigation.
+The keyboard shortcuts are listed on the [Keyboard shortcuts page](SHORTCUTS.md). They are also available from the app's `Help -> Keyboard Shortcuts` menu.
 
 
 ## Core Concepts

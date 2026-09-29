@@ -28,6 +28,7 @@ from ..infrastructure import (
 from ..workers import ImportOrchestrator, ProjectLoadWorker
 from .app_state import AppState
 from .dialogs.about_dialog import show_about_dialog
+from .dialogs.shortcuts_dialog import ShortcutsDialog
 from .panels.birdnet_panel import BirdNetPanel
 from .panels.campaigns_panel import CampaignsPanel
 from .panels.examine_panel import ExaminePanel
@@ -64,6 +65,7 @@ class MainWindow(QMainWindow):
         self._project_load_thread: QThread | None = None
         self._project_load_worker: ProjectLoadWorker | None = None
         self._pending_project_folder: Path | None = None
+        self._shortcuts_dialog: ShortcutsDialog | None = None
 
         # Welcome page: mount WelcomePanel into the stacked widget's first page
         self._welcome_panel = WelcomePanel(self.ui.welcome_page)
@@ -140,6 +142,7 @@ class MainWindow(QMainWindow):
         self.ui.action_clear_recent.triggered.connect(self._on_clear_recent)
         self.ui.action_quit.triggered.connect(self.close)
         self.ui.action_open_log_folder.triggered.connect(self._on_open_log_folder)
+        self.ui.action_keyboard_shortcuts.triggered.connect(self._on_keyboard_shortcuts)
         self.ui.action_about.triggered.connect(self._on_about)
         self._wire_log_level_menu()
 
@@ -481,6 +484,13 @@ class MainWindow(QMainWindow):
         log_dir = paths.log_dir()
         log_dir.mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(log_dir)))
+
+    def _on_keyboard_shortcuts(self) -> None:
+        if self._shortcuts_dialog is None:
+            self._shortcuts_dialog = ShortcutsDialog(self)
+        self._shortcuts_dialog.show()
+        self._shortcuts_dialog.raise_()
+        self._shortcuts_dialog.activateWindow()
 
     def _on_about(self) -> None:
         show_about_dialog(self)
