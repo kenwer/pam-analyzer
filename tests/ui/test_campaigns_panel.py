@@ -7,6 +7,7 @@ import unicodedata
 from pathlib import Path
 
 import pytest
+from PySide6.QtGui import QKeySequence, QShortcut
 
 from pam_analyzer.domain import AudioInventory, Campaign, FilterMode, LatLon, Project
 from pam_analyzer.domain.audio_import import DetectedCard, ImportSource
@@ -838,3 +839,9 @@ def test_overview_empty_without_project(qtbot):
     assert p._detail.ui.overview_label.text() == ""
     assert not p._detail.ui.overview_scroll.isVisibleTo(p._detail)
     assert p._detail.ui.no_campaigns_label.isVisibleTo(p._detail)
+
+
+def test_new_campaign_shortcut_leaves_ctrl_n_to_new_project(panel: CampaignsPanel):
+    keys = [shortcut.key() for shortcut in panel.findChildren(QShortcut)]
+    assert QKeySequence("Shift+Ctrl+N") in keys
+    assert QKeySequence("Ctrl+N") not in keys

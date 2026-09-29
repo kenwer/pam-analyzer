@@ -124,9 +124,8 @@ class CampaignsPanel(QWidget):
     def _setup_shortcuts(self) -> None:
         QShortcut(QKeySequence(Qt.Key.Key_Delete), self).activated.connect(self._on_delete_shortcut)
         QShortcut(QKeySequence(Qt.Key.Key_F2), self).activated.connect(self._on_rename_shortcut)
-        QShortcut(QKeySequence("Ctrl+N"), self).activated.connect(self._on_new)
-        # Esc leaves a campaign's details and returns to the overview. Scoped to
-        # this panel so it doesn't shadow Esc elsewhere in the window.
+        QShortcut(QKeySequence("Shift+Ctrl+N"), self).activated.connect(self._on_new)
+        # Esc leaves a campaign's details and returns to the overview. Scoped to this panel so it doesn't shadow Esc elsewhere in the window
         esc = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
         esc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         esc.activated.connect(self._on_escape)

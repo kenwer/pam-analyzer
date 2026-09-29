@@ -9,7 +9,7 @@
 ## Campaigns panel
 | Windows/Linux | macOS | Action | Description |
 | --- | --- | --- | --- |
-| Ctrl+N | ⌘N | **New Campaign** | Create a new campaign |
+| Shift+Ctrl+N | ⇧⌘N | **New Campaign** | Create a new campaign |
 | F2 | F2 | **Rename Campaign** | Rename the selected campaign |
 | Delete | ⌦ (Fn+⌫) | **Delete Campaign** | Delete the selected campaign |
 | Escape | Esc | **Back to Overview** | Leave campaign details and return to the overview |

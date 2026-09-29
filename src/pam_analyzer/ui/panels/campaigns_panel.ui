@@ -76,7 +76,7 @@
             <string>+</string>
            </property>
            <property name="toolTip">
-            <string>New campaign (Ctrl+N)</string>
+            <string>New campaign (Shift+Ctrl+N)</string>
            </property>
           </widget>
          </item>

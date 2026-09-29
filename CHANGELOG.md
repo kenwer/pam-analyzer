@@ -7,6 +7,7 @@
 
 ### Changed
 - Values of editable cells in the Examine panel can be changed using a single click.
+- New campaign shortcut is now Shift+Ctrl+N, so Ctrl+N always creates a new project.
 - [Dev] Switch to the Polars CSV writer to speed up CSV updates.
 - [Dev] Use Polars frame (DetectionStore) instead of a list of Detection objects.
 - [Dev] Upgrade dependencies.
