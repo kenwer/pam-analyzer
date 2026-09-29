@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 from PySide6.QtCore import QCoreApplication, QPoint, Qt
-from PySide6.QtWidgets import QTabWidget, QWidget
+from PySide6.QtWidgets import QProgressDialog, QTabWidget, QWidget
 
 from pam_analyzer.domain import Campaign, Detection, FilterMode, LatLon, Project
 from pam_analyzer.domain.filter_ops import FilterOp
@@ -439,6 +439,22 @@ def test_hidden_columns_persist_across_panel_instances(
     assert panel2.ui.detections_table._table.isColumnHidden(rank_col)
 
 
+@pytest.fixture(autouse=True)
+def toasts(monkeypatch) -> list[tuple[str, str, str, dict]]:
+    """Record (kind, title, text, kwargs) per toast instead of showing one.
+
+    A real pyqttoast keeps class-level queues and timers alive past the test.
+    """
+    shown: list[tuple[str, str, str, dict]] = []
+    for kind in ("success", "warning", "error"):
+
+        def record(_parent, title, text, *, _kind=kind, **kwargs):
+            shown.append((_kind, title, text, kwargs))
+
+        monkeypatch.setattr(f"pam_analyzer.ui.panels.examine_panel.show_{kind}_toast", record)
+    return shown
+
+
 def _trigger_export_action(panel: ExaminePanel, label: str) -> None:
     """Trigger the QAction in the export menu whose text starts with *label*."""
     menu = panel.ui.export_button.menu()
@@ -465,6 +481,38 @@ def test_export_csv_writes_visible_rows(panel: ExaminePanel, tmp_path: Path, mon
     assert len(rows) == 7
 
 
+def test_export_csv_toasts_success_with_folder_link(
+    panel: ExaminePanel, tmp_path: Path, monkeypatch, toasts
+) -> None:
+    out = tmp_path / "exported.csv"
+    monkeypatch.setattr(
+        "pam_analyzer.ui.panels.examine_panel.QFileDialog.getSaveFileName",
+        lambda *_a, **_k: (str(out), "CSV files (*.csv)"),
+    )
+    opened: list[Path] = []
+    monkeypatch.setattr("pam_analyzer.ui.panels.examine_panel.open_in_file_manager", opened.append)
+    _trigger_export_action(panel, "Export CSV")
+
+    [(kind, _title, text, kwargs)] = toasts
+    assert kind == "success"
+    assert "6 rows" in text
+    kwargs["on_link"]()
+    assert opened == [tmp_path]
+
+
+def test_export_csv_toasts_error_on_write_failure(
+    panel: ExaminePanel, tmp_path: Path, monkeypatch, toasts
+) -> None:
+    out = tmp_path / "missing_dir" / "exported.csv"
+    monkeypatch.setattr(
+        "pam_analyzer.ui.panels.examine_panel.QFileDialog.getSaveFileName",
+        lambda *_a, **_k: (str(out), "CSV files (*.csv)"),
+    )
+    _trigger_export_action(panel, "Export CSV")
+
+    assert [t[0] for t in toasts] == ["error"]
+
+
 def test_export_csv_skips_hidden_columns(panel: ExaminePanel, tmp_path: Path, monkeypatch) -> None:
     """Hidden columns must not appear in the exported CSV header."""
     rank_col = COLUMNS_BY_NAME["Rank"]
@@ -489,12 +537,7 @@ def test_export_snippets_uses_padding(panel: ExaminePanel, project: Project, tmp
     panel.pad_before_spin.setValue(0.5)
     panel.pad_after_spin.setValue(1.0)
 
-    folder = tmp_path / "snips"
-    folder.mkdir()
-    monkeypatch.setattr(
-        "pam_analyzer.ui.panels.examine_panel.QFileDialog.getExistingDirectory",
-        lambda *_a, **_k: str(folder),
-    )
+    folder = _prepare_snippet_export(panel, project, tmp_path, monkeypatch)
     # Stub the extractor so the test doesn't need real WAVs on disk.
     calls: list[tuple[Path, float, float, Path]] = []
 
@@ -502,13 +545,6 @@ def test_export_snippets_uses_padding(panel: ExaminePanel, project: Project, tmp
         calls.append((src, start, end, dst))
 
     monkeypatch.setattr(panel._audio_extractor, "extract", fake_extract)
-    # The fixture rows reference 'f.wav' which doesn't exist, so synthesize it.
-    audio_root = project.folder
-    for rel in panel._detections.frame["File"].unique().to_list():
-        f = audio_root / rel
-        f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_bytes(b"")  # presence check only, the extractor is stubbed
-
     _trigger_export_action(panel, "Export audio snippets")
 
     # Each visible detection should have produced one extract call.
@@ -521,6 +557,82 @@ def test_export_snippets_uses_padding(panel: ExaminePanel, project: Project, tmp
     assert end == pytest.approx(detection.end_time + 1.0)
     assert dst.parent == folder
     assert dst.suffix == ".wav"
+
+
+def _prepare_snippet_export(panel: ExaminePanel, project: Project, tmp_path: Path, monkeypatch) -> Path:
+    """Point the folder dialog at a fresh folder and create the audio files the rows reference."""
+    folder = tmp_path / "snips"
+    folder.mkdir()
+    monkeypatch.setattr(
+        "pam_analyzer.ui.panels.examine_panel.QFileDialog.getExistingDirectory",
+        lambda *_a, **_k: str(folder),
+    )
+    for rel in panel._detections.frame["File"].unique().to_list():
+        f = project.folder / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_bytes(b"")  # presence check only, the extractor is stubbed
+    return folder
+
+
+def test_export_snippets_toasts_success(
+    panel: ExaminePanel, project: Project, tmp_path: Path, monkeypatch, toasts
+) -> None:
+    folder = _prepare_snippet_export(panel, project, tmp_path, monkeypatch)
+    monkeypatch.setattr(panel._audio_extractor, "extract", lambda *_a: None)
+    opened: list[Path] = []
+    monkeypatch.setattr("pam_analyzer.ui.panels.examine_panel.open_in_file_manager", opened.append)
+    _trigger_export_action(panel, "Export audio snippets")
+
+    [(kind, _title, text, kwargs)] = toasts
+    assert kind == "success"
+    assert "6 snippets" in text
+    kwargs["on_link"]()
+    assert opened == [folder]
+
+
+def test_export_snippets_toasts_warning_on_partial_failure(
+    panel: ExaminePanel, project: Project, tmp_path: Path, monkeypatch, toasts
+) -> None:
+    _prepare_snippet_export(panel, project, tmp_path, monkeypatch)
+    calls = 0
+
+    def flaky_extract(*_a):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("disk full")
+
+    monkeypatch.setattr(panel._audio_extractor, "extract", flaky_extract)
+    _trigger_export_action(panel, "Export audio snippets")
+
+    [(kind, _title, text, kwargs)] = toasts
+    assert kind == "warning"
+    assert "Exported 5 of 6 snippets" in text
+    assert "disk full" in text
+    # Sticky, so the error stays readable until dismissed.
+    assert kwargs["duration"] == 0
+
+
+def test_export_snippets_cancel_stops_the_loop(
+    panel: ExaminePanel, project: Project, tmp_path: Path, monkeypatch, toasts
+) -> None:
+    _prepare_snippet_export(panel, project, tmp_path, monkeypatch)
+    calls = 0
+
+    def cancelling_extract(*_a):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            panel.window().findChild(QProgressDialog).cancel()
+
+    monkeypatch.setattr(panel._audio_extractor, "extract", cancelling_extract)
+    _trigger_export_action(panel, "Export audio snippets")
+
+    assert calls == 2
+    [(kind, title, text, _kwargs)] = toasts
+    assert kind == "warning"
+    assert "cancelled" in title
+    assert "Exported 2 of 6 snippets" in text
 
 
 def test_combo_delegate_species_choices_reflect_data(panel: ExaminePanel) -> None:

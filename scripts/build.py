@@ -443,6 +443,8 @@ def main() -> None:
         # imports statically does not reach every module it loads.
         '--include-package=birdnet',
         '--include-package-data=birdnet',
+        # Toast icons are package data. Without them showing a toast stalls.
+        '--include-package-data=pyqttoast',
         '--assume-yes-for-downloads',
         # Compiling the package directory rather than __main__.py keeps the
         # package context, so the relative imports inside the package resolve

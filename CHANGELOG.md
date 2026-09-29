@@ -4,6 +4,8 @@
 ### Added
 - New help menu entry `Keyboard Shortcuts` that shows the list of shortcuts.
 - Open a project by drag&drop its folder onto the welcome screen.
+- Exporting a CSV or audio snippets shows a toast message on completion or failure, with a "Show in file manager" link.
+- Exporting audio snippets shows a cancellable progress dialog.
 
 ### Changed
 - Values of editable cells in the Examine panel can be changed using a single click.

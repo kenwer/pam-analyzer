@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMenu,
     QMessageBox,
+    QProgressDialog,
     QVBoxLayout,
     QWidget,
     QWidgetAction,
@@ -24,6 +25,7 @@ from ...infrastructure import SoundfileAudioExtractor
 from ..app_state import AppState
 from ..models.detections_table_model import DetectionsTableModel
 from ..settings import AppSettings
+from ..toasts import open_in_file_manager, show_error_toast, show_success_toast, show_warning_toast
 from .ui_examine_panel import Ui_ExaminePanel
 
 _ALL_CAMPAIGNS_LABEL = "All campaigns"
@@ -362,9 +364,16 @@ class ExaminePanel(QWidget):
         try:
             _write_visible_csv(path, rows, self._visible_column_names())
         except Exception as exc:
-            self._app_state.errorOccurred.emit(f"Export failed: {exc}")
+            show_error_toast(self.window(), "CSV export failed", str(exc))
             return
-        self._app_state.statusMessage.emit(f"Exported {rows.height} rows to {path.name}")
+        folder = path.parent
+        show_success_toast(
+            self.window(),
+            "CSV exported",
+            f"Exported {_plural(rows.height, 'row')} to {path.name}.",
+            link_text="Show in file manager",
+            on_link=lambda: open_in_file_manager(folder),
+        )
 
     def _on_export_snippets_clicked(self) -> None:
         project = self._app_state.project
@@ -386,9 +395,19 @@ class ExaminePanel(QWidget):
         pad_before = float(project.snippet_padding_before or 0.0)
         pad_after = float(project.snippet_padding_after or 0.0)
 
+        # Modal on purpose: it keeps the table from starting spectrogram renders,
+        # whose sf.read must not overlap the extractor's (libsndfile on Windows).
+        progress = QProgressDialog("Exporting audio snippets...", "Cancel", 0, total, self.window())
+        progress.setWindowTitle("Export audio snippets")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(500)
+
         ok = 0
         errors: list[str] = []
         for row in range(total):
+            progress.setValue(row)
+            if progress.wasCanceled():
+                break
             d = self._model.detection_at(row)
             if d is None:
                 continue
@@ -405,10 +424,32 @@ class ExaminePanel(QWidget):
             except Exception as exc:
                 errors.append(f"{d.file}: {exc}")
 
+        cancelled = progress.wasCanceled()
+        progress.close()
+
+        link = {"link_text": "Show in file manager", "on_link": lambda: open_in_file_manager(folder)} if ok else {}
         if errors:
-            self._app_state.errorOccurred.emit(f"Exported {ok}/{total} snippets. First error: {errors[0]}")
+            show_warning_toast(
+                self.window(),
+                "Snippet export incomplete",
+                f"Exported {ok} of {_plural(total, 'snippet')}, {len(errors)} failed. First error: {errors[0]}",
+                duration=0,
+                **link,
+            )
+        elif cancelled:
+            show_warning_toast(
+                self.window(),
+                "Snippet export cancelled",
+                f"Exported {ok} of {_plural(total, 'snippet')} before cancelling.",
+                **link,
+            )
         else:
-            self._app_state.statusMessage.emit(f"Exported {ok} snippet(s) to {folder.name}")
+            show_success_toast(
+                self.window(),
+                "Snippets exported",
+                f"Exported {_plural(ok, 'snippet')} to {folder.name}.",
+                **link,
+            )
 
     # helpers
 
@@ -450,6 +491,10 @@ def _fmt_count(shown: int, total: int) -> str:
     if shown == total:
         return f"{total:,}"
     return f"{shown:,} of {total:,}"
+
+
+def _plural(n: int, noun: str) -> str:
+    return f"{n:,} {noun}" if n == 1 else f"{n:,} {noun}s"
 
 
 def _write_visible_csv(path: Path, frame: pl.DataFrame, columns: list[str]) -> None:
