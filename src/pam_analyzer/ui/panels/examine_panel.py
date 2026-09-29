@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QLabel,
     QMenu,
-    QMessageBox,
     QProgressDialog,
     QVBoxLayout,
     QWidget,
@@ -183,6 +182,7 @@ class ExaminePanel(QWidget):
         menu.addAction(csv_action)
         menu.addAction(snip_action)
         self.ui.export_button.setMenu(menu)
+        self._export_actions = (csv_action, snip_action)
 
     # state observers
 
@@ -287,6 +287,8 @@ class ExaminePanel(QWidget):
         self.ui.detections_table.fitColumnsToContents()
 
     def _on_detection_count_changed(self, shown: int) -> None:
+        for action in self._export_actions:
+            action.setEnabled(shown > 0)
         total = self._detections.row_count
         self.ui.info_label.setText(f"{_fmt_count(shown, total)} detections{self._model_breakdown_suffix()}")
 
@@ -348,7 +350,6 @@ class ExaminePanel(QWidget):
     def _on_export_csv_clicked(self) -> None:
         rows = self._model.visible_frame()
         if rows.is_empty():
-            QMessageBox.information(self, "Export CSV", "Nothing to export.")
             return
         path_str, _ = QFileDialog.getSaveFileName(
             self,
@@ -381,7 +382,6 @@ class ExaminePanel(QWidget):
             return
         total = self._model.rowCount()
         if total == 0:
-            QMessageBox.information(self, "Export snippets", "Nothing to export.")
             return
         folder_str = QFileDialog.getExistingDirectory(
             self,

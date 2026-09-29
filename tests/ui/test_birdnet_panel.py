@@ -182,6 +182,30 @@ def test_on_finished_switches_to_results_page(panel: BirdNetPanel, state: AppSta
     assert "42" in panel.ui.summary_label.text()
 
 
+def test_completed_run_toasts_with_a_link_to_the_results(panel: BirdNetPanel, state: AppState, toasts):
+    panel._on_finished(_make_completed_outcome(state, count=1234))
+
+    [(kind, _title, text, kwargs)] = toasts
+    assert kind == "success"
+    assert "1,234 detections in 1 campaign." in text
+    assert kwargs["duration"] == 0
+    requested: list[bool] = []
+    panel.showResultsRequested.connect(lambda: requested.append(True))
+    kwargs["on_link"]()
+    assert requested == [True]
+
+
+def test_failed_run_stays_modal(panel: BirdNetPanel, monkeypatch, toasts):
+    warnings: list[tuple] = []
+    monkeypatch.setattr(
+        "pam_analyzer.ui.panels.birdnet_panel.QMessageBox.warning", lambda *a: warnings.append(a)
+    )
+    panel._on_finished(AnalysisRunResult(status=RunStatus.FAILED, error="out of memory"))
+
+    assert [w[1:] for w in warnings] == [("Analysis failed", "out of memory")]
+    assert toasts == []
+
+
 def test_cancelled_run_still_shows_completed_campaigns(
     panel: BirdNetPanel, state: AppState
 ):

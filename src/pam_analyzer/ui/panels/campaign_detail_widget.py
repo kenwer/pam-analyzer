@@ -24,7 +24,6 @@ from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
     QHeaderView,
-    QMessageBox,
     QPlainTextEdit,
     QVBoxLayout,
     QWidget,
@@ -32,6 +31,7 @@ from PySide6.QtWidgets import (
 
 from ...domain import AudioInventory, Campaign, FilterMode, LatLon, campaign_name_error
 from ...domain.audio_import import (
+    CardImportResult,
     ConflictReport,
     DetectedCard,
     ImportProgress,
@@ -45,6 +45,7 @@ from ..dialogs.folder_import_dialog import FolderImportDialog
 from ..dialogs.import_conflict_dialog import ImportConflictDialog
 from ..models.audio_inventory_tree_model import SIZE_PENDING, AudioInventoryTreeModel, format_bytes
 from ..models.campaign_overview import CampaignOverviewEntry, render_overview
+from ..toasts import open_in_file_manager, show_error_toast, show_success_toast, show_warning_toast
 from .ui_campaign_detail_widget import Ui_CampaignDetailWidget
 
 _Mode = Literal["empty", "view", "new", "edit", "confirm"]
@@ -541,8 +542,8 @@ class CampaignDetailWidget(QWidget):
             c for root in roots for c in discover_folder_cards(root, self._orchestrator.has_direct_audio)
         ]
         if not cards:
-            QMessageBox.information(
-                self, "Import from folder", "No importable audio files were found in that folder."
+            show_warning_toast(
+                self.window(), "Import from folder", "No importable audio files were found in that folder."
             )
             return
         file_counts = [len(self._orchestrator.list_card_files(c.mountpoint)) for c in cards]
@@ -597,9 +598,10 @@ class CampaignDetailWidget(QWidget):
             mins, secs = divmod(int(remaining), 60)
             self.ui.eta_label.setText(f"{mins}m {secs:02d}s" if mins else f"{secs}s")
 
-    def _on_result_ready(self, _result: object) -> None:
+    def _on_result_ready(self, result: CardImportResult) -> None:
         self._is_copying = False
         self._apply_import_state()
+        _toast_import_result(self.window(), result)
 
     def _on_conflict_detected(self, card: DetectedCard, report: ConflictReport) -> None:
         dialog = ImportConflictDialog(list(report.conflicts), self)
@@ -715,3 +717,24 @@ def _attach_text_drop_handler(edit: QPlainTextEdit, on_drop) -> None:
 
     edit.dragEnterEvent = drag_enter  # type: ignore[method-assign]
     edit.dropEvent = drop  # type: ignore[method-assign]
+
+
+def _toast_import_result(parent: QWidget, result: CardImportResult) -> None:
+    """Report one card's import outcome. The worker marks a user cancel with error "Cancelled"."""
+    name = result.card.name
+    copied = f"{result.files_copied:,} file{'s' if result.files_copied != 1 else ''}"
+    link = {}
+    if result.dest_dir is not None:
+        dest = result.dest_dir
+        link = {"link_text": "Show in file manager", "on_link": lambda: open_in_file_manager(dest)}
+    if result.error == "Cancelled":
+        show_warning_toast(parent, "Import cancelled", f"{name}: copied {copied} before cancelling.", **link)
+    elif result.error:
+        # Sticky: in watch mode the user may be busy swapping cards.
+        title = "Import incomplete" if result.files_copied else "Import failed"
+        show_error_toast(parent, title, f"{name}: copied {copied}. First error: {result.error}", duration=0)
+    else:
+        text = f"{name}: copied {copied} ({format_bytes(result.bytes_copied)})"
+        if result.files_skipped:
+            text += f", skipped {result.files_skipped:,} already imported"
+        show_success_toast(parent, "Import finished", text + ".", **link)

@@ -35,6 +35,7 @@ from .panels.examine_panel import ExaminePanel
 from .panels.project_panel import ProjectPanel
 from .panels.welcome_panel import WelcomePanel
 from .settings import AppSettings
+from .toasts import show_error_toast, show_info_toast, show_warning_toast
 from .ui_main_window import Ui_MainWindow
 
 _log = logging.getLogger(__name__)
@@ -103,6 +104,10 @@ class MainWindow(QMainWindow):
         self._mount_tab(self.ui.examine_tab, self._examine_panel, "Examine")
         self.ui.tab_widget.setCurrentWidget(self._project_panel)
 
+        self._birdnet_panel.showResultsRequested.connect(
+            lambda: self.ui.tab_widget.setCurrentWidget(self._examine_panel)
+        )
+
         self._wire_actions()
         self._wire_state()
         self._wire_welcome()
@@ -164,7 +169,7 @@ class MainWindow(QMainWindow):
 
     def _wire_state(self) -> None:
         self._app_state.statusMessage.connect(lambda msg: self.ui.status_bar.showMessage(msg, 5000))
-        self._app_state.errorOccurred.connect(lambda msg: QMessageBox.warning(self, "PAM Analyzer", msg))
+        self._app_state.errorOccurred.connect(lambda msg: show_error_toast(self, "Error", msg, duration=0))
         self._app_state.projectChanged.connect(self._on_project_changed)
         self._app_state.analysisStarted.connect(self._on_analysis_started)
         self._app_state.analysisFinished.connect(self._on_analysis_finished)
@@ -312,7 +317,7 @@ class MainWindow(QMainWindow):
         """
         if self._project_load_thread is None:
             return False
-        QMessageBox.information(self, "PAM Analyzer", "Already opening a project; please wait.")
+        show_info_toast(self, "Opening project", "Already opening a project, please wait.")
         return True
 
     def _start_project_load(self, folder: Path) -> None:
@@ -529,11 +534,7 @@ class MainWindow(QMainWindow):
             # A pre-upgrade recent entry pointing at a legacy project file.
             self._migrate_legacy(path)
             return
-        QMessageBox.warning(
-            self,
-            "Project not found",
-            f"The project is no longer accessible:\n{path}",
-        )
+        show_warning_toast(self, "Project not found", f"The project is no longer accessible:\n{path}")
 
     # state reactions
 

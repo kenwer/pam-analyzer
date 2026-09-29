@@ -11,8 +11,25 @@ from pathlib import Path
 import pytest
 from PySide6.QtCore import Qt, QThread
 
+from pam_analyzer.ui import toasts as toasts_module
 from pam_analyzer.ui.app_state import AppState
 from pam_analyzer.workers import ProjectLoadWorker
+
+
+@pytest.fixture(autouse=True)
+def toasts(monkeypatch) -> list[tuple[str, str, str, dict]]:
+    """Record (kind, title, text, kwargs) per toast instead of showing one.
+
+    kind is the preset name in lower case ("success", "warning", ...). A real
+    pyqttoast keeps class-level queues and timers alive past the test.
+    """
+    shown: list[tuple[str, str, str, dict]] = []
+
+    def record(_parent, title, text, preset, **kwargs):
+        shown.append((preset.name.lower(), title, text, kwargs))
+
+    monkeypatch.setattr(toasts_module, "_show_toast", record)
+    return shown
 
 
 @pytest.fixture

@@ -5,9 +5,10 @@ from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
 
-from PySide6.QtCore import QCoreApplication, Qt, QThread, QUrl
+from PySide6.QtCore import QCoreApplication, Qt, QThread, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
+    QApplication,
     QHBoxLayout,
     QMessageBox,
     QToolButton,
@@ -28,6 +29,7 @@ from ...widgets.no_hover_style import disable_item_hover
 from ...workers import AnalysisWorker
 from ..app_state import AppState
 from ..models.birdnet_results_model import BirdnetResultsModel
+from ..toasts import show_success_toast, show_warning_toast
 from .ui_birdnet_panel import Ui_BirdNetPanel
 
 _ALL_CAMPAIGNS_LABEL = "All campaigns"
@@ -46,6 +48,8 @@ class _PanelState:
 
 
 class BirdNetPanel(QWidget):
+    showResultsRequested = Signal()  # the finished-run toast's link
+
     def __init__(
         self,
         app_state: AppState,
@@ -236,7 +240,7 @@ class BirdNetPanel(QWidget):
                 return
             campaigns = [c]
         if not campaigns:
-            QMessageBox.information(self, self._runner_key, "No campaigns to run.")
+            show_warning_toast(self.window(), self._runner_key, "No campaigns to run.")
             return
 
         settings = project.analysis_settings
@@ -323,12 +327,24 @@ class BirdNetPanel(QWidget):
         results = self._app_state.analysis_inventory
         if results is None or not results.campaigns:
             self._set_status_page(_StatusPage.IDLE)
+        # A run can take hours, so a failure stays modal until acknowledged and a success toast stays until dismissed
         if outcome.status is RunStatus.FAILED:
-            self._app_state.errorOccurred.emit(
-                f"Analysis failed: {outcome.error or 'unknown error'}"
-            )
+            QMessageBox.warning(self, "Analysis failed", outcome.error or "unknown error")
         elif outcome.status is RunStatus.CANCELLED:
             self._app_state.statusMessage.emit("Analysis cancelled.")
+        else:
+            detections = sum(c.detection_count for c in outcome.campaigns)
+            campaigns = len(outcome.campaigns)
+            show_success_toast(
+                self.window(),
+                "Analysis finished",
+                f"{detections:,} detection{'s' if detections != 1 else ''} "
+                f"in {campaigns} campaign{'s' if campaigns != 1 else ''}.",
+                link_text="Show results",
+                on_link=self.showResultsRequested.emit,
+                duration=0,
+            )
+        QApplication.alert(self.window())
 
     def _on_analysis_inventory_changed(self, results: AnalysisInventory | None) -> None:
         # A run currently in progress owns the status page; don't fight it.

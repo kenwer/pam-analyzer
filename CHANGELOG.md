@@ -4,12 +4,17 @@
 ### Added
 - New help menu entry `Keyboard Shortcuts` that shows the list of shortcuts.
 - Open a project by drag&drop its folder onto the welcome screen.
-- Exporting a CSV or audio snippets shows a toast message on completion or failure, with a "Show in file manager" link.
+- Show toast messages when:
+  - a CSV or audio snippet export finishes or fails (plus a "Show in file manager" link)
+  - an analysis finishes (plus a "Show results" link)
+  - an SD card or folder import finishes or fails
+  - errors and notices occur that previously opened a modal dialog
 - Exporting audio snippets shows a cancellable progress dialog.
 
 ### Changed
 - Values of editable cells in the Examine panel can be changed using a single click.
 - New campaign shortcut is now Shift+Ctrl+N, so Ctrl+N always creates a new project.
+- The export menu entries are disabled while the table shows no rows.
 - [Dev] Switch to the Polars CSV writer to speed up CSV updates.
 - [Dev] Use Polars frame (DetectionStore) instead of a list of Detection objects.
 - [Dev] Upgrade dependencies.

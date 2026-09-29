@@ -101,6 +101,17 @@ def show_success_toast(
     )
 
 
+def show_info_toast(
+    parent: QWidget,
+    title: str,
+    text: str,
+    *,
+    duration: int | None = None,
+) -> Toast:
+    """Show a non-blocking information toast."""
+    return _show_toast(parent, title, text, ToastPreset.INFORMATION, duration=duration)
+
+
 def show_error_toast(
     parent: QWidget,
     title: str,

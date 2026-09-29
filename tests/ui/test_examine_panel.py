@@ -439,22 +439,6 @@ def test_hidden_columns_persist_across_panel_instances(
     assert panel2.ui.detections_table._table.isColumnHidden(rank_col)
 
 
-@pytest.fixture(autouse=True)
-def toasts(monkeypatch) -> list[tuple[str, str, str, dict]]:
-    """Record (kind, title, text, kwargs) per toast instead of showing one.
-
-    A real pyqttoast keeps class-level queues and timers alive past the test.
-    """
-    shown: list[tuple[str, str, str, dict]] = []
-    for kind in ("success", "warning", "error"):
-
-        def record(_parent, title, text, *, _kind=kind, **kwargs):
-            shown.append((_kind, title, text, kwargs))
-
-        monkeypatch.setattr(f"pam_analyzer.ui.panels.examine_panel.show_{kind}_toast", record)
-    return shown
-
-
 def _trigger_export_action(panel: ExaminePanel, label: str) -> None:
     """Trigger the QAction in the export menu whose text starts with *label*."""
     menu = panel.ui.export_button.menu()
@@ -498,6 +482,17 @@ def test_export_csv_toasts_success_with_folder_link(
     assert "6 rows" in text
     kwargs["on_link"]()
     assert opened == [tmp_path]
+
+
+def test_export_actions_disabled_when_no_rows_are_shown(panel: ExaminePanel) -> None:
+    actions = panel.ui.export_button.menu().actions()
+    assert all(a.isEnabled() for a in actions)
+
+    panel._model.set_column_filter(COLUMNS_BY_NAME["ARU"], "no-such-aru", FilterOp.EQUALS)
+    assert not any(a.isEnabled() for a in actions)
+
+    panel._model.set_column_filter(COLUMNS_BY_NAME["ARU"], "", FilterOp.EQUALS)
+    assert all(a.isEnabled() for a in actions)
 
 
 def test_export_csv_toasts_error_on_write_failure(

@@ -18,13 +18,14 @@ import pytest
 import soundfile as sf
 from PySide6.QtCore import QMimeData, QPointF, Qt, QUrl
 from PySide6.QtGui import QDropEvent
-from PySide6.QtWidgets import QDialog
+from PySide6.QtWidgets import QDialog, QWidget
 
 from pam_analyzer.domain import Campaign, FilterMode, LatLon, Project
-from pam_analyzer.domain.audio_import import DetectedCard
+from pam_analyzer.domain.audio_import import CardImportResult, DetectedCard
 from pam_analyzer.infrastructure import AudioImporter
 from pam_analyzer.ui.app_state import AppState
 from pam_analyzer.ui.dialogs.folder_import_dialog import FolderImportDialog
+from pam_analyzer.ui.panels.campaign_detail_widget import _toast_import_result
 from pam_analyzer.ui.panels.campaigns_panel import CampaignsPanel
 from pam_analyzer.ui.settings import AppSettings
 from pam_analyzer.workers import ImportOrchestrator
@@ -297,3 +298,50 @@ def test_watch_button_becomes_cancel_during_folder_import(
     detail.ui.watch_button.click()
     qtbot.waitUntil(lambda: not detail._is_folder_importing, timeout=5000)
     assert detail.ui.watch_button.text() == "Start SD import"
+
+
+def _card_result(tmp_path: Path, *, copied: int, skipped: int = 0, error: str = "") -> CardImportResult:
+    return CardImportResult(
+        card=DetectedCard(name="MSD-1", mountpoint=tmp_path, device=""),
+        files_copied=copied,
+        files_skipped=skipped,
+        bytes_copied=copied * 2_000_000,
+        elapsed=1.0,
+        error=error,
+        dest_dir=tmp_path if copied or skipped else None,
+    )
+
+
+def test_import_success_toast_links_to_the_destination(qtbot, tmp_path: Path, monkeypatch, toasts) -> None:
+    opened: list[Path] = []
+    monkeypatch.setattr("pam_analyzer.ui.panels.campaign_detail_widget.open_in_file_manager", opened.append)
+    parent = QWidget()
+    qtbot.addWidget(parent)
+    _toast_import_result(parent, _card_result(tmp_path, copied=3, skipped=2))
+
+    [(kind, _title, text, kwargs)] = toasts
+    assert kind == "success"
+    assert text == "MSD-1: copied 3 files (6.0 MB), skipped 2 already imported."
+    kwargs["on_link"]()
+    assert opened == [tmp_path]
+
+
+def test_import_cancel_toasts_a_warning(qtbot, tmp_path: Path, toasts) -> None:
+    parent = QWidget()
+    qtbot.addWidget(parent)
+    _toast_import_result(parent, _card_result(tmp_path, copied=1, error="Cancelled"))
+
+    [(kind, title, text, _kwargs)] = toasts
+    assert (kind, title) == ("warning", "Import cancelled")
+    assert text == "MSD-1: copied 1 file before cancelling."
+
+
+def test_import_error_toast_is_sticky(qtbot, tmp_path: Path, toasts) -> None:
+    parent = QWidget()
+    qtbot.addWidget(parent)
+    _toast_import_result(parent, _card_result(tmp_path, copied=0, error="card removed"))
+
+    [(kind, title, text, kwargs)] = toasts
+    assert (kind, title) == ("error", "Import failed")
+    assert "card removed" in text
+    assert kwargs["duration"] == 0
