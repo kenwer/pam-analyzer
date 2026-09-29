@@ -1,6 +1,9 @@
 # Changelog
 
 ## [Unreleased]
+### Added
+- Open a project by drag&drop its folder onto the welcome screen.
+
 ### Changed
 - [Dev] Switch to the Polars CSV writer to speed up CSV updates.
 - [Dev] Use Polars frame (DetectionStore) instead of a list of Detection objects.

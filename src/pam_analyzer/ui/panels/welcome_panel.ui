@@ -120,7 +120,13 @@
   font-size: 14px;
 }
 QPushButton#new_button:hover { background-color: #4a7dd0; }
-QPushButton#new_button:pressed { background-color: #3d6cb8; }</string>
+QPushButton#new_button:pressed { background-color: #3d6cb8; }
+QPushButton#new_button:disabled {
+  background-color: palette(button);
+  color: palette(placeholder-text);
+  border: 2px solid palette(placeholder-text);
+  padding: 8px 18px;
+}</string>
        </property>
       </widget>
      </item>
@@ -149,7 +155,8 @@ QPushButton#new_button:pressed { background-color: #3d6cb8; }</string>
   font-size: 14px;
 }
 QPushButton#open_project_folder_button:hover { background-color: rgba(90, 141, 238, 32); }
-QPushButton#open_project_folder_button:pressed { background-color: rgba(90, 141, 238, 64); }</string>
+QPushButton#open_project_folder_button:pressed { background-color: rgba(90, 141, 238, 64); }
+QPushButton#open_project_folder_button:disabled { color: palette(placeholder-text); border-color: palette(placeholder-text); }</string>
        </property>
       </widget>
      </item>

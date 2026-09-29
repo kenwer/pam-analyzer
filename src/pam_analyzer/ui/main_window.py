@@ -210,6 +210,7 @@ class MainWindow(QMainWindow):
         self._welcome_panel.newRequested.connect(self._on_new)
         self._welcome_panel.openProjectFolderRequested.connect(self._on_open_project_folder)
         self._welcome_panel.recentRequested.connect(self._open_recent)
+        self._welcome_panel.folderDropped.connect(self._on_folder_dropped)
 
     # File menu handlers
 
@@ -233,6 +234,11 @@ class MainWindow(QMainWindow):
         )
         if folder_str:
             self._open_folder(Path(folder_str), confirm_create=True)
+
+    def _on_folder_dropped(self, folder_str: str) -> None:
+        if self._project_open_in_progress():
+            return
+        self._open_folder(Path(folder_str), confirm_create=True)
 
     def _on_open_legacy_pamproj(self) -> None:
         """Migrate a legacy .pamproj file wherever it lives.
