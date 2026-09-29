@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.7.1] - 2026-09-29
 ### Added
 - New help menu entry `Keyboard Shortcuts` that shows the list of shortcuts.
 - Open a project by drag&drop its folder onto the welcome screen.
