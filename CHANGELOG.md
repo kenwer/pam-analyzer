@@ -13,6 +13,7 @@
 - Recent projects on the welcome screen can be removed from the list or pointed to a new folder via `Locate…`.
 
 ### Changed
+- Audio snippets are exported as FLAC instead of WAV.
 - Values of editable cells in the Examine panel can be changed using a single click.
 - New campaign shortcut is now Shift+Ctrl+N, so Ctrl+N always creates a new project.
 - The export menu entries are disabled while the table shows no rows.

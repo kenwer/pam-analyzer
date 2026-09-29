@@ -9,7 +9,6 @@ from PySide6.QtWidgets import QProgressDialog, QTabWidget, QWidget
 
 from pam_analyzer.domain import Campaign, Detection, FilterMode, LatLon, Project
 from pam_analyzer.domain.filter_ops import FilterOp
-from pam_analyzer.infrastructure import SoundfileAudioExtractor
 from pam_analyzer.ui.app_state import AppState
 from pam_analyzer.ui.models.detections_table_model import COLUMNS_BY_NAME
 from pam_analyzer.ui.panels.examine_panel import ExaminePanel
@@ -118,7 +117,7 @@ def _isolated_qsettings(tmp_path, monkeypatch):
 @pytest.fixture
 def panel(qtbot, project: Project, load_project) -> ExaminePanel:
     state = AppState()
-    panel = ExaminePanel(state, AppSettings(), SoundfileAudioExtractor())
+    panel = ExaminePanel(state, AppSettings())
     qtbot.addWidget(panel)
     load_project(state, project.folder)
     # ExaminePanel coalesces its campaign reload onto a single-shot timer, so pump
@@ -378,7 +377,7 @@ def test_padding_spinboxes_init_from_project(qtbot, project: Project, load_proje
     p.save()
 
     state = AppState()
-    panel = ExaminePanel(state, AppSettings(), SoundfileAudioExtractor())
+    panel = ExaminePanel(state, AppSettings())
     qtbot.addWidget(panel)
     load_project(state, p.folder)
 
@@ -409,7 +408,7 @@ def test_project_toml_without_padding_loads_with_zero(
     )
 
     state = AppState()
-    panel = ExaminePanel(state, AppSettings(), SoundfileAudioExtractor())
+    panel = ExaminePanel(state, AppSettings())
     qtbot.addWidget(panel)
     load_project(state, tmp_path)
 
@@ -423,7 +422,7 @@ def test_hidden_columns_persist_across_panel_instances(
     """Toggling a column off and rebuilding the panel restores the hidden state."""
     state = AppState()
     settings = AppSettings()
-    panel = ExaminePanel(state, settings, SoundfileAudioExtractor())
+    panel = ExaminePanel(state, settings)
     qtbot.addWidget(panel)
     load_project(state, project.folder)
 
@@ -433,7 +432,7 @@ def test_hidden_columns_persist_across_panel_instances(
 
     # Build a fresh panel against the same QSettings store.
     state2 = AppState()
-    panel2 = ExaminePanel(state2, AppSettings(), SoundfileAudioExtractor())
+    panel2 = ExaminePanel(state2, AppSettings())
     qtbot.addWidget(panel2)
     load_project(state2, project.folder)
     assert panel2.ui.detections_table._table.isColumnHidden(rank_col)
@@ -539,7 +538,7 @@ def test_export_snippets_uses_padding(panel: ExaminePanel, project: Project, tmp
     def fake_extract(src, start, end, dst):
         calls.append((src, start, end, dst))
 
-    monkeypatch.setattr(panel._audio_extractor, "extract", fake_extract)
+    monkeypatch.setattr("pam_analyzer.ui.panels.examine_panel.extract_snippet", fake_extract)
     _trigger_export_action(panel, "Export audio snippets")
 
     # Each visible detection should have produced one extract call.
@@ -551,7 +550,7 @@ def test_export_snippets_uses_padding(panel: ExaminePanel, project: Project, tmp
     assert start == pytest.approx(max(0.0, detection.start_time - 0.5))
     assert end == pytest.approx(detection.end_time + 1.0)
     assert dst.parent == folder
-    assert dst.suffix == ".wav"
+    assert dst.suffix == ".flac"
 
 
 def _prepare_snippet_export(panel: ExaminePanel, project: Project, tmp_path: Path, monkeypatch) -> Path:
@@ -573,7 +572,7 @@ def test_export_snippets_toasts_success(
     panel: ExaminePanel, project: Project, tmp_path: Path, monkeypatch, toasts
 ) -> None:
     folder = _prepare_snippet_export(panel, project, tmp_path, monkeypatch)
-    monkeypatch.setattr(panel._audio_extractor, "extract", lambda *_a: None)
+    monkeypatch.setattr("pam_analyzer.ui.panels.examine_panel.extract_snippet", lambda *_a: None)
     opened: list[Path] = []
     monkeypatch.setattr("pam_analyzer.ui.panels.examine_panel.open_in_file_manager", opened.append)
     _trigger_export_action(panel, "Export audio snippets")
@@ -597,7 +596,7 @@ def test_export_snippets_toasts_warning_on_partial_failure(
         if calls == 2:
             raise OSError("disk full")
 
-    monkeypatch.setattr(panel._audio_extractor, "extract", flaky_extract)
+    monkeypatch.setattr("pam_analyzer.ui.panels.examine_panel.extract_snippet", flaky_extract)
     _trigger_export_action(panel, "Export audio snippets")
 
     [(kind, _title, text, kwargs)] = toasts
@@ -620,7 +619,7 @@ def test_export_snippets_cancel_stops_the_loop(
         if calls == 2:
             panel.window().findChild(QProgressDialog).cancel()
 
-    monkeypatch.setattr(panel._audio_extractor, "extract", cancelling_extract)
+    monkeypatch.setattr("pam_analyzer.ui.panels.examine_panel.extract_snippet", cancelling_extract)
     _trigger_export_action(panel, "Export audio snippets")
 
     assert calls == 2
@@ -657,7 +656,7 @@ def test_filter_inputs_visible_when_mounted_in_hidden_tab(
     tabs = QTabWidget()
     dummy = QWidget()
     tabs.addTab(dummy, "Other")
-    panel = ExaminePanel(state, AppSettings(), SoundfileAudioExtractor())
+    panel = ExaminePanel(state, AppSettings())
     tabs.addTab(panel, "Examine")
     qtbot.addWidget(tabs)
     tabs.show()

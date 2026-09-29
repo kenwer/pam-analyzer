@@ -159,7 +159,7 @@ When exporting audio snippets, annotation values are reflected in the output fil
 - **Verified**: appends `_confirmed`, `_incorrect`, or `_uncertain` depending on the value.
 - **Corrected_Species**: replaces the original species name in the filename with the corrected one (scientific name looked up from the project language) and appends `_corrected`.
 
-Both suffixes can appear together, e.g. `…_corrected_confirmed.wav`.
+Both suffixes can appear together, e.g. `…_corrected_confirmed.flac`.
 
 
 ## Keyboard shortcuts

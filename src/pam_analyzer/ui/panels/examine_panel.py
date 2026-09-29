@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...domain import Campaign, Detection, DetectionStore
-from ...infrastructure import SoundfileAudioExtractor
+from ...infrastructure import extract_snippet
 from ..app_state import AppState
 from ..models.detections_table_model import DetectionsTableModel
 from ..settings import AppSettings
@@ -52,7 +52,6 @@ class ExaminePanel(QWidget):
         self,
         app_state: AppState,
         settings: AppSettings,
-        audio_extractor: SoundfileAudioExtractor,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -61,7 +60,6 @@ class ExaminePanel(QWidget):
 
         self._app_state = app_state
         self._settings = settings
-        self._audio_extractor = audio_extractor
         self._model = DetectionsTableModel(self)
         # The loaded store for the current campaign selection. The table model
         # reads and edits it, and autosave writes its dirty files back.
@@ -418,7 +416,7 @@ class ExaminePanel(QWidget):
             end = d.end_time + pad_after
             dst = folder / _snippet_filename(d, start, end)
             try:
-                self._audio_extractor.extract(src, start, end, dst)
+                extract_snippet(src, start, end, dst)
                 ok += 1
             except Exception as exc:
                 errors.append(f"{d.file}: {exc}")
@@ -507,7 +505,7 @@ def _write_visible_csv(path: Path, frame: pl.DataFrame, columns: list[str]) -> N
 
 
 def _snippet_filename(d: Detection, start: float, end: float) -> str:
-    """Build a descriptive .wav filename per detection.
+    """Build a descriptive .flac filename per detection.
 
     Slimmer than the original AG Grid version: campaign / aru / species
     name / start / end / confidence is enough for human-readable export.
@@ -524,4 +522,4 @@ def _snippet_filename(d: Detection, start: float, end: float) -> str:
         f"{start:.1f}-{end:.1f}",
         f"conf{d.confidence:.4f}",
     ]
-    return "_-_".join(p for p in parts if p) + ".wav"
+    return "_-_".join(p for p in parts if p) + ".flac"

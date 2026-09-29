@@ -5,24 +5,16 @@ from pathlib import Path
 import soundfile as sf
 
 
-class SoundfileAudioExtractor:
-    def __init__(self) -> None:
-        self._duration_cache: dict[Path, float] = {}
+def extract_snippet(src: Path, start: float, end: float, dst: Path) -> None:
+    """Write the *start*..*end* seconds of *src* to *dst* as FLAC.
 
-    def duration(self, src: Path) -> float:
-        cached = self._duration_cache.get(src)
-        if cached is not None:
-            return cached
-        try:
-            value = sf.info(src).duration
-        except Exception:
-            value = 0.0
-        self._duration_cache[src] = value
-        return value
-
-    def extract(self, src: Path, start: float, end: float, dst: Path) -> None:
-        audio, sr = sf.read(src)
-        end = min(len(audio) / sr, end)
-        snippet = audio[int(start * sr) : int(end * sr)]
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        sf.write(dst, snippet, sr)
+    Only the snippet's frames are decoded, and a stop past the end of the
+    file is clamped by soundfile. FLAC has no float subtype, so float
+    sources are written as 24-bit PCM.
+    """
+    info = sf.info(src)
+    sr = info.samplerate
+    snippet, _ = sf.read(src, start=int(start * sr), stop=int(end * sr), dtype="float32")
+    subtype = info.subtype if sf.check_format("FLAC", info.subtype) else "PCM_24"
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(dst, snippet, sr, format="FLAC", subtype=subtype)

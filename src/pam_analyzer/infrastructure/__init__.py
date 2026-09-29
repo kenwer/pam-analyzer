@@ -1,5 +1,5 @@
 from .analysis_inventory_discovery import discover_analysis_inventory
-from .audio_extractor import SoundfileAudioExtractor
+from .audio_extractor import extract_snippet
 from .audio_import import AudioImporter
 from .audio_inventory_discovery import (
     discover_audio_inventory,
@@ -30,10 +30,10 @@ __all__ = [
     "PerchRunner",
     "ProjectLoadResult",
     "PsutilSdCardScanner",
-    "SoundfileAudioExtractor",
     "discover_analysis_inventory",
     "discover_audio_inventory",
     "discover_audio_structure",
+    "extract_snippet",
     "resolve_audio_sizes",
     "find_legacy_pamproj",
     "load_legacy",

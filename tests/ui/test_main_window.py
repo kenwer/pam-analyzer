@@ -6,7 +6,7 @@ import pytest
 from PySide6.QtCore import Qt
 
 from pam_analyzer.domain import AnalysisRunResult, RunStatus, paths
-from pam_analyzer.infrastructure import AudioImporter, SoundfileAudioExtractor
+from pam_analyzer.infrastructure import AudioImporter
 from pam_analyzer.ui.app_state import AppState
 from pam_analyzer.ui.main_window import MainWindow
 from pam_analyzer.ui.settings import AppSettings
@@ -66,7 +66,6 @@ def window(qtbot) -> MainWindow:
         {DEFAULT_MODEL_KEY: _FakeRunner()},
         ImportOrchestrator(AudioImporter(), _FakeScanner()),
         AppSettings(),
-        SoundfileAudioExtractor(),
     )
     qtbot.addWidget(w)
     return w

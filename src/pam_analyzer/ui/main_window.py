@@ -20,7 +20,6 @@ from ..infrastructure import (
     AudioRootNotFound,
     LegacyProject,
     ProjectLoadResult,
-    SoundfileAudioExtractor,
     find_legacy_pamproj,
     load_legacy,
     migrate,
@@ -50,7 +49,6 @@ class MainWindow(QMainWindow):
         analysis_runners: dict[str, AnalysisRunner],
         import_orchestrator: ImportOrchestrator,
         settings: AppSettings,
-        audio_extractor: SoundfileAudioExtractor,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -98,7 +96,6 @@ class MainWindow(QMainWindow):
         self._examine_panel = ExaminePanel(
             app_state,
             settings,
-            audio_extractor,
             self.ui.examine_tab,
         )
         self._mount_tab(self.ui.examine_tab, self._examine_panel, "Examine")
