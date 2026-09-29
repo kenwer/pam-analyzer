@@ -332,6 +332,8 @@ def test_queue_label_shows_pending_cards(
     assert "MSD-C" in text
 
     panel._detail.request_shutdown()
+    # Draining the cancelled card's result must not start the next queued card.
+    assert panel._detail._orchestrator._thread is None
 
 
 def test_campaign_switch_while_watching_prompts(

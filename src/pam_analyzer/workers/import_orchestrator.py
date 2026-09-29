@@ -169,6 +169,7 @@ class ImportOrchestrator(QObject):
         """Cancel any running import and wait for the worker thread to finish.
         Drains queued worker signals so they are handled before the next session."""
         was_busy = self.is_busy()
+        self._state = _State.IDLE
         self._poll_timer.stop()
         if self._worker is not None:
             self._worker.request_cancel()
@@ -176,7 +177,6 @@ class ImportOrchestrator(QObject):
             self._thread.quit()
             self._thread.wait(5000)
             QCoreApplication.processEvents()
-        self._state = _State.IDLE
         if was_busy:
             if self._batch_source is ImportSource.FOLDER:
                 self.folder_import_stopped.emit()
