@@ -22,8 +22,8 @@ from .audio_import import (
 )
 from .campaign import Campaign, campaign_name_error
 from .detection import Detection
-from .detection_set import DetectionFile, DetectionSet
-from .detections import filter_top_per_aru_species
+from .detection_store import DetectionStore
+from .detections import top_per_aru_species
 from .enums import FilterMode, VerifiedState
 from .inventory import (
     AnalysisInventory,
@@ -64,8 +64,7 @@ __all__ = [
     "ConflictReport",
     "DetectedCard",
     "Detection",
-    "DetectionFile",
-    "DetectionSet",
+    "DetectionStore",
     "FileConflict",
     "FilterMode",
     "ImportProgress",
@@ -74,7 +73,7 @@ __all__ = [
     "DEFAULT_SPECIES_LANG",
     "MAX_OVERLAP_S",
     "LatLon",
-    "filter_top_per_aru_species",
+    "top_per_aru_species",
     "Project",
     "ResolvedSpeciesFilter",
     "AnalysisRunResult",

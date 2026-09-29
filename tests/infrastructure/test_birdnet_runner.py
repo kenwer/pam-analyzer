@@ -28,7 +28,7 @@ from pam_analyzer.domain import (
     AnalysisProgressSnapshot,
     AnalysisSettings,
     Campaign,
-    DetectionSet,
+    DetectionStore,
     FilterMode,
     RunStatus,
 )
@@ -197,7 +197,7 @@ def test_runner_csv_survives_load_and_save_unchanged(campaign_with_minute_wav: P
     assert camp.detection_count > 0
     written = camp.detections_csv.read_bytes()
 
-    DetectionSet.load_for_campaign(campaign_with_minute_wav).save()
+    DetectionStore.load_for_campaign(campaign_with_minute_wav).save()
 
     assert camp.detections_csv.read_bytes() == written
 

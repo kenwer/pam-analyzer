@@ -1,10 +1,14 @@
-"""QAbstractTableModel adapter over a list[Detection].
+"""QAbstractTableModel adapter over a DetectionStore.
 
 Implements ``sort_by_priority(priority)`` so the MultiColumnSortTable's
 fast-path bypasses the Qt proxy comparator on large datasets, plus
 ``set_column_filter`` so the
 :class:`pam_analyzer.ui.detection_table.DetectionTable` can drive its
 filter row, play-button delegate, and audio player.
+
+Cells are read straight from the store's polars frame and edits go back
+through DetectionStore.set_annotation, so the table, its filters and the
+saved CSVs all see one copy of the data.
 
 Column 0 is a virtual play-button column (no payload, never sortable).
 The real detection fields start at column 1.
@@ -16,7 +20,7 @@ from typing import Any
 import polars as pl
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 
-from ...domain import Detection, filter_top_per_aru_species
+from ...domain import Detection, DetectionStore, top_per_aru_species
 from ...domain.detection_schema import COLUMNS as _SCHEMA_COLUMNS
 from ...domain.detection_schema import ColumnSpec, is_locale_column
 from ...domain.filter_ops import (
@@ -46,10 +50,6 @@ _STATIC_COLUMNS: tuple[ColumnSpec, ...] = (_PLAY_COLUMN, *_SCHEMA_COLUMNS)
 # DetectionsTableModel.index_of_column instead.
 COLUMNS_BY_NAME = {c.name: i for i, c in enumerate(_STATIC_COLUMNS)}
 
-# Static-column getters. Extras are read via DetectionsTableModel.column_getter,
-# which falls back to a closure over Detection.extra.
-COLUMN_GETTERS: dict[str, Callable[[Detection], Any]] = {c.name: c.get for c in _STATIC_COLUMNS}
-
 NUMERIC_COLUMNS: frozenset[int] = frozenset(i for i, c in enumerate(_STATIC_COLUMNS) if c.numeric)
 """Indices of numeric columns. Consumed by the header filter row to pick the
 operator menu (number ops vs text ops). Dynamic Species_<locale> extras are
@@ -76,25 +76,26 @@ DEFAULT_HIDDEN_COLUMNS: frozenset[str] = frozenset(
 )
 """Column names hidden by default on first run (no saved state)."""
 
-__all__ = ["COLUMN_GETTERS", "COLUMNS_BY_NAME", "DEFAULT_HIDDEN_COLUMNS", "NUMERIC_COLUMNS", "PLAY_COLUMN_INDEX"]
+__all__ = ["COLUMNS_BY_NAME", "DEFAULT_HIDDEN_COLUMNS", "NUMERIC_COLUMNS", "PLAY_COLUMN_INDEX"]
 
 
 class DetectionsTableModel(QAbstractTableModel):
-    """Mutable model owning a list of Detection rows."""
+    """Table model over a DetectionStore, with column filters, a max-per cap and sort."""
 
     def __init__(self, parent: object = None) -> None:
         super().__init__(parent)
-        # Active column list. Starts as the static set; set_detections() may
-        # extend it with one column per Species_<locale> key discovered in
-        # Detection.extra so users can show/hide localized names in the
-        # examine panel without touching the source CSV.
+        # Active column list. Starts as the static set. set_store() may extend
+        # it with one column per Species_<locale> column in the store frame, so
+        # users can show or hide localized names without touching the CSV.
         self._columns: list[ColumnSpec] = list(_STATIC_COLUMNS)
-        self._all: list[Detection] = []
-        # Indices into _all in display order (post-filter, post-sort).
+        self._store = DetectionStore.empty()
+        # Parsed date/time helper columns, row-aligned with the store frame, so
+        # filtering never re-parses the ISO strings. Recording_Time is read-only.
+        self._helpers: pl.DataFrame = pl.DataFrame()
+        # Row ids (store frame positions) in display order, post-filter and post-sort.
         self._visible: list[int] = []
-        # Detections that have been edited but not yet saved by the panel.
-        # Tracked by id() so sorting/filtering doesn't invalidate the set.
-        self._dirty_ids: set[int] = set()
+        # True at every row id in _visible, for vectorized visibility tests.
+        self._visible_mask: pl.Series = pl.Series(dtype=pl.Boolean)
         # Per-column active filter, keyed by column index. Col 0 is reserved
         # for the play column and is never filtered. An entry is only present
         # when the column has an active filter (text ops with non-empty input,
@@ -106,19 +107,20 @@ class DetectionsTableModel(QAbstractTableModel):
         self._max_per: int = 0
         # Active sort priority. Re-applied after filter changes.
         self._sort_priority: list[tuple[int, Qt.SortOrder]] = []
-        # Polars DataFrame mirroring _all for filter/sort index computation.
-        self._sort_df: pl.DataFrame = pl.DataFrame()
 
-    def set_detections(self, rows: list[Detection]) -> None:
+    @property
+    def store(self) -> DetectionStore:
+        return self._store
+
+    def set_store(self, store: DetectionStore) -> None:
         self.beginResetModel()
-        self._all = list(rows)
-        self._dirty_ids.clear()
+        self._store = store
         self._col_filters.clear()
         # Locale extras live next to Species rather than at the end of the
         # row, because users group them mentally with the base species name.
         # The shift makes COLUMNS_BY_NAME stale for any static column past
         # Species, so production callers must use index_of() instead.
-        extras = sorted({k for d in rows for k in d.extra if is_locale_column(k)})
+        extras = sorted(c for c in store.frame.columns if is_locale_column(c))
         species_pos = next(
             (i for i, c in enumerate(_STATIC_COLUMNS) if c.name == "Species"),
             len(_STATIC_COLUMNS),
@@ -131,7 +133,14 @@ class DetectionsTableModel(QAbstractTableModel):
             ),
             *_STATIC_COLUMNS[species_pos + 1 :],
         ]
-        self._sort_df = self._build_sort_df(self._all)
+        self._helpers = store.frame.select(
+            [
+                e
+                for c in _SCHEMA_COLUMNS
+                if c.kind is ColumnKind.DATETIME
+                for e in datetime_helper_exprs(c.name)
+            ]
+        )
         # Filters were just cleared, so this only applies any active max-per cap
         # (a persistent user preference) to the fresh rows.
         self._rebuild_visible()
@@ -163,16 +172,17 @@ class DetectionsTableModel(QAbstractTableModel):
         if not (0 <= col < len(self._columns)) or col == PLAY_COLUMN_INDEX:
             return []
         name = self._columns[col].name
-        if self._sort_df.is_empty() or name not in self._sort_df.columns:
+        frame = self._store.frame
+        if frame.is_empty() or name not in frame.columns:
             return []
-        values = self._sort_df[name].cast(pl.String).drop_nulls().unique().sort().to_list()
+        values = frame[name].cast(pl.String).drop_nulls().unique().sort().to_list()
         return [v for v in values if v != ""]
 
     def index_of(self, name: str) -> int:
         """Return the current column index for *name*, or -1 if absent.
 
         Prefer this over the static COLUMNS_BY_NAME map in any production
-        code that runs after set_detections, because dynamic Species_<locale>
+        code that runs after set_store, because dynamic Species_<locale>
         extras get inserted next to Species and shift the indices of every
         static column after that.
         """
@@ -192,36 +202,47 @@ class DetectionsTableModel(QAbstractTableModel):
             return [c.name for c in self._columns]
         return [c.name for c in self._columns if c.name != "_play"]
 
-    def column_getter(self, name: str) -> Callable[[Detection], Any] | None:
-        """Resolve a column header to its getter, including dynamic extras.
-
-        Falls back through the static COLUMN_GETTERS map so existing
-        callers that look up known column names still hit the same
-        function objects.
-        """
-        for c in self._columns:
-            if c.name == name:
-                return c.get
-        return COLUMN_GETTERS.get(name)
-
-    def detections(self) -> list[Detection]:
-        """Return currently visible (post-filter) detections in display order."""
-        return [self._all[i] for i in self._visible]
-
-    def take_dirty(self) -> list[Detection]:
-        """Return the modified rows (in original-insert order) and clear the dirty set."""
-        rows = [d for d in self._all if id(d) in self._dirty_ids]
-        self._dirty_ids.clear()
-        return rows
-
-    def detection_at(self, visible_row: int) -> Detection | None:
-        """Return the :class:`Detection` at *visible_row* (0-based in the visible/sorted view).
-
-        Returns ``None`` if the row index is out of bounds.
-        """
+    def row_id_at(self, visible_row: int) -> int | None:
+        """Store row id shown at *visible_row*, or None when out of range."""
         if not (0 <= visible_row < len(self._visible)):
             return None
-        return self._all[self._visible[visible_row]]
+        return self._visible[visible_row]
+
+    def visible_row_of(self, row_id: int) -> int | None:
+        """Display position of *row_id*, or None when it is filtered out."""
+        try:
+            return self._visible.index(row_id)
+        except ValueError:
+            return None
+
+    def detection_at(self, visible_row: int) -> Detection | None:
+        """Snapshot of the row at *visible_row*. Edit through setData, not the snapshot."""
+        row_id = self.row_id_at(visible_row)
+        return None if row_id is None else self._store.detection(row_id)
+
+    def value_at(self, visible_row: int, name: str) -> Any:
+        """One cell of the row at *visible_row*, or None when out of range."""
+        row_id = self.row_id_at(visible_row)
+        if row_id is None or name not in self._store.frame.columns:
+            return None
+        return self._store.frame.get_column(name)[row_id]
+
+    def visible_frame(self) -> pl.DataFrame:
+        """The visible rows in display order, store columns only."""
+        return self._store.frame.select(pl.all().gather(self._visible))
+
+    def visible_column(self, name: str) -> pl.Series:
+        """One column of the visible rows, in display order."""
+        return self._store.frame.get_column(name).gather(self._visible)
+
+    def rows_in_file(self, file: str, exclude_row_id: int) -> pl.DataFrame:
+        """Visible rows from audio *file*, other than *exclude_row_id*, in store order."""
+        frame = self._store.frame.with_row_index("__row")
+        return frame.filter(
+            pl.lit(self._visible_mask)
+            & (pl.col("File") == file)
+            & (pl.col("__row") != exclude_row_id)
+        )
 
     def set_column_filter(self, col: int, text: str, op: FilterOp | None = None) -> None:
         """Apply a per-column filter using the given :class:`FilterOp`.
@@ -262,7 +283,7 @@ class DetectionsTableModel(QAbstractTableModel):
 
         A value of 0 (or less) disables the cap. The cap composes with the
         per-column filters: filters run first, then the cap keeps the highest
-        confidence rows among the survivors. Unlike a fresh set_detections, this
+        confidence rows among the survivors. Unlike a fresh set_store, this
         leaves the column filters in place, so adjusting the cap never silently
         drops an active filter.
         """
@@ -304,8 +325,7 @@ class DetectionsTableModel(QAbstractTableModel):
             return None
         if col == PLAY_COLUMN_INDEX:
             return ""  # play column; delegate paints the icon
-        d = self._all[self._visible[row]]
-        value = self._columns[col].get(d)
+        value = self._store.frame.get_column(self._columns[col].name)[self._visible[row]]
         return "" if value is None else value
 
     def flags(self, index: QModelIndex) -> Qt.ItemFlags:
@@ -325,25 +345,10 @@ class DetectionsTableModel(QAbstractTableModel):
         row = index.row()
         if not (0 <= row < len(self._visible)):
             return False
-        d = self._all[self._visible[row]]
         try:
-            col.set(d, "" if value is None else str(value))
+            self._store.set_annotation(self._visible[row], col.name, "" if value is None else str(value))
         except ValueError:
             return False
-        self._dirty_ids.add(id(d))
-
-        # Keep _sort_df in sync so future filter/sort on editable columns is correct.
-        col_name = col.name
-        if not self._sort_df.is_empty() and col_name in self._sort_df.columns:
-            actual_idx = self._visible[row]
-            new_val = col.get(d)  # use getter so VerifiedState becomes .value str
-            self._sort_df = self._sort_df.with_columns(
-                pl.when(pl.int_range(pl.len()) == actual_idx)
-                .then(pl.lit("" if new_val is None else str(new_val)))
-                .otherwise(pl.col(col_name))
-                .alias(col_name)
-            )
-
         self.dataChanged.emit(index, index, [Qt.DisplayRole, Qt.EditRole])
         return True
 
@@ -356,66 +361,36 @@ class DetectionsTableModel(QAbstractTableModel):
         self._apply_sort()
         self.endResetModel()
 
-    def _build_sort_df(self, detections: list[Detection]) -> pl.DataFrame:
-        if not detections:
-            return pl.DataFrame()
-        # One column per schema column, via the schema getters (so e.g.
-        # Verified lands as its .value string). Editable columns are
-        # included so filter/sort work on them too.
-        data: dict[str, list] = {
-            c.name: [c.get(d) for d in detections] for c in _SCHEMA_COLUMNS
-        }
-        # Dynamic extra columns (all str, may be absent per row so None)
-        extra_keys: set[str] = set()
-        for d in detections:
-            extra_keys.update(d.extra.keys())
-        for key in sorted(extra_keys):
-            data[key] = [d.extra.get(key) for d in detections]
-        df = pl.DataFrame(data)
-        # Parsed date/time helper columns for DATETIME columns, so filtering
-        # never re-parses the ISO strings per keystroke. Recording_Time is
-        # read-only, so the setData sync path never needs to refresh these.
-        helper_exprs = [
-            e
-            for c in _SCHEMA_COLUMNS
-            if c.kind is ColumnKind.DATETIME
-            for e in datetime_helper_exprs(c.name)
-        ]
-        return df.with_columns(helper_exprs) if helper_exprs else df
+    def _filter_frame(self) -> pl.DataFrame:
+        """Store frame plus the date/time helper columns the filters read."""
+        if not self._helpers.width:
+            return self._store.frame
+        return self._store.frame.hstack(self._helpers)
 
     def _rebuild_visible(self) -> None:
-        """Recompute _visible from _all, the column filters, and the max-per cap.
+        """Recompute _visible from the store, the column filters, and the max-per cap.
 
-        Column filters run first (their masks are ANDed over the sort frame),
-        then the cap keeps the top rows per (ARU, Species) among the survivors.
+        Column filters run first (their masks are ANDed over the frame), then
+        the cap keeps the top rows per (ARU, Species) among the survivors.
         Called inside a model reset.
         """
-        if self._sort_df.is_empty():
-            self._visible = list(range(len(self._all)))
-            return
-
+        frame = self._filter_frame().with_row_index("__row")
         if self._col_filters:
             mask = pl.lit(True)
             for col_idx, cf in self._col_filters.items():
                 if col_idx == PLAY_COLUMN_INDEX or col_idx >= len(self._columns):
                     continue
-                if cf.column not in self._sort_df.columns:
+                if cf.column not in frame.columns:
                     continue
                 mask = mask & cf.to_polars()
-            visible = self._sort_df.with_row_index("__idx").filter(mask)["__idx"].to_list()
-        else:
-            visible = list(range(len(self._all)))
-
-        if self._max_per > 0:
-            kept = filter_top_per_aru_species([self._all[i] for i in visible], self._max_per)
-            kept_ids = {id(d) for d in kept}
-            visible = [i for i in visible if id(self._all[i]) in kept_ids]
-
-        self._visible = visible
+            frame = frame.filter(mask)
+        frame = top_per_aru_species(frame, self._max_per)
+        self._visible = frame["__row"].to_list()
+        self._visible_mask = pl.repeat(False, self._store.row_count, eager=True).scatter(self._visible, True)
 
     def _apply_sort(self) -> None:
         """Reorder _visible according to _sort_priority. Called inside a model reset."""
-        if not self._sort_priority or not self._visible or self._sort_df.is_empty():
+        if not self._sort_priority or not self._visible:
             return
 
         col_names: list[str] = []
@@ -429,8 +404,9 @@ class DetectionsTableModel(QAbstractTableModel):
         if not col_names:
             return
 
-        visible_df = self._sort_df[self._visible].with_columns(pl.Series("__idx", self._visible))
-        self._visible = visible_df.sort(col_names, descending=descending, nulls_last=True)["__idx"].to_list()
+        keys = self._store.frame.select([pl.col(n).gather(self._visible) for n in col_names])
+        keys = keys.with_columns(pl.Series("__idx", self._visible))
+        self._visible = keys.sort(col_names, descending=descending, nulls_last=True)["__idx"].to_list()
 
 
 def _sort_key(value: Any) -> tuple[int, Any]:  # type: ignore[reportUnusedFunction]

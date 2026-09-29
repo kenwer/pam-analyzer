@@ -61,7 +61,7 @@ def test_rename_preserves_mode_and_location(audio_root):
 def test_rename_keeps_detection_csvs_valid(audio_root):
     """CSV names and File paths carry no campaign name, so a folder rename
     leaves the campaign's detections fully usable."""
-    from pam_analyzer.domain import DetectionSet
+    from pam_analyzer.domain import DetectionStore
     from pam_analyzer.domain import detection_schema as schema
 
     c = _new_campaign(audio_root, "before")
@@ -76,9 +76,9 @@ def test_rename_keeps_detection_csvs_valid(audio_root):
 
     # Same filename, new folder: the CSV name never carried the campaign name.
     assert schema.campaign_csvs(renamed.folder) == [renamed.folder / csv_path.name]
-    detections = DetectionSet.load_for_campaign(renamed.folder).detections
-    assert detections[0].file == "after/MSD-1/week_08/r.flac"
-    assert (audio_root / detections[0].file).parent == renamed.folder / "MSD-1" / "week_08"
+    detection = DetectionStore.load_for_campaign(renamed.folder).detection(0)
+    assert detection.file == "after/MSD-1/week_08/r.flac"
+    assert (audio_root / detection.file).parent == renamed.folder / "MSD-1" / "week_08"
 
 
 def test_delete_removes_entire_folder(audio_root):

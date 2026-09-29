@@ -36,14 +36,17 @@ from .models.detections_table_model import PLAY_COLUMN_INDEX
 _VERIFIED_CHOICES = tuple(state.value for state in VerifiedState)
 
 if TYPE_CHECKING:
-    from ..domain import Detection
+    from ..domain import Detection, DetectionStore
     from .models.detections_table_model import DetectionsTableModel
 
 
-def _label_for(d: Detection) -> str:
+def _label(species: str, scientific_name: str, aru: str, confidence: float) -> str:
     """Short label used for the panel info text and spectrogram tooltips."""
-    species = d.species or d.scientific_name or ""
-    return f"{species}  ·  {d.aru}  ·  conf {d.confidence:.2f}"
+    return f"{species or scientific_name or ''}  ·  {aru}  ·  conf {confidence:.2f}"
+
+
+def _label_for(d: Detection) -> str:
+    return _label(d.species, d.scientific_name, d.aru, d.confidence)
 
 
 class _PlayDelegate(QStyledItemDelegate):
@@ -75,8 +78,8 @@ class _PlayDelegate(QStyledItemDelegate):
         # Determine icon based on whether this row's file is playing
         table = option.widget  # MultiColumnSortTable
         src_row = table.mapToSourceRow(index.row())
-        detection = self._model.detection_at(src_row) if self._model else None
-        playing = detection and self._playing_file and detection.file == self._playing_file
+        file = self._model.value_at(src_row, "File") if self._model else None
+        playing = bool(file) and bool(self._playing_file) and file == self._playing_file
         icon = self._PAUSE if playing else self._PLAY
 
         painter.save()
@@ -137,8 +140,11 @@ class DetectionTable(QWidget):
         self._layout_signature: tuple | None = None
         self._playing_file: str = ""
         self._current_detection: Detection | None = None
+        # Store and row id of _current_detection. Row ids restart in every
+        # store, so the store identity keeps a reload from matching a stranger.
+        self._current_row: tuple[DetectionStore, int] | None = None
         self._suppressing_row_change = False
-        self._pending_prepare: Detection | None = None
+        self._pending_prepare: tuple[int, Detection] | None = None
         self._prepare_timer = QTimer(self)
         self._prepare_timer.setSingleShot(True)
         self._prepare_timer.setInterval(0)
@@ -223,7 +229,7 @@ class DetectionTable(QWidget):
 
         self._refresh_layout_for_model()
 
-        # When the model resets (filter, set_detections), refresh status and sync player.
+        # When the model resets (filter, set_store), refresh status and sync player.
         model.modelReset.connect(self._on_model_reset)
         model.rowsInserted.connect(self._refresh_status)
         model.rowsRemoved.connect(self._refresh_status)
@@ -235,7 +241,7 @@ class DetectionTable(QWidget):
         Called on initial setModel and after each modelReset. Skips the
         actual rebuild when the column signature is unchanged so a reset
         triggered by set_column_filter or sort_by_priority does not wipe
-        the filter row's input widgets. Only set_detections with a new
+        the filter row's input widgets. Only set_store with a new
         set of locale extras should trigger the rebuild work.
         """
         if self._model is None:
@@ -280,7 +286,7 @@ class DetectionTable(QWidget):
     def sortPriority(self) -> list[tuple[str, Qt.SortOrder]]:  # noqa: N802 (Qt-style)
         """Return the current sort priority as (column_name, order) pairs.
 
-        Names survive set_detections inserting Species_<locale> extras
+        Names survive set_store inserting Species_<locale> extras
         (which shift the column indices the inner table uses internally);
         restoring via setSortPriority round-trips correctly.
         """
@@ -384,39 +390,45 @@ class DetectionTable(QWidget):
     def _on_row_changed(self, current: QModelIndex, _: QModelIndex) -> None:
         if self._suppressing_row_change or not current.isValid() or self._model is None:
             return
-        detection = self._model.detection_at(self._table.mapToSourceRow(current.row()))
-        if detection is None or not detection.file:
+        src_row = self._table.mapToSourceRow(current.row())
+        row_id = self._model.row_id_at(src_row)
+        detection = self._model.detection_at(src_row)
+        if row_id is None or detection is None or not detection.file:
             return
         # Defer by one event-loop tick so a ♪ click on the same row can cancel
         # this prepare before it runs (avoiding a double file-load).
-        self._pending_prepare = detection
+        self._pending_prepare = (row_id, detection)
         self._prepare_timer.start()
 
     def _do_prepare(self) -> None:
         if self._pending_prepare is not None:
-            self._present(self._pending_prepare, autoplay=False)
+            row_id, detection = self._pending_prepare
             self._pending_prepare = None
+            self._present(row_id, detection, autoplay=False)
 
     def _on_cell_clicked(self, index: QModelIndex) -> None:
         if index.column() != PLAY_COLUMN_INDEX or self._model is None:
             return
-        # Cancel any deferred prepare for this row — play_detection() subsumes it.
+        # Cancel any deferred prepare for this row, play_detection() subsumes it.
         self._prepare_timer.stop()
         self._pending_prepare = None
-        detection = self._model.detection_at(self._table.mapToSourceRow(index.row()))
-        if detection is None or not detection.file:
+        src_row = self._table.mapToSourceRow(index.row())
+        row_id = self._model.row_id_at(src_row)
+        detection = self._model.detection_at(src_row)
+        if row_id is None or detection is None or not detection.file:
             return
-        self._present(detection, autoplay=True)
+        self._present(row_id, detection, autoplay=True)
 
-    def _present(self, detection: Detection, *, autoplay: bool) -> None:
+    def _present(self, row_id: int, detection: Detection, *, autoplay: bool) -> None:
         self._current_detection = detection
+        self._current_row = (self._model.store, row_id)
         file_path = (
             str(self._audio_root / detection.file)
             if self._audio_root
             else detection.file
         )
         info = _label_for(detection)
-        ctx = self._context_detections_for(detection)
+        ctx = self._context_detections_for(row_id, detection)
         if autoplay:
             self._player.play_detection(
                 file_path,
@@ -434,12 +446,14 @@ class DetectionTable(QWidget):
                 context_detections=ctx,
             )
 
-    def _context_detections_for(self, current: Detection) -> list[tuple[float, float, str]]:
-        """Return (start_s, end_s, label) for visible detections in the same file."""
+    def _context_detections_for(self, row_id: int, current: Detection) -> list[tuple[float, float, str]]:
+        """Return (start_s, end_s, label) for the other visible detections in the same file."""
+        rows = self._model.rows_in_file(current.file, row_id).select(
+            "Start_Time", "End_Time", "Species", "Scientific_Name", "ARU", "Confidence"
+        )
         return [
-            (d.start_time, d.end_time, _label_for(d))
-            for d in self._model.detections()
-            if d.file == current.file and d is not current
+            (start, end, _label(species, scientific, aru, conf))
+            for start, end, species, scientific, aru, conf in rows.iter_rows()
         ]
 
     def _on_model_reset(self) -> None:
@@ -453,23 +467,30 @@ class DetectionTable(QWidget):
         if self._model is None or proxy.rowCount() == 0:
             self._player.stop()
             self._current_detection = None
+            self._current_row = None
             return
 
         select_flags = QItemSelectionModel.SelectionFlag.ClearAndSelect | QItemSelectionModel.SelectionFlag.Rows
 
-        # If the previous selection is still visible, reselect it (without
-        # re-priming the player) and refresh the context markers.
-        if self._current_detection is not None:
-            for src_row, d in enumerate(self._model.detections()):
-                if d is self._current_detection:
-                    proxy_index = proxy.mapFromSource(self._model.index(src_row, 0))
-                    self._suppressing_row_change = True
-                    try:
-                        self._table.selectionModel().setCurrentIndex(proxy_index, select_flags)
-                    finally:
-                        self._suppressing_row_change = False
-                    self._player.update_context_detections(self._context_detections_for(self._current_detection))
-                    return
+        # If the previous selection is still visible in the same store, reselect
+        # it (without re-priming the player) and refresh the context markers.
+        if self._current_row is not None and self._current_detection is not None:
+            store, row_id = self._current_row
+            src_row = self._model.visible_row_of(row_id) if store is self._model.store else None
+            if src_row is not None:
+                proxy_index = proxy.mapFromSource(self._model.index(src_row, 0))
+                self._suppressing_row_change = True
+                try:
+                    self._table.selectionModel().setCurrentIndex(proxy_index, select_flags)
+                finally:
+                    self._suppressing_row_change = False
+                self._player.update_context_detections(
+                    self._context_detections_for(row_id, self._current_detection)
+                )
+                return
+            if store is not self._model.store:
+                # Release the old store now rather than at the next selection.
+                self._current_row = None
 
         # Selection was filtered out (or none): select the first visible row.
         # Deliberately no setFocus here: this runs on every model reset, and

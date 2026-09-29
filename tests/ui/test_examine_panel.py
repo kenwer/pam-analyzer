@@ -7,7 +7,7 @@ import pytest
 from PySide6.QtCore import QCoreApplication, QPoint, Qt
 from PySide6.QtWidgets import QTabWidget, QWidget
 
-from pam_analyzer.domain import Campaign, FilterMode, LatLon, Project
+from pam_analyzer.domain import Campaign, Detection, FilterMode, LatLon, Project
 from pam_analyzer.domain.filter_ops import FilterOp
 from pam_analyzer.infrastructure import SoundfileAudioExtractor
 from pam_analyzer.ui.app_state import AppState
@@ -15,6 +15,11 @@ from pam_analyzer.ui.models.detections_table_model import COLUMNS_BY_NAME
 from pam_analyzer.ui.panels.examine_panel import ExaminePanel
 from pam_analyzer.ui.settings import AppSettings
 from tests.conftest import DEFAULT_MODEL_KEY
+
+
+def _visible(panel: ExaminePanel) -> list[Detection]:
+    model = panel._model
+    return [model.detection_at(r) for r in range(model.rowCount())]
 
 _HEADERS = [
     "Campaign",
@@ -243,9 +248,8 @@ def test_edit_verified_marks_row_dirty(panel: ExaminePanel) -> None:
     col = COLUMNS_BY_NAME["Verified"]
     idx = panel._model.index(0, col)
     assert panel._model.setData(idx, "true")
-    dirty = panel._model.take_dirty()
-    assert len(dirty) == 1
-    assert dirty[0].verified.value == "true"
+    assert panel._detections.dirty_count == 1
+    assert panel._model.detection_at(0).verified.value == "true"
 
 
 def test_autosave_debounces_and_persists(qtbot, panel: ExaminePanel, project) -> None:
@@ -263,13 +267,13 @@ def test_autosave_debounces_and_persists(qtbot, panel: ExaminePanel, project) ->
     qtbot.waitUntil(lambda: not panel._autosave_timer.isActive(), timeout=2000)
     qtbot.waitUntil(lambda: "true" in csv_path.read_text(encoding="utf-8"), timeout=2000)
 
-    # And take_dirty should now be empty: the autosave consumed the dirty set.
-    assert panel._model.take_dirty() == []
+    # The autosave consumed the pending edits.
+    assert panel._detections.dirty_count == 0
 
 
 def test_autosave_preserves_unedited_rows(qtbot, panel: ExaminePanel, project) -> None:
     """Auto-save must rewrite the campaign CSV with the FULL row set, not just
-    the dirty rows. Regression test: an earlier version passed only take_dirty()
+    the dirty rows. Regression test: an earlier version passed only the dirty rows
     to the repo, which overwrote the file with one row and dropped the others.
     """
     col = COLUMNS_BY_NAME["Verified"]
@@ -464,10 +468,10 @@ def test_export_snippets_uses_padding(panel: ExaminePanel, project: Project, tmp
     monkeypatch.setattr(panel._audio_extractor, "extract", fake_extract)
     # The fixture rows reference 'f.wav' which doesn't exist, so synthesize it.
     audio_root = project.folder
-    for d in panel._raw_detections:
-        f = audio_root / d.file
+    for rel in panel._detections.frame["File"].unique().to_list():
+        f = audio_root / rel
         f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_bytes(b"")  # presence check only; extractor is stubbed
+        f.write_bytes(b"")  # presence check only, the extractor is stubbed
 
     _trigger_export_action(panel, "Export audio snippets")
 
@@ -476,7 +480,7 @@ def test_export_snippets_uses_padding(panel: ExaminePanel, project: Project, tmp
     # Verify the start/end were padded.
     sample = calls[0]
     src, start, end, dst = sample
-    detection = next(d for d in panel._model.detections() if d.file in src.as_posix())
+    detection = next(d for d in _visible(panel) if d.file in src.as_posix())
     assert start == pytest.approx(max(0.0, detection.start_time - 0.5))
     assert end == pytest.approx(detection.end_time + 1.0)
     assert dst.parent == folder
@@ -542,7 +546,7 @@ def test_filter_inputs_visible_when_mounted_in_hidden_tab(
 
 def test_text_filter_contains(panel: ExaminePanel) -> None:
     panel._model.set_column_filter(COLUMNS_BY_NAME["ARU"], "MSD-1", FilterOp.CONTAINS)
-    rows = panel._model.detections()
+    rows = _visible(panel)
     assert rows
     assert all(r.aru.startswith("MSD-1") for r in rows)
 
@@ -550,21 +554,21 @@ def test_text_filter_contains(panel: ExaminePanel) -> None:
 def test_text_filter_equals_excludes_substrings(panel: ExaminePanel) -> None:
     panel._model.set_column_filter(COLUMNS_BY_NAME["ARU"], "MSD-1", FilterOp.EQUALS)
     # Only an exact "MSD-1" match should remain. The fixture uses MSD-1 and MSD-2.
-    rows = panel._model.detections()
+    rows = _visible(panel)
     assert rows and all(r.aru == "MSD-1" for r in rows)
 
 
 def test_numeric_filter_greater_than(panel: ExaminePanel) -> None:
     # Fixture confidences are 0.5, 0.6, 0.7 per campaign. > 0.55 keeps 4 rows.
     panel._model.set_column_filter(COLUMNS_BY_NAME["Confidence"], "0.55", FilterOp.GREATER_THAN)
-    rows = panel._model.detections()
+    rows = _visible(panel)
     assert len(rows) == 4
     assert all(r.confidence > 0.55 for r in rows)
 
 
 def test_numeric_filter_in_range(panel: ExaminePanel) -> None:
     panel._model.set_column_filter(COLUMNS_BY_NAME["Confidence"], "0.55 - 0.65", FilterOp.IN_RANGE)
-    rows = panel._model.detections()
+    rows = _visible(panel)
     assert len(rows) == 2
     assert all(0.55 <= r.confidence <= 0.65 for r in rows)
 
@@ -588,7 +592,7 @@ def test_date_range_filter(panel: ExaminePanel) -> None:
     # Fixture dates are 2026-04-25/26/27 (one per row, both campaigns).
     col = panel._model.index_of("Recording_Time")
     panel._model.set_column_filter(col, "2026-04-25 .. 2026-04-26", FilterOp.DATE_RANGE)
-    rows = panel._model.detections()
+    rows = _visible(panel)
     assert len(rows) == 4
     assert all(r.recording_time[:10] in ("2026-04-25", "2026-04-26") for r in rows)
 
@@ -596,7 +600,7 @@ def test_date_range_filter(panel: ExaminePanel) -> None:
 def test_on_date_filter(panel: ExaminePanel) -> None:
     col = panel._model.index_of("Recording_Time")
     panel._model.set_column_filter(col, "2026-04-26", FilterOp.ON_DATE)
-    rows = panel._model.detections()
+    rows = _visible(panel)
     assert len(rows) == 2
     assert all(r.recording_time.startswith("2026-04-26") for r in rows)
 
@@ -611,7 +615,7 @@ def test_time_of_day_filter(panel: ExaminePanel) -> None:
 def test_time_of_day_filter_wraps_midnight(panel: ExaminePanel) -> None:
     col = panel._model.index_of("Recording_Time")
     panel._model.set_column_filter(col, "22:00 - 04:30", FilterOp.TIME_OF_DAY_RANGE)
-    rows = panel._model.detections()
+    rows = _visible(panel)
     assert len(rows) == 2
     assert all("T04:00" in r.recording_time for r in rows)
 
@@ -621,7 +625,7 @@ def test_is_any_of_filter(panel: ExaminePanel) -> None:
     panel._model.set_column_filter(col, "MSD-1; MSD-2", FilterOp.IS_ANY_OF)
     assert panel._model.rowCount() == 6
     panel._model.set_column_filter(col, "MSD-1", FilterOp.IS_ANY_OF)
-    rows = panel._model.detections()
+    rows = _visible(panel)
     assert rows and all(r.aru == "MSD-1" for r in rows)
 
 
@@ -676,7 +680,7 @@ def test_funnel_menu_is_one_of_flow(panel: ExaminePanel) -> None:
 
     assert filter_row._slots[col].edit.text() == "MSD-1"
     assert filter_row.column_op(col) is FilterOp.IS_ANY_OF
-    rows = panel._model.detections()
+    rows = _visible(panel)
     assert rows and all(r.aru == "MSD-1" for r in rows)
 
 
@@ -789,3 +793,47 @@ def test_reload_does_not_steal_focus_from_a_filter_input(qtbot, panel: ExaminePa
 
     assert QApplication.focusWidget() is edit
     QCoreApplication.processEvents()
+
+
+def test_edit_then_filter_sees_new_value(panel: ExaminePanel) -> None:
+    col = panel._model.index_of("Verified")
+    assert panel._model.setData(panel._model.index(0, col), "true")
+    panel._model.set_column_filter(col, "true", FilterOp.EQUALS)
+    assert panel._model.rowCount() == 1
+
+
+def test_edit_then_sort_sees_new_value(panel: ExaminePanel) -> None:
+    col = panel._model.index_of("Comment")
+    last = panel._model.rowCount() - 1
+    target = panel._model.row_id_at(last)
+    assert panel._model.setData(panel._model.index(last, col), "aaa")
+    panel._model.sort_by_priority([(col, Qt.DescendingOrder)])
+    assert panel._model.row_id_at(0) == target
+
+
+def test_reload_does_not_reselect_an_unrelated_row(qtbot, panel: ExaminePanel) -> None:
+    """Row ids restart in every new store, so a reload must not match on id alone."""
+    table = panel.ui.detections_table
+    view = table.table()
+    view.setCurrentIndex(view.model().index(3, 1))
+    picked = panel._model.row_id_at(table._table.mapToSourceRow(3))
+    # Loading already selected row 0, so wait for the deferred prepare of row 3.
+    qtbot.waitUntil(lambda: table._current_row is not None and table._current_row[1] == picked, timeout=2000)
+
+    panel._on_campaign_selected(panel.ui.campaign_combo.currentIndex())
+    QCoreApplication.processEvents()
+
+    assert view.currentIndex().row() == 0
+
+
+def test_context_detections_are_other_visible_rows_in_the_same_file(panel: ExaminePanel) -> None:
+    model = panel._model
+    row_id, current = model.row_id_at(0), model.detection_at(0)
+    ctx = panel.ui.detections_table._context_detections_for(row_id, current)
+    expected = [
+        (d.start_time, d.end_time)
+        for r, d in enumerate(_visible(panel))
+        if d.file == current.file and model.row_id_at(r) != row_id
+    ]
+    assert sorted((start, end) for start, end, _label in ctx) == sorted(expected)
+    assert len(ctx) == 2  # the fixture has 3 rows per campaign, all in f.wav

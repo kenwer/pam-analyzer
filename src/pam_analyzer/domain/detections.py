@@ -1,25 +1,20 @@
-"""Pure functions over Detection rows."""
+"""Pure functions over detection rows."""
 
-from .detection import Detection
+import polars as pl
 
 
-def filter_top_per_aru_species(detections: list[Detection], max_per_pair: int) -> list[Detection]:
-    """Top N detections per (ARU, Species), ranked by confidence desc.
+def top_per_aru_species(frame: pl.DataFrame, max_per_pair: int) -> pl.DataFrame:
+    """Top N rows per (ARU, Species) by Confidence, in the input's row order.
 
-    max_per_pair <= 0 disables filtering and returns the input unchanged.
+    The stable sort keeps earlier rows ahead on equal confidence.
+    max_per_pair <= 0 returns *frame* unchanged.
     """
     if max_per_pair <= 0:
-        return detections
-    sorted_rows = sorted(
-        detections,
-        key=lambda d: (d.aru, d.species, -d.confidence),
+        return frame
+    return (
+        frame.with_row_index("__pos")
+        .sort("Confidence", descending=True, maintain_order=True)
+        .filter(pl.int_range(pl.len()).over(["ARU", "Species"]) < max_per_pair)
+        .sort("__pos")
+        .drop("__pos")
     )
-    result: list[Detection] = []
-    counts: dict[tuple[str, str], int] = {}
-    for d in sorted_rows:
-        key = (d.aru, d.species)
-        n = counts.get(key, 0)
-        if n < max_per_pair:
-            result.append(d)
-            counts[key] = n + 1
-    return result

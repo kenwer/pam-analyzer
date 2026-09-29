@@ -2,7 +2,7 @@
 
 Owns the column names and their canonical order, per-column access, CSV
 row serialization, and the detections CSV filename pattern. Every reader
-and writer (the DetectionSet aggregate, analysis runners, Qt table model)
+and writer (the DetectionStore, analysis runners, Qt table model)
 derives from this module, so a schema change lands in one place.
 
 The canonical column order matches what the analysis runners write, so
@@ -18,11 +18,13 @@ for "no week". An empty Week cell only occurs in files written by other
 tools and simply means "unknown".
 """
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from operator import attrgetter
 from pathlib import Path
 from typing import Any
+
+import polars as pl
 
 from .detection import Detection
 from .enums import VerifiedState
@@ -139,6 +141,12 @@ ANNOTATION_COLUMNS: tuple[str, ...] = tuple(c.name for c in COLUMNS if c.annotat
 # Membership set for splitting a CSV row into modeled fields vs Detection.extra.
 CORE_FIELDS: frozenset[str] = frozenset(COLUMN_NAMES)
 
+# Numeric columns whose blank or unparsable cell reads as 0.0 rather than None
+NUMERIC_DEFAULT_ZERO: frozenset[str] = frozenset(c.name for c in COLUMNS if c.parse is _to_float)
+
+# Polars type of each schema column in a loaded detections frame
+FRAME_DTYPES: dict[str, pl.DataType] = {c.name: pl.Float64 if c.numeric else pl.String for c in COLUMNS}
+
 _LOCALE_COLUMN_PREFIX = "Species_"
 
 
@@ -188,6 +196,26 @@ def detection_to_row(d: Detection) -> dict[str, str]:
     row: dict[str, str] = dict(d.extra)
     row.update({c.name: _format_cell(c, d) for c in COLUMNS})
     return row
+
+
+def detection_from_record(record: Mapping[str, Any]) -> Detection:
+    """Build a Detection from one typed frame row (numeric cells already floats).
+
+    Null text cells become "", and null NUMERIC_DEFAULT_ZERO cells become 0.0,
+    matching what detection_from_row produces for blank cells. Null extras
+    (a column only other files have) are left out of extra.
+    """
+    kwargs: dict[str, Any] = {}
+    for c in COLUMNS:
+        value = record.get(c.name)
+        if c.name == "Verified":
+            kwargs[c.attr] = VerifiedState(value or "")
+        elif c.numeric:
+            kwargs[c.attr] = 0.0 if value is None and c.name in NUMERIC_DEFAULT_ZERO else value
+        else:
+            kwargs[c.attr] = value or ""
+    kwargs["extra"] = {k: v for k, v in record.items() if k not in CORE_FIELDS and v is not None}
+    return Detection(**kwargs)
 
 
 _DETECTIONS_PREFIX = "detections-"

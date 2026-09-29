@@ -22,7 +22,7 @@ Lifecycle of one run() call:
             for each raw lib row:
                 _parse_row() per row (subclass interprets the row)
                 shared: rank, ARU, file_rel, week
-            write the CSV once (shared, detection_set.write_detections_csv)
+            write the CSV once (shared, detection_store.write_detections_csv)
             emit 'done'
 """
 
@@ -52,7 +52,7 @@ from ..domain import (
 from ..domain import detection_schema as schema
 from ..domain.analysis_run_result import AnalysisRunResult, CampaignRunResult, RunStatus
 from ..domain.audio_import import WEEK_YEAR_ROUND, parse_recording_time
-from ..domain.detection_set import write_detections_csv
+from ..domain.detection_store import write_detections_csv
 from ._analysis_helpers import (
     RunGlobalProgress,
     build_progress_callback,

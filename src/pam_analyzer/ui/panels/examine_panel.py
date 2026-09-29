@@ -1,12 +1,10 @@
 """Examine panel: review detections in a multi-column-sort table."""
 
-import csv
 from collections import Counter
-from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
+import polars as pl
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QShowEvent
 from PySide6.QtWidgets import (
@@ -21,7 +19,7 @@ from PySide6.QtWidgets import (
     QWidgetAction,
 )
 
-from ...domain import Campaign, Detection, DetectionSet
+from ...domain import Campaign, Detection, DetectionStore
 from ...infrastructure import SoundfileAudioExtractor
 from ..app_state import AppState
 from ..models.detections_table_model import DetectionsTableModel
@@ -64,11 +62,9 @@ class ExaminePanel(QWidget):
         self._settings = settings
         self._audio_extractor = audio_extractor
         self._model = DetectionsTableModel(self)
-        # The loaded aggregate for the current campaign; it owns the per-file
-        # column order needed to save edits back. _raw_detections aliases its
-        # list so the display/filter code keeps working unchanged.
-        self._detections = DetectionSet([])
-        self._raw_detections: list[Detection] = self._detections.detections
+        # The loaded store for the current campaign selection. The table model
+        # reads and edits it, and autosave writes its dirty files back.
+        self._detections = DetectionStore.empty()
         # Full detection count per model for the loaded campaign, cached at
         # load time so the info label can show a per-model breakdown without
         # recounting the raw list on every filter keystroke. See
@@ -80,7 +76,7 @@ class ExaminePanel(QWidget):
         self.ui.detections_table.setModel(self._model)
         # Initial default sort. Re-resolved by name on every _reload_detections
         # because dynamic Species_<locale> extras shift the index of Confidence
-        # after set_detections.
+        # after set_store.
 
         # Restore hidden-column state from QSettings before any data loads, so
         # the first fitColumnsToContents skips hidden columns.
@@ -248,17 +244,16 @@ class ExaminePanel(QWidget):
         data = self.ui.campaign_combo.itemData(index)
         try:
             if data == _ALL_CAMPAIGNS_DATA:
-                self._detections = DetectionSet.load_combined(project.folder)
+                self._detections = DetectionStore.load_combined(project.folder)
             else:
-                self._detections = DetectionSet.load_for_campaign(project.folder / str(data))
+                self._detections = DetectionStore.load_for_campaign(project.folder / str(data))
         except Exception as exc:
             self._app_state.errorOccurred.emit(f"Failed to load detections: {exc}")
-            self._detections = DetectionSet([])
-        self._raw_detections = self._detections.detections
+            self._detections = DetectionStore.empty()
         self._reload_detections()
 
     def _reload_detections(self) -> None:
-        """Load the current campaign's rows into the model (a fresh dataset).
+        """Load the current store into the model (a fresh dataset).
 
         Hands the full detection list to the model and lets it own both the
         max-per cap and the per-column filters. A fresh dataset clears any
@@ -269,18 +264,19 @@ class ExaminePanel(QWidget):
         # reset shifting indices below. Falls back to the panel default when
         # there's no active user sort yet.
         prior = self.ui.detections_table.sortPriority() or _DEFAULT_SORT_PRIORITY
-        # Recount per model before set_detections, since that call synchronously
+        # Recount per model before set_store, since that call synchronously
         # emits statusChanged into _on_detection_count_changed, which reads this.
-        self._model_totals = Counter(d.model for d in self._raw_detections)
-        self._model.set_detections(self._raw_detections)
+        self._model_totals = Counter(dict(self._detections.frame["Model"].value_counts().iter_rows()))
+        self._model.set_store(self._detections)
         self._model.set_max_per(self.ui.max_per_spin.value())
-        # New columns from set_detections (Species_<locale> extras) default
+        # New columns from set_store (Species_<locale> extras) default
         # to visible in Qt. Re-apply the persisted hidden set so anything
         # the user previously hid stays hidden even after the model rebuild.
         self.ui.detections_table.setHiddenColumnNames(self._settings.examine_hidden_columns)
         self.ui.detections_table.setSortPriority(prior)
         # Refresh the Corrected_Species combo choices from the loaded data.
-        self.ui.detections_table.setSpeciesChoices(sorted({d.species for d in self._raw_detections if d.species}))
+        species = self._detections.frame["Species"].unique().to_list()
+        self.ui.detections_table.setSpeciesChoices(sorted(s for s in species if s))
         self.ui.detections_table.fitColumnsToContents()
 
     def _on_max_per_changed(self) -> None:
@@ -289,7 +285,7 @@ class ExaminePanel(QWidget):
         self.ui.detections_table.fitColumnsToContents()
 
     def _on_detection_count_changed(self, shown: int) -> None:
-        total = len(self._raw_detections)
+        total = self._detections.row_count
         self.ui.info_label.setText(f"{_fmt_count(shown, total)} detections{self._model_breakdown_suffix()}")
 
     def _model_breakdown_suffix(self) -> str:
@@ -305,7 +301,7 @@ class ExaminePanel(QWidget):
         full-campaign figures."""
         if len(self._model_totals) < 2:
             return ""
-        shown_by_model = Counter(d.model for d in self._model.detections())
+        shown_by_model = Counter(dict(self._model.visible_column("Model").value_counts().iter_rows()))
         order = sorted(self._model_totals, key=lambda m: (-self._model_totals[m], m))
         breakdown = "]   [".join(
             f"{m or 'unknown'}: {_fmt_count(shown_by_model.get(m, 0), self._model_totals[m])}"
@@ -332,28 +328,24 @@ class ExaminePanel(QWidget):
     def _flush_autosave(self) -> None:
         """Persist any dirty rows. Called when the debounce window expires or
         when the panel needs to release in-flight edits (project change, etc)."""
-        project = self._app_state.project
-        if project is None:
-            self._model.take_dirty()  # discard, no project to save into
+        if self._app_state.project is None:
+            self._detections.discard_dirty()  # no project to save into
             return
-        dirty = self._model.take_dirty()
-        if not dirty:
-            return
-        # Each owning file is rewritten with its full row list, so rows the user
-        # filtered out via max-per or header filters are kept. Edits reach those
-        # lists because Detection objects are shared by reference.
+        # Each owning file is rewritten with all of its rows, including the ones
+        # the table's filters hide. A failed write keeps the edits for a retry.
         try:
-            self._detections.save_containing(dirty)
+            saved = self._detections.save_dirty()
         except Exception as exc:
             self._app_state.errorOccurred.emit(f"Auto-save failed: {exc}")
             return
-        self._app_state.statusMessage.emit(f"Saved {len(dirty)} edited detection(s).")
+        if saved:
+            self._app_state.statusMessage.emit(f"Saved {saved} edited detection(s).")
 
     # export
 
     def _on_export_csv_clicked(self) -> None:
-        rows = self._model.detections()
-        if not rows:
+        rows = self._model.visible_frame()
+        if rows.is_empty():
             QMessageBox.information(self, "Export CSV", "Nothing to export.")
             return
         path_str, _ = QFileDialog.getSaveFileName(
@@ -368,18 +360,18 @@ class ExaminePanel(QWidget):
         if path.suffix.lower() != ".csv":
             path = path.with_suffix(".csv")
         try:
-            _write_visible_csv(path, rows, self._visible_column_names(), self._model.column_getter)
+            _write_visible_csv(path, rows, self._visible_column_names())
         except Exception as exc:
             self._app_state.errorOccurred.emit(f"Export failed: {exc}")
             return
-        self._app_state.statusMessage.emit(f"Exported {len(rows)} rows to {path.name}")
+        self._app_state.statusMessage.emit(f"Exported {rows.height} rows to {path.name}")
 
     def _on_export_snippets_clicked(self) -> None:
         project = self._app_state.project
         if project is None:
             return
-        rows = self._model.detections()
-        if not rows:
+        total = self._model.rowCount()
+        if total == 0:
             QMessageBox.information(self, "Export snippets", "Nothing to export.")
             return
         folder_str = QFileDialog.getExistingDirectory(
@@ -396,7 +388,10 @@ class ExaminePanel(QWidget):
 
         ok = 0
         errors: list[str] = []
-        for d in rows:
+        for row in range(total):
+            d = self._model.detection_at(row)
+            if d is None:
+                continue
             src = audio_root / d.file
             if not src.exists():
                 errors.append(f"missing: {d.file}")
@@ -411,7 +406,7 @@ class ExaminePanel(QWidget):
                 errors.append(f"{d.file}: {exc}")
 
         if errors:
-            self._app_state.errorOccurred.emit(f"Exported {ok}/{len(rows)} snippets. First error: {errors[0]}")
+            self._app_state.errorOccurred.emit(f"Exported {ok}/{total} snippets. First error: {errors[0]}")
         else:
             self._app_state.statusMessage.emit(f"Exported {ok} snippet(s) to {folder.name}")
 
@@ -457,28 +452,14 @@ def _fmt_count(shown: int, total: int) -> str:
     return f"{shown:,} of {total:,}"
 
 
-def _write_visible_csv(
-    path: Path,
-    detections: list[Detection],
-    columns: list[str],
-    getter_resolver: Callable[[str], Callable[[Detection], Any] | None],
-) -> None:
-    """Write *detections* with *columns* as headers, in column order.
+def _write_visible_csv(path: Path, frame: pl.DataFrame, columns: list[str]) -> None:
+    """Write *columns* of *frame* in order, in the detection CSVs' format.
 
-    *getter_resolver* lets us export dynamic Species_<locale> extras the
-    same way as static columns; the static COLUMN_GETTERS dict alone
-    can't reach into Detection.extra for locale lookups.
+    Unlike write_detections_frame, File keeps its project-relative form and no
+    annotation columns are added, because this exports exactly what the table shows.
     """
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(columns)
-        for d in detections:
-            cells: list[Any] = []
-            for c in columns:
-                get = getter_resolver(c)
-                v = get(d) if get is not None else ""
-                cells.append("" if v is None else v)
-            writer.writerow(cells)
+    out = frame.select(columns).with_columns(pl.col(pl.String).replace("", None))
+    out.write_csv(path, line_terminator="\r\n")
 
 
 def _snippet_filename(d: Detection, start: float, end: float) -> str:
