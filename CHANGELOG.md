@@ -4,6 +4,7 @@
 ### Changed
 - [Dev] Switch to the Polars CSV writer to speed up CSV updates.
 - [Dev] Use Polars frame (DetectionStore) instead of a list of Detection objects.
+- [Dev] Upgrade dependencies.
 
 ### Fixed
 - Editing a detection in the Examine panel (e.g. adjusting the Comment) only writes the CSV the detection belongs to.

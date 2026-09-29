@@ -231,15 +231,33 @@ def _prewarm_models(download_env: dict, uv_run_prefix: list) -> None:
 # Model files that must survive into the finished bundle, relative to
 # BIRDNET_APP_DATA_CACHE. The per-locale label files are checked by the
 # prewarm script instead, which can compare them against the lib's own
-# language set.
+# language set. Glob patterns: the lib names its checksum-verified v3.0
+# downloads model-fp32-<sha256 prefix>.onnx.
 REQUIRED_MODEL_FILES: tuple[str, ...] = (
-    'acoustic-models/v3.0/onnx/model-fp32.onnx',
-    'geo-models/v3.0/onnx/model-fp32.onnx',
+    'acoustic-models/v3.0/onnx/model-fp32*.onnx',
+    'geo-models/v3.0/onnx/model-fp32*.onnx',
     'acoustic-models/v2.4/onnx/model-fp32.onnx',
     'geo-models/v2.4/onnx/model-fp32.onnx',
     # Perch has no geo model of its own and reuses v3.0's for the allow-list.
     'acoustic-models/perch-v2/onnx/model-fp32.onnx',
 )
+
+
+def _resolve_model_file(pattern: str) -> str:
+    """The one cached file matching pattern, relative to BIRDNET_APP_DATA_CACHE.
+
+    A model update leaves the previous release's file beside the new one, and
+    Nuitka bundles the whole cache, so a second match is a stale copy that
+    would ship.
+    """
+    found = sorted(BIRDNET_APP_DATA_CACHE.glob(pattern))
+    if len(found) != 1:
+        raise SystemExit(
+            f'Expected exactly one model file matching {pattern} in '
+            f'{BIRDNET_APP_DATA_CACHE}, found {[p.name for p in found]}. '
+            'Delete the stale ones and rebuild.'
+        )
+    return found[0].relative_to(BIRDNET_APP_DATA_CACHE).as_posix()
 
 
 def _verify_bundle(app_root: Path) -> None:
@@ -257,7 +275,8 @@ def _verify_bundle(app_root: Path) -> None:
     and the caller checks the .dist tree before deleting it.
     """
     expected = {
-        rel: (BIRDNET_APP_DATA_CACHE / rel).stat().st_size for rel in REQUIRED_MODEL_FILES
+        rel: (BIRDNET_APP_DATA_CACHE / rel).stat().st_size
+        for rel in map(_resolve_model_file, REQUIRED_MODEL_FILES)
     }
     payload = sum(expected.values())
 
