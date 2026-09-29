@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+### Fixed
+- Editing a detection in the Examine panel (e.g. adjusting the Comment) only writes the CSV the detection belongs to.
+
 ## [0.7.0] - 2026-08-31
 ### Added
 - Add BirdNET-3.0-preview3.1 model with the following adjustments:

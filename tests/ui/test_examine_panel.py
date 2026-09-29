@@ -289,6 +289,26 @@ def test_autosave_preserves_unedited_rows(qtbot, panel: ExaminePanel, project) -
     assert len(rows_after) == 4, "auto-save dropped unedited rows"
 
 
+def test_autosave_rewrites_only_the_edited_campaign(qtbot, panel: ExaminePanel, project) -> None:
+    """With All campaigns loaded, an edit must leave the other campaigns' CSVs alone.
+
+    Rewriting every CSV per edit froze the UI for seconds on a 600k-row project.
+    """
+    detection = panel._model.detection_at(0)
+    assert detection is not None
+    other = next(c for c in ("alpha", "beta") if c != detection.campaign)
+    other_csv = project.folder / other / f"detections-{DEFAULT_MODEL_KEY}.csv"
+    # A marker only a rewrite would drop, since the rewritten content is otherwise identical.
+    other_csv.write_text(other_csv.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    marked = other_csv.read_bytes()
+
+    panel._model.setData(panel._model.index(0, COLUMNS_BY_NAME["Verified"]), "true")
+    edited_csv = project.folder / detection.campaign / f"detections-{DEFAULT_MODEL_KEY}.csv"
+    qtbot.waitUntil(lambda: "true" in edited_csv.read_text(encoding="utf-8"), timeout=2000)
+
+    assert other_csv.read_bytes() == marked
+
+
 def test_combo_delegate_choices_for_verified(panel: ExaminePanel) -> None:
     """The Verified column delegate must offer the four canonical values."""
     from PySide6.QtWidgets import QComboBox, QStyleOptionViewItem

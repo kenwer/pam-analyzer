@@ -1,19 +1,21 @@
-"""A campaign's detections as a persistable aggregate.
+"""Detections as persistable aggregates.
 
 Detections are stored per model run in <campaign>/detections-<model_key>.csv.
-A single Detection cannot save itself: rows share a file, the file's column
-order must survive a load/save round trip, and each row routes back to the
-file it came from via Detection.source_path. DetectionSet is the unit that
-owns those facts. Column names and row serialization come from
-detection_schema; this module owns only the file I/O.
+A single Detection cannot save itself: rows share a file, and the file's
+column order must survive a load/save round trip. DetectionFile owns one CSV
+with its rows and column order. DetectionSet groups the files shown together
+(one campaign, or the whole project) and routes edited rows back to the file
+that owns them. Column names and row serialization come from
+detection_schema. This module owns only the file I/O.
 
-The on-disk File column is campaign-relative; load prepends the campaign
+The on-disk File column is campaign-relative. Load prepends the campaign
 folder name so every in-memory consumer resolves against the project folder,
 and _write_csv strips it again on save.
 """
 
 import csv
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -26,11 +28,7 @@ def _read_csv(path: Path) -> tuple[list[Detection], list[str]]:
     with open(path, encoding="utf-8") as f:
         reader = csv.DictReader(f)
         fieldnames = list(reader.fieldnames or [])
-        detections = []
-        for row in reader:
-            d = schema.detection_from_row(row)
-            d.source_path = path
-            detections.append(d)
+        detections = [schema.detection_from_row(row) for row in reader]
     return detections, fieldnames
 
 
@@ -68,55 +66,79 @@ def _write_csv(path: Path, detections: list[Detection], fieldnames: list[str]) -
 
 
 @dataclass
-class DetectionSet:
-    """Detections loaded from a campaign or a whole project, plus enough state
-    to write them back to the exact files they came from.
+class DetectionFile:
+    """One detections CSV: its rows, its column order, and where it lives.
 
-    fieldnames_by_path remembers each source file's column order so a
-    load/save round trip preserves it.
+    fieldnames is the header as read, so a load/save round trip preserves the
+    file's column order.
     """
 
+    path: Path
+    fieldnames: list[str]
     detections: list[Detection]
-    fieldnames_by_path: dict[Path, list[str]] = field(default_factory=dict)
+
+    @classmethod
+    def load(cls, path: Path) -> DetectionFile:
+        detections, fieldnames = _read_csv(path)
+        campaign = path.parent.name
+        for d in detections:
+            if d.file and not Path(d.file).is_absolute():
+                d.file = f"{campaign}/{d.file}"
+        return cls(path, fieldnames, detections)
+
+    def save(self) -> None:
+        _write_csv(self.path, self.detections, self.fieldnames or list(schema.COLUMN_NAMES))
+
+
+@dataclass
+class DetectionSet:
+    """The detection files shown together: one campaign's, or a whole project's.
+
+    detections is the flat concatenation of every file's rows, in file order.
+    The Detection objects are shared with the files, so an edit made through
+    the flat list is what the owning file writes on save.
+    """
+
+    files: list[DetectionFile]
+    detections: list[Detection] = field(init=False)
+    # Keyed by id() because Detection is a mutable, unhashable dataclass. The
+    # files keep every row alive, so an id cannot be reused while it is here.
+    _owner: dict[int, DetectionFile] = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self.detections = [d for f in self.files for d in f.detections]
+        self._owner = {id(d): f for f in self.files for d in f.detections}
 
     @classmethod
     def load_for_campaign(cls, campaign_folder: Path) -> DetectionSet:
-        ds = cls([])
-        ds._extend_from_campaign(campaign_folder)
-        return ds
+        return cls([DetectionFile.load(p) for p in schema.campaign_csvs(campaign_folder)])
 
     @classmethod
     def load_combined(cls, project_folder: Path) -> DetectionSet:
-        """Concatenate every campaign's detections into one aggregate.
+        """Concatenate every campaign's detection files into one aggregate.
 
         Each campaign CSV carries its own annotations, so the concatenation
-        is always current; there is no combined file to fall out of sync.
+        is always current. There is no combined file to fall out of sync.
         """
-        ds = cls([])
-        for folder in paths.campaign_folders(project_folder):
-            ds._extend_from_campaign(folder)
-        return ds
-
-    def _extend_from_campaign(self, campaign_folder: Path) -> None:
-        for path in schema.campaign_csvs(campaign_folder):
-            detections, fieldnames = _read_csv(path)
-            self.fieldnames_by_path[path] = fieldnames
-            for d in detections:
-                if d.file and not Path(d.file).is_absolute():
-                    d.file = f"{campaign_folder.name}/{d.file}"
-            self.detections.extend(detections)
+        return cls(
+            [
+                DetectionFile.load(p)
+                for folder in paths.campaign_folders(project_folder)
+                for p in schema.campaign_csvs(folder)
+            ]
+        )
 
     def save(self) -> None:
-        """Write detections back to whichever CSV each one came from.
+        """Write every file back to its CSV."""
+        for f in self.files:
+            f.save()
 
-        Loading tags each row with its source path, so a campaign with both
-        birdnet and perch runs round-trips correctly: each detection lands in
-        the same file it came from.
+    def save_containing(self, rows: Iterable[Detection]) -> None:
+        """Write only the files that own *rows*, each with its full row set.
+
+        One edit in a 600k-row project then rewrites one CSV instead of all of
+        them, which is what kept autosave from freezing the UI.
         """
-        groups: dict[Path, list[Detection]] = {}
-        for d in self.detections:
-            assert d.source_path is not None, "Detection must carry source_path when saved"
-            groups.setdefault(d.source_path, []).append(d)
-        for path, rows in groups.items():
-            fieldnames = self.fieldnames_by_path.get(path) or list(schema.COLUMN_NAMES)
-            _write_csv(path, rows, fieldnames)
+        owners = {id(f): f for f in (self._owner[id(d)] for d in rows)}
+        for f in owners.values():
+            f.save()

@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from pam_analyzer.domain import DetectionSet, VerifiedState
+from pam_analyzer.domain import detection_set as detection_set_module
 from pam_analyzer.domain.detection_schema import campaign_csv_for_model
 from pam_analyzer.domain.paths import campaign_toml
 from tests.conftest import DEFAULT_MODEL_KEY, RETIRED_MODEL_KEYS
@@ -159,6 +160,30 @@ def test_save_round_trip_preserves_edits(tmp_path: Path, model_key: str) -> None
     reloaded = DetectionSet.load_for_campaign(folder).detections
     assert reloaded[0].verified == VerifiedState.TRUE
     assert reloaded[0].comment == "edited"
+
+
+def test_save_containing_rewrites_only_the_owning_file(tmp_path: Path, model_key: str, monkeypatch) -> None:
+    """Saving one edit on a large combined set must not rewrite every campaign CSV."""
+    east = _seed_csv(tmp_path, "east", [_sample("east"), _sample("east")], model_key)
+    _seed_csv(tmp_path, "west", [_sample("west")], model_key)
+    ds = DetectionSet.load_combined(tmp_path)
+    # Two edits in the same file must still write it once.
+    edited = [d for d in ds.detections if d.campaign == "east"]
+    for d in edited:
+        d.verified = VerifiedState.TRUE
+
+    written: list[Path] = []
+    real_write = detection_set_module._write_csv
+    monkeypatch.setattr(
+        detection_set_module,
+        "_write_csv",
+        lambda path, rows, fields: (written.append(path), real_write(path, rows, fields)),
+    )
+    ds.save_containing(edited)
+
+    assert written == [campaign_csv_for_model(east, model_key)]
+    reloaded = DetectionSet.load_for_campaign(east).detections
+    assert reloaded[0].verified == VerifiedState.TRUE
 
 
 def test_save_keeps_file_campaign_relative_on_disk(tmp_path: Path, model_key: str) -> None:

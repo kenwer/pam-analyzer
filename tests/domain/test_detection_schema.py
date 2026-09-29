@@ -53,11 +53,11 @@ class TestColumns:
 
     def test_columns_cover_every_detection_field(self):
         """Serialization derives from COLUMNS, so a Detection field without a
-        column would silently vanish from the CSV. Only the two fields that
-        deliberately never serialize may be missing."""
+        column would silently vanish from the CSV. Only extra, which carries
+        its own unmodeled columns, may be missing."""
         attrs = {c.attr for c in schema.COLUMNS}
         field_names = {f.name for f in fields(Detection)}
-        assert field_names - attrs == {"source_path", "extra"}
+        assert field_names - attrs == {"extra"}
         assert attrs <= field_names
 
     def test_setters_mutate_detection(self):

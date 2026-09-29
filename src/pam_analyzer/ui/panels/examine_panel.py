@@ -339,12 +339,11 @@ class ExaminePanel(QWidget):
         dirty = self._model.take_dirty()
         if not dirty:
             return
-        # DetectionSet.save overwrites each campaign's CSV with its full list,
-        # which is exactly self._raw_detections (rows the user filtered out via
-        # max-per or header filters still live in it, and edits propagate there
-        # because Detection objects are shared by reference).
+        # Each owning file is rewritten with its full row list, so rows the user
+        # filtered out via max-per or header filters are kept. Edits reach those
+        # lists because Detection objects are shared by reference.
         try:
-            self._detections.save()
+            self._detections.save_containing(dirty)
         except Exception as exc:
             self._app_state.errorOccurred.emit(f"Auto-save failed: {exc}")
             return

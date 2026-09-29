@@ -22,7 +22,7 @@ from .audio_import import (
 )
 from .campaign import Campaign, campaign_name_error
 from .detection import Detection
-from .detection_set import DetectionSet
+from .detection_set import DetectionFile, DetectionSet
 from .detections import filter_top_per_aru_species
 from .enums import FilterMode, VerifiedState
 from .inventory import (
@@ -64,6 +64,7 @@ __all__ = [
     "ConflictReport",
     "DetectedCard",
     "Detection",
+    "DetectionFile",
     "DetectionSet",
     "FileConflict",
     "FilterMode",
