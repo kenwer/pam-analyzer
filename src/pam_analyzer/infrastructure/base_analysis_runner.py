@@ -21,13 +21,13 @@ Lifecycle of one run() call:
             emit 'parsing'
             for each raw lib row:
                 _parse_row() per row (subclass interprets the row)
-                shared: rank, ARU, file_rel, week, CSV write
+                shared: rank, ARU, file_rel, week
+            write the CSV once (shared, detection_set.write_detections_csv)
             emit 'done'
 """
 
 from __future__ import annotations
 
-import csv
 import logging
 import math
 import shutil
@@ -52,6 +52,7 @@ from ..domain import (
 from ..domain import detection_schema as schema
 from ..domain.analysis_run_result import AnalysisRunResult, CampaignRunResult, RunStatus
 from ..domain.audio_import import WEEK_YEAR_ROUND, parse_recording_time
+from ..domain.detection_set import write_detections_csv
 from ._analysis_helpers import (
     RunGlobalProgress,
     build_progress_callback,
@@ -259,8 +260,7 @@ class BaseAnalysisRunner(ABC):
         fieldnames = schema.write_fieldnames(settings.locales)
 
         if wav_count == 0:
-            with open(detections_csv, "w", newline="", encoding="utf-8") as outfile:
-                csv.DictWriter(outfile, fieldnames=fieldnames).writeheader()
+            write_detections_csv(detections_csv, [], fieldnames)
             emit_progress(
                 progress,
                 campaign=campaign_name,
@@ -381,102 +381,97 @@ class BaseAnalysisRunner(ABC):
 
         arr = result.to_structured_array()
 
-        # Write to a sibling temp file and swap it into place only once every
-        # row is on disk (Path.replace is atomic within a folder)
-        tmp_csv = detections_csv.with_name(detections_csv.name + ".tmp")
+        # Collected in full and written once, through the same writer the
+        # Examine panel saves with, so later saves keep the file's format.
+        detections: list[Detection] = []
+        # Rank is assigned per (file, chunk_start) over rows that survive
+        # the per-week allow-list, and a species already ranked in the
+        # segment is merged away. See _SegmentRanker.
+        ranker = _SegmentRanker()
+        for raw_row in arr:
+            parsed = self._parse_row(
+                raw_row,
+                preferred_lang_map=preferred_lang_map,
+                locale_maps=locale_maps,
+                settings=settings,
+            )
 
-        with open(tmp_csv, "w", newline="", encoding="utf-8") as outfile:
-            writer = csv.DictWriter(outfile, fieldnames=fieldnames)
-            writer.writeheader()
+            # A model can hand back a non-finite score for degenerate
+            # input. BirdNET v3.0 normalizes each window by its own
+            # standard deviation, so a digitally constant window (a dead
+            # ARU channel, a dropout, a muted track) divides by zero and
+            # every class comes back NaN. Dropping those rows keeps one
+            # bad file from aborting the whole campaign when the CSV
+            # writer tries to format the value.
+            if not math.isfinite(parsed.confidence):
+                nonfinite_count += 1
+                continue
 
-            # Rank is assigned per (file, chunk_start) over rows that survive
-            # the per-week allow-list, and a species already ranked in the
-            # segment is merged away. See _SegmentRanker.
-            ranker = _SegmentRanker()
-            for raw_row in arr:
-                parsed = self._parse_row(
-                    raw_row,
-                    preferred_lang_map=preferred_lang_map,
-                    locale_maps=locale_maps,
-                    settings=settings,
-                )
+            # Both sides are canonical, so this is membership in one
+            # namespace rather than a bridge between two.
+            allowed = resolved.allowed_for(parsed.file_path)
+            if allowed is not None and parsed.scientific_name not in allowed:
+                if parsed.scientific_name in self._known_output_species():
+                    out_of_region_count += 1
+                else:
+                    unknown_species_count += 1
+                continue
 
-                # A model can hand back a non-finite score for degenerate
-                # input. BirdNET v3.0 normalizes each window by its own
-                # standard deviation, so a digitally constant window (a dead
-                # ARU channel, a dropout, a muted track) divides by zero and
-                # every class comes back NaN. Dropping those rows keeps one
-                # bad file from aborting the whole campaign when the CSV
-                # writer tries to format the value.
-                if not math.isfinite(parsed.confidence):
-                    nonfinite_count += 1
-                    continue
+            try:
+                aru = parsed.file_path.relative_to(campaign.folder).parts[0]
+            except (ValueError, IndexError):
+                aru = ""
+            aru_set.add(aru)
 
-                # Both sides are canonical, so this is membership in one
-                # namespace rather than a bridge between two.
-                allowed = resolved.allowed_for(parsed.file_path)
-                if allowed is not None and parsed.scientific_name not in allowed:
-                    if parsed.scientific_name in self._known_output_species():
-                        out_of_region_count += 1
-                    else:
-                        unknown_species_count += 1
-                    continue
+            # Project-relative like every in-memory row. write_detections_csv
+            # strips the campaign folder again, so on disk the path stays
+            # campaign-relative and the folder can be renamed without
+            # invalidating its CSV.
+            try:
+                file_rel = f"{campaign.folder.name}/{parsed.file_path.relative_to(campaign.folder).as_posix()}"
+            except ValueError:
+                file_rel = parsed.file_path.as_posix()
 
-                try:
-                    aru = parsed.file_path.relative_to(campaign.folder).parts[0]
-                except (ValueError, IndexError):
-                    aru = ""
-                aru_set.add(aru)
+            recording_time = parse_recording_time(parsed.file_path.stem)
+            file_week = week_from_path(parsed.file_path)
 
-                # Campaign-relative so the campaign folder can be renamed or
-                # moved without invalidating its own CSV.
-                try:
-                    file_rel = parsed.file_path.relative_to(campaign.folder).as_posix()
-                except ValueError:
-                    file_rel = parsed.file_path.as_posix()
+            rank = ranker.rank_for(
+                (str(parsed.file_path), parsed.start_time), parsed.scientific_name
+            )
+            if rank is None:
+                merged_duplicate_count += 1
+                continue
 
-                recording_time = parse_recording_time(parsed.file_path.stem)
-                file_week = week_from_path(parsed.file_path)
+            # Serialize through the schema's Detection path so this
+            # writer cannot drift from what the repo and table read.
+            # Rounding mirrors the precision of the old formatting
+            # (%.1f times, %.4f confidence) and coerces numpy scalars
+            # from the lib into plain floats.
+            detection = Detection(
+                campaign=campaign_name,
+                aru=aru,
+                week=file_week if file_week is not None else WEEK_YEAR_ROUND,
+                species=parsed.preferred_common,
+                scientific_name=parsed.scientific_name,
+                confidence=round(float(parsed.confidence), 4),
+                start_time=round(float(parsed.start_time), 1),
+                end_time=round(float(parsed.end_time), 1),
+                rank=rank,
+                file=file_rel,
+                recording_time=str(recording_time) if recording_time else "",
+                lat=lat,
+                lon=lon,
+                min_conf=settings.min_conf,
+                model=self.model_key,
+                extra={
+                    schema.locale_column(loc): parsed.locale_commons.get(loc, "")
+                    for loc in settings.locales
+                },
+            )
+            detections.append(detection)
+            detection_count += 1
 
-                rank = ranker.rank_for(
-                    (str(parsed.file_path), parsed.start_time), parsed.scientific_name
-                )
-                if rank is None:
-                    merged_duplicate_count += 1
-                    continue
-
-                # Serialize through the schema's Detection path so this
-                # writer cannot drift from what the repo and table read.
-                # Rounding mirrors the precision of the old formatting
-                # (%.1f times, %.4f confidence) and coerces numpy scalars
-                # from the lib into plain floats.
-                detection = Detection(
-                    campaign=campaign_name,
-                    aru=aru,
-                    week=file_week if file_week is not None else WEEK_YEAR_ROUND,
-                    species=parsed.preferred_common,
-                    scientific_name=parsed.scientific_name,
-                    confidence=round(float(parsed.confidence), 4),
-                    start_time=round(float(parsed.start_time), 1),
-                    end_time=round(float(parsed.end_time), 1),
-                    rank=rank,
-                    file=file_rel,
-                    recording_time=str(recording_time) if recording_time else "",
-                    lat=lat,
-                    lon=lon,
-                    min_conf=settings.min_conf,
-                    model=self.model_key,
-                    extra={
-                        schema.locale_column(loc): parsed.locale_commons.get(loc, "")
-                        for loc in settings.locales
-                    },
-                )
-                writer.writerow(schema.detection_to_row(detection))
-                detection_count += 1
-
-        # Every row is now flushed and the file handle closed, so the swap
-        # publishes a complete CSV under the final name in one atomic step.
-        tmp_csv.replace(detections_csv)
+        write_detections_csv(detections_csv, detections, fieldnames)
 
         if nonfinite_count:
             logging.warning(

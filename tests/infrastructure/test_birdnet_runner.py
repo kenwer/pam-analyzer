@@ -28,6 +28,7 @@ from pam_analyzer.domain import (
     AnalysisProgressSnapshot,
     AnalysisSettings,
     Campaign,
+    DetectionSet,
     FilterMode,
     RunStatus,
 )
@@ -179,6 +180,26 @@ def test_writes_detections_csv(campaign_with_minute_wav: Path) -> None:
 
     phases = {s.phase for s in progress.snapshots}
     assert {"preparing", "analyzing", "done"}.issubset(phases)
+
+
+@pytest.mark.slow
+def test_runner_csv_survives_load_and_save_unchanged(campaign_with_minute_wav: Path) -> None:
+    """The runner and the Examine autosave share one writer, so a save without edits rewrites nothing."""
+    settings = AnalysisSettings(min_conf=0.001, overlap=0.0, locales=("en_us",))
+    campaign = Campaign(name="c1", folder=campaign_with_minute_wav, species_filter_mode=FilterMode.LIST)
+    result = BirdnetRunner().run(
+        campaigns=[campaign],
+        settings=settings,
+        preferred_lang="en_us",
+        progress=_RecordingProgress(),
+    )
+    camp = result.campaigns[0]
+    assert camp.detection_count > 0
+    written = camp.detections_csv.read_bytes()
+
+    DetectionSet.load_for_campaign(campaign_with_minute_wav).save()
+
+    assert camp.detections_csv.read_bytes() == written
 
 
 @pytest.mark.slow

@@ -5,12 +5,12 @@ A single Detection cannot save itself: rows share a file, and the file's
 column order must survive a load/save round trip. DetectionFile owns one CSV
 with its rows and column order. DetectionSet groups the files shown together
 (one campaign, or the whole project) and routes edited rows back to the file
-that owns them. Column names and row serialization come from
-detection_schema. This module owns only the file I/O.
+that owns them. Column names come from detection_schema. This module owns
+only the file I/O.
 
 The on-disk File column is campaign-relative. Load prepends the campaign
 folder name so every in-memory consumer resolves against the project folder,
-and _write_csv strips it again on save.
+and write_detections_csv strips it again on save.
 """
 
 import csv
@@ -19,9 +19,14 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import polars as pl
+
 from . import detection_schema as schema
 from . import paths
 from .detection import Detection
+
+_DTYPES = {c.name: pl.Float64 if c.numeric else pl.String for c in schema.COLUMNS}
+_GETTERS = {c.name: c.get for c in schema.COLUMNS}
 
 
 def _read_csv(path: Path) -> tuple[list[Detection], list[str]]:
@@ -32,36 +37,33 @@ def _read_csv(path: Path) -> tuple[list[Detection], list[str]]:
     return detections, fieldnames
 
 
-def _write_csv(path: Path, detections: list[Detection], fieldnames: list[str]) -> None:
-    full_fields = list(fieldnames)
-    for f in schema.ANNOTATION_COLUMNS:
-        if f not in full_fields:
-            full_fields.append(f)
+def write_detections_csv(path: Path, detections: list[Detection], fieldnames: list[str]) -> None:
+    """Write *detections* to *path* with *fieldnames* plus any missing annotation columns.
+
+    The analysis runner and every save go through here, so a file keeps one
+    format and a save without edits rewrites nothing. File is project-relative
+    in memory but campaign-relative on disk, so the campaign prefix is
+    stripped. Blank text is written as null, because polars writes an empty
+    string as "" but a null as an empty cell.
+    """
+    columns = list(fieldnames) + [c for c in schema.ANNOTATION_COLUMNS if c not in fieldnames]
+    data: dict[str, list] = {}
+    for name in columns:
+        get = _GETTERS.get(name)
+        # A header column that is neither schema nor extra gets None, an empty cell.
+        data[name] = [get(d) for d in detections] if get else [d.extra.get(name) for d in detections]
+    dtypes = {name: _DTYPES.get(name, pl.String) for name in data}
+    out = pl.DataFrame(data, schema=dtypes, strict=False)
+    if "File" in out.columns:
+        out = out.with_columns(pl.col("File").str.strip_prefix(path.parent.name + "/"))
+    out = out.with_columns(pl.col(pl.String).replace("", None))
     path.parent.mkdir(parents=True, exist_ok=True)
-    # On disk the File column is campaign-relative so a campaign folder can be
-    # renamed or moved without breaking its CSVs. In memory it is
-    # project-relative (load prepends the folder name), so strip the prefix
-    # from the row dict here, never from the shared Detection.
-    campaign_prefix = path.parent.name + "/"
 
-    def _row(d: Detection) -> dict[str, str]:
-        row = schema.detection_to_row(d)
-        if row["File"].startswith(campaign_prefix):
-            row["File"] = row["File"][len(campaign_prefix):]
-        return row
-
-    # Write to a sibling temp file and swap it in atomically: this CSV holds
-    # the user's annotations, so a crash mid-write must not truncate the only
-    # copy. The '.part' suffix keeps discovery globs from matching the temp.
     tmp = path.with_name(path.name + ".part")
     try:
-        with open(tmp, "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=full_fields, extrasaction="ignore")
-            writer.writeheader()
-            writer.writerows(_row(d) for d in detections)
+        out.write_csv(tmp, line_terminator="\r\n")
         os.replace(tmp, path)
     finally:
-        # On success os.replace consumed tmp; on any failure discard the partial.
         tmp.unlink(missing_ok=True)
 
 
@@ -87,7 +89,11 @@ class DetectionFile:
         return cls(path, fieldnames, detections)
 
     def save(self) -> None:
-        _write_csv(self.path, self.detections, self.fieldnames or list(schema.COLUMN_NAMES))
+        write_detections_csv(
+            self.path,
+            self.detections,
+            self.fieldnames or list(schema.COLUMN_NAMES),
+        )
 
 
 @dataclass

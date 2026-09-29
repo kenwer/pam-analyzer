@@ -1,11 +1,14 @@
 import csv
 from pathlib import Path
 
+import polars as pl
 import pytest
 
-from pam_analyzer.domain import DetectionSet, VerifiedState
+from pam_analyzer.domain import Detection, DetectionSet, VerifiedState
+from pam_analyzer.domain import detection_schema as schema
 from pam_analyzer.domain import detection_set as detection_set_module
 from pam_analyzer.domain.detection_schema import campaign_csv_for_model
+from pam_analyzer.domain.detection_set import write_detections_csv
 from pam_analyzer.domain.paths import campaign_toml
 from tests.conftest import DEFAULT_MODEL_KEY, RETIRED_MODEL_KEYS
 
@@ -173,10 +176,10 @@ def test_save_containing_rewrites_only_the_owning_file(tmp_path: Path, model_key
         d.verified = VerifiedState.TRUE
 
     written: list[Path] = []
-    real_write = detection_set_module._write_csv
+    real_write = detection_set_module.write_detections_csv
     monkeypatch.setattr(
         detection_set_module,
-        "_write_csv",
+        "write_detections_csv",
         lambda path, rows, fields: (written.append(path), real_write(path, rows, fields)),
     )
     ds.save_containing(edited)
@@ -204,8 +207,8 @@ def test_save_failure_leaves_original_file_intact(tmp_path: Path, model_key: str
     """A crash mid-write must not truncate the CSV holding user annotations.
 
     The write goes to a '.part' sibling that is swapped in atomically, so a
-    serialization failure leaves the original bytes untouched and no temp
-    file behind.
+    failure mid-write leaves the original bytes untouched and no temp file
+    behind.
     """
     folder = _seed_csv(tmp_path, "east", [_sample("east")], model_key)
     csv_path = campaign_csv_for_model(folder, model_key)
@@ -213,14 +216,14 @@ def test_save_failure_leaves_original_file_intact(tmp_path: Path, model_key: str
 
     ds = DetectionSet.load_for_campaign(folder)
 
-    def _boom(_d):
-        raise RuntimeError("simulated crash mid-serialization")
+    def _boom(self, file, **_kwargs):
+        # Leave a partial file behind, like a real crash mid-write would.
+        Path(file).write_text("partial", encoding="utf-8")
+        raise RuntimeError("simulated crash mid-write")
 
-    monkeypatch.setattr("pam_analyzer.domain.detection_set.schema.detection_to_row", _boom)
-    try:
+    monkeypatch.setattr(pl.DataFrame, "write_csv", _boom)
+    with pytest.raises(RuntimeError):
         ds.save()
-    except RuntimeError:
-        pass
 
     assert csv_path.read_bytes() == original_bytes
     assert not list(csv_path.parent.glob("*.part"))
@@ -251,8 +254,8 @@ def test_lat_lon_round_trip(tmp_path: Path, model_key: str) -> None:
     with open(path, encoding="utf-8") as f:
         reader = csv.DictReader(f)
         row = next(reader)
-    assert row["Lat"] == "48"
-    assert row["Lon"] == "11"
+    assert row["Lat"] == "48.0"
+    assert row["Lon"] == "11.0"
 
 
 def test_truly_unknown_columns_go_to_extra(tmp_path: Path, model_key: str) -> None:
@@ -281,3 +284,56 @@ def _sample(campaign: str) -> list[str]:
         "",
         "",
     ]
+
+
+def _detection(file: str = "east/f.wav") -> Detection:
+    return Detection(
+        campaign="east", aru="MSD-1", week=24.0, species="Robin",
+        scientific_name="Erithacus rubecula", confidence=0.85, start_time=0.0,
+        end_time=3.0, rank=1.0, file=file,
+    )
+
+
+def test_write_detections_csv_strips_only_this_campaigns_prefix(tmp_path: Path) -> None:
+    path = tmp_path / "east" / "detections-X.csv"
+    write_detections_csv(path, [_detection("east/a.wav"), _detection("other/x.wav")], list(schema.COLUMN_NAMES))
+    with open(path, newline="", encoding="utf-8") as f:
+        assert [r["File"] for r in csv.DictReader(f)] == ["a.wav", "other/x.wav"]
+
+
+def test_write_detections_csv_writes_every_header_column_and_blank_cells_unquoted(tmp_path: Path) -> None:
+    path = tmp_path / "east" / "detections-X.csv"
+    write_detections_csv(path, [_detection()], ["Campaign", "File", "Unused"])
+    assert path.read_bytes() == (
+        b"Campaign,File,Unused,Verified,Corrected_Species,Comment\r\n"
+        b"east,f.wav,,,,\r\n"
+    )
+
+
+def test_write_detections_csv_without_rows_writes_header_only(tmp_path: Path) -> None:
+    path = tmp_path / "east" / "detections-X.csv"
+    write_detections_csv(path, [], ["Campaign", "Unused"])
+    assert path.read_bytes() == b"Campaign,Unused,Verified,Corrected_Species,Comment\r\n"
+
+
+def test_text_needing_quotes_round_trips(tmp_path: Path, model_key: str) -> None:
+    folder = _seed_csv(tmp_path, "east", [_sample("east")], model_key)
+    ds = DetectionSet.load_for_campaign(folder)
+    d = ds.detections[0]
+    d.species = "Tit, Blue"
+    d.comment = 'said "hi"\nnext line'
+    d.corrected_species = " padded "
+    ds.save()
+
+    again = DetectionSet.load_for_campaign(folder).detections[0]
+    assert (again.species, again.comment, again.corrected_species) == ("Tit, Blue", 'said "hi"\nnext line', " padded ")
+
+
+def test_save_without_edits_changes_nothing(tmp_path: Path, model_key: str) -> None:
+    """After a first save settles the format, loading and saving again must not touch a byte."""
+    folder = _seed_csv(tmp_path, "east", [_sample("east")], model_key)
+    path = campaign_csv_for_model(folder, model_key)
+    DetectionSet.load_for_campaign(folder).save()
+    settled = path.read_bytes()
+    DetectionSet.load_for_campaign(folder).save()
+    assert path.read_bytes() == settled
