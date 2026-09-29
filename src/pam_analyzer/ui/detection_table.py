@@ -407,6 +407,10 @@ class DetectionTable(QWidget):
             self._present(row_id, detection, autoplay=False)
 
     def _on_cell_clicked(self, index: QModelIndex) -> None:
+        # Single click starts editing
+        if index.flags() & Qt.ItemFlag.ItemIsEditable:
+            self._table.edit(index)
+            return
         if index.column() != PLAY_COLUMN_INDEX or self._model is None:
             return
         # Cancel any deferred prepare for this row, play_detection() subsumes it.

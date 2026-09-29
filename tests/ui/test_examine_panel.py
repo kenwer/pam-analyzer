@@ -332,6 +332,42 @@ def test_combo_delegate_choices_for_verified(panel: ExaminePanel) -> None:
     ]
 
 
+def test_single_click_opens_the_dropdown_of_an_unselected_row(qtbot, panel: ExaminePanel, monkeypatch) -> None:
+    from PySide6.QtWidgets import QApplication, QComboBox
+
+    monkeypatch.setattr(panel.ui.detections_table, "_present", lambda *a, **k: None)
+    panel.show()
+    qtbot.waitExposed(panel)
+    view = panel.ui.detections_table.table()
+
+    verified = view.model().index(2, panel._model.index_of("Verified"))
+    qtbot.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=view.visualRect(verified).center())
+    qtbot.waitUntil(lambda: isinstance(QApplication.activePopupWidget(), QWidget))
+    assert isinstance(view.indexWidget(verified), QComboBox)
+    QApplication.activePopupWidget().close()
+    QCoreApplication.processEvents()
+
+
+def test_single_click_on_comment_accepts_typing_until_return(qtbot, panel: ExaminePanel, monkeypatch) -> None:
+    from PySide6.QtWidgets import QAbstractItemView, QLineEdit
+
+    monkeypatch.setattr(panel.ui.detections_table, "_present", lambda *a, **k: None)
+    panel.show()
+    qtbot.waitExposed(panel)
+    view = panel.ui.detections_table.table()
+
+    comment = view.model().index(2, panel._model.index_of("Comment"))
+    qtbot.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=view.visualRect(comment).center())
+    editor = view.indexWidget(comment)
+    assert isinstance(editor, QLineEdit)
+    qtbot.keyClicks(editor, "two calls")
+    qtbot.keyClick(editor, Qt.Key.Key_Return)
+
+    qtbot.waitUntil(lambda: view.state() != QAbstractItemView.State.EditingState)
+    assert comment.data() == "two calls"
+    QCoreApplication.processEvents()
+
+
 def test_padding_spinboxes_init_from_project(qtbot, project: Project, load_project) -> None:
     """Loading a project populates the padding spinboxes from its TOML values."""
     # Bake non-zero padding into the project file.

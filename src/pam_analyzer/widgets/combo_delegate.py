@@ -1,8 +1,8 @@
 """QStyledItemDelegate that pops up a fixed-value QComboBox for editing.
 
 Mirrors AG Grid's ``agSelectCellEditor`` pattern: the cell renders the
-plain string value, but double-clicking (or pressing F2) opens a
-combobox limited to a known set of choices.
+plain string value, but editing the cell opens a combobox limited to a
+known set of choices. DetectionTable starts the edit on a single click.
 """
 
 from __future__ import annotations
