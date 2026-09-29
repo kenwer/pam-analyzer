@@ -189,6 +189,41 @@ def _discard_source(saved_model_dir: Path) -> None:
     shutil.rmtree(saved_model_dir.parent, ignore_errors=True)
 
 
+def _prime_shared_download(url: str, kinds: list[str]) -> None:
+    """Install the SavedModels of several kinds from one download of their shared zip.
+
+    Each upstream downloader fetches the whole 125 MB zip and keeps only its
+    own subdirectory, so letting them run in turn downloads it once per kind.
+    Placing every subdirectory where birdnet looks, with its source marker,
+    makes the later get_model_path_and_labels calls find it already there.
+    """
+    import tempfile
+    import zipfile
+
+    from birdnet.utils.helper import download_file_tqdm, write_source_marker
+    from birdnet.utils.local_data import get_lang_dir, get_model_path
+
+    subdirs = {"acoustic": "audio-model", "geo": "meta-model"}
+    with tempfile.TemporaryDirectory(prefix="birdnet_download") as temp_dir:
+        zip_path = Path(temp_dir) / "download.zip"
+        download_file_tqdm(url, zip_path, description="Downloading v2.4 SavedModels (pb)")
+        extract_dir = Path(temp_dir) / "extracted"
+        with zipfile.ZipFile(zip_path) as zip_ref:
+            zip_ref.extractall(extract_dir)
+
+        for kind in kinds:
+            model_dir = get_model_path(kind, "2.4", "pb", "fp32")
+            model_dir.parent.mkdir(parents=True, exist_ok=True)
+            shutil.rmtree(model_dir, ignore_errors=True)
+            shutil.move(extract_dir / subdirs[kind], model_dir)
+            write_source_marker(model_dir, url)
+
+            lang_dir = get_lang_dir(kind, "2.4", "pb")
+            lang_dir.parent.mkdir(parents=True, exist_ok=True)
+            shutil.rmtree(lang_dir, ignore_errors=True)
+            shutil.copytree(extract_dir / "labels", lang_dir)
+
+
 def _install_labels(src_lang_dir: Path, dest_lang_dir: Path) -> int:
     """Copy the per-locale label files next to the converted model.
 
@@ -225,12 +260,18 @@ def main() -> None:
         ("geo", GeoPBDownloaderV2_4, "serving_default", GEO_PB_URL),
     )
 
-    for kind, downloader, signature, source_url in jobs:
-        out_path = get_model_path(kind, "2.4", "onnx", "fp32")
-
-        if not args.force and _is_current(out_path, source_url):
+    pending = [
+        job for job in jobs if args.force or not _is_current(get_model_path(job[0], "2.4", "onnx", "fp32"), job[3])
+    ]
+    for kind, *_ in jobs:
+        if all(job[0] != kind for job in pending):
             print(f"  {kind} v2.4 onnx is current, skipping")
-            continue
+    if len(pending) > 1 and len({job[3] for job in pending}) == 1:
+        print("  Fetching v2.4 SavedModels")
+        _prime_shared_download(pending[0][3], [job[0] for job in pending])
+
+    for kind, downloader, signature, source_url in pending:
+        out_path = get_model_path(kind, "2.4", "onnx", "fp32")
 
         # Downloads and unzips on a cold cache. It reads label files and moves
         # directories, and pulls in no TensorFlow: only PBBackend.load() does

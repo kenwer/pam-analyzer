@@ -5,6 +5,7 @@
 - [Dev] Switch to the Polars CSV writer to speed up CSV updates.
 - [Dev] Use Polars frame (DetectionStore) instead of a list of Detection objects.
 - [Dev] Upgrade dependencies.
+- [Dev] BirdNET v2.4 ONNX conversion downloads the shared SavedModel zip only once.
 
 ### Fixed
 - Editing a detection in the Examine panel (e.g. adjusting the Comment) only writes the CSV the detection belongs to.
