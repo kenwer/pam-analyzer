@@ -82,7 +82,7 @@
        <item>
         <widget class="QLabel" name="author_label">
          <property name="text">
-          <string>Author: Ken Werner</string>
+          <string>Ken Werner</string>
          </property>
          <property name="alignment">
           <set>Qt::AlignmentFlag::AlignCenter</set>
