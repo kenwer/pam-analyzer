@@ -30,6 +30,8 @@ class AppSettings:
     KEY_WINDOW_GEOMETRY = "geometry"
     KEY_RECENT_PROJECTS = "projects"
     KEY_HIDDEN_COLUMNS = "hidden_columns"
+    KEY_CSV_EXPORT_DIRECTORY = "csv_export_directory"
+    KEY_SNIPPET_EXPORT_DIRECTORY = "snippet_export_directory"
     KEY_CAMPAIGN_SORT_ORDER = "sort_order"
     KEY_LOG_LEVEL = "log_level"
     MAX_RECENT_PROJECTS = 8
@@ -138,6 +140,35 @@ class AppSettings:
     def examine_hidden_columns(self, value: list[str]) -> None:
         self._settings.beginGroup(self.GROUP_EXAMINE)
         self._settings.setValue(self.KEY_HIDDEN_COLUMNS, list(value))
+        self._settings.endGroup()
+
+    @property
+    def csv_export_directory(self) -> str:
+        """Folder of the last CSV export, as a dialog start dir."""
+        return self._export_directory(self.KEY_CSV_EXPORT_DIRECTORY)
+
+    @csv_export_directory.setter
+    def csv_export_directory(self, value: str) -> None:
+        self._set_export_directory(self.KEY_CSV_EXPORT_DIRECTORY, value)
+
+    @property
+    def snippet_export_directory(self) -> str:
+        """Folder of the last audio snippet export, as a dialog start dir."""
+        return self._export_directory(self.KEY_SNIPPET_EXPORT_DIRECTORY)
+
+    @snippet_export_directory.setter
+    def snippet_export_directory(self, value: str) -> None:
+        self._set_export_directory(self.KEY_SNIPPET_EXPORT_DIRECTORY, value)
+
+    def _export_directory(self, key: str) -> str:
+        self._settings.beginGroup(self.GROUP_EXAMINE)
+        value = cast(str, self._settings.value(key, "", type=str))
+        self._settings.endGroup()
+        return value if value and QDir(value).exists() else QDir.homePath()
+
+    def _set_export_directory(self, key: str, value: str) -> None:
+        self._settings.beginGroup(self.GROUP_EXAMINE)
+        self._settings.setValue(key, value)
         self._settings.endGroup()
 
     # campaigns panel state

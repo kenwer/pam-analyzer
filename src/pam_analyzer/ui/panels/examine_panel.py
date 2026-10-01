@@ -354,7 +354,7 @@ class ExaminePanel(QWidget):
         path_str, _ = QFileDialog.getSaveFileName(
             self,
             "Export CSV",
-            str(Path.home() / "detections.csv"),
+            str(Path(self._settings.csv_export_directory) / "detections.csv"),
             "CSV files (*.csv)",
         )
         if not path_str:
@@ -362,6 +362,7 @@ class ExaminePanel(QWidget):
         path = Path(path_str)
         if path.suffix.lower() != ".csv":
             path = path.with_suffix(".csv")
+        self._settings.csv_export_directory = str(path.parent)
         try:
             _write_visible_csv(path, rows, self._visible_column_names())
         except Exception as exc:
@@ -385,10 +386,11 @@ class ExaminePanel(QWidget):
         folder_str = QFileDialog.getExistingDirectory(
             self,
             "Choose folder for audio snippets",
-            str(Path.home()),
+            self._settings.snippet_export_directory,
         )
         if not folder_str:
             return
+        self._settings.snippet_export_directory = folder_str
         folder = Path(folder_str)
         audio_root = project.folder
         pad_before = float(project.snippet_padding_before or 0.0)
