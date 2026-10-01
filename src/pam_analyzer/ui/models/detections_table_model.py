@@ -231,6 +231,11 @@ class DetectionsTableModel(QAbstractTableModel):
         """The visible rows in display order, store columns only."""
         return self._store.frame.select(pl.all().gather(self._visible))
 
+    def rows_frame(self, visible_rows: list[int]) -> pl.DataFrame:
+        """The given visible rows, in the given order, store columns only."""
+        ids = pl.Series([self._visible[r] for r in visible_rows], dtype=pl.UInt32)
+        return self._store.frame.select(pl.all().gather(ids))
+
     def visible_column(self, name: str) -> pl.Series:
         """One column of the visible rows, in display order."""
         return self._store.frame.get_column(name).gather(self._visible)
@@ -268,6 +273,9 @@ class DetectionsTableModel(QAbstractTableModel):
         self._rebuild_visible()
         self._apply_sort()
         self.endResetModel()
+
+    def has_filters(self) -> bool:
+        return bool(self._col_filters)
 
     def clear_filters(self) -> None:
         if not self._col_filters:

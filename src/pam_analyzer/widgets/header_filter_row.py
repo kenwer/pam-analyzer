@@ -184,6 +184,21 @@ class HeaderFilterRow(QObject):
         slot.edit.setEnabled(True)
         slot.button.setActive(False)
 
+    def set_filter(self, col: int, text: str, op: FilterOp) -> None:
+        """Set and apply the filter of *col*, as if the user had picked *op* and typed *text*."""
+        if not (0 <= col < len(self._slots)):
+            return
+        slot = self._slots[col]
+        slot.timer.stop()
+        slot.op = op
+        slot.button.setToolTip(label_for(op))
+        slot.edit.setEnabled(needs_value(op))
+        slot.pending_text = text if needs_value(op) else ""
+        slot.edit.blockSignals(True)
+        slot.edit.setText(slot.pending_text)
+        slot.edit.blockSignals(False)
+        self._emit(col)
+
     def set_column_visible(self, col: int, visible: bool) -> None:
         if 0 <= col < len(self._slots):
             if visible:

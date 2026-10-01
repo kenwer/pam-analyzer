@@ -184,6 +184,10 @@ class ExaminePanel(QWidget):
         self.ui.export_button.setMenu(menu)
         self._export_actions = (csv_action, snip_action)
 
+        selected_action = QAction("Export Selected as Audio Snippets…", self)
+        selected_action.triggered.connect(lambda: self._export_snippets(self.ui.detections_table.selectedRows()))
+        self.ui.detections_table.addRowMenuAction(selected_action)
+
     # state observers
 
     def _on_project_changed(self, project: object) -> None:
@@ -377,10 +381,14 @@ class ExaminePanel(QWidget):
         )
 
     def _on_export_snippets_clicked(self) -> None:
+        self._export_snippets(list(range(self._model.rowCount())))
+
+    def _export_snippets(self, rows: list[int]) -> None:
+        """Export one audio snippet per model row in *rows*."""
         project = self._app_state.project
         if project is None:
             return
-        total = self._model.rowCount()
+        total = len(rows)
         if total == 0:
             return
         folder_str = QFileDialog.getExistingDirectory(
@@ -405,8 +413,8 @@ class ExaminePanel(QWidget):
 
         ok = 0
         errors: list[str] = []
-        for row in range(total):
-            progress.setValue(row)
+        for done, row in enumerate(rows):
+            progress.setValue(done)
             if progress.wasCanceled():
                 break
             d = self._model.detection_at(row)

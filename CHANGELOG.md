@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased]
+### Added
+- Context menu on the Examine table to:
+  - copy the clicked cell, the selected rows (with or without headers) or the audio file path
+  - filter by the clicked value or clear all filters
+  - mark the selected rows as true, false, uncertain or unset
+  - open the folder of the audio file
+  - export the selected rows as audio snippets
+- `Ctrl+C` / `⌘C` copies the selected rows of the Examine table.
+
+### Changed
+- On the Examine data table the `T`, `F` and `U` shortcuts adjust `Verified` on all selected rows.
+
 ## [0.7.2] - 2026-10-01
 ### Changed
 - Improved file naming when exporting audio snippets.

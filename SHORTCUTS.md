@@ -27,10 +27,11 @@ These shortcuts work whenever a row is selected in the Examine panel and no cell
 | Space | Space | **Play / Pause** | Play or pause the current detection's audio |
 | J | J | **Jump to Detection** | Jump to the detection start marker in the audio player |
 | B | B | **Seek to File Start** | Seek to the beginning of the audio file |
-| T | T | **Verified: true** | Set **Verified** to `true` |
-| F | F | **Verified: false** | Set **Verified** to `false` |
-| U | U | **Verified: uncertain** | Set **Verified** to `uncertain` |
+| T | T | **Verified: true** | Set **Verified** to `true` on the selected rows |
+| F | F | **Verified: false** | Set **Verified** to `false` on the selected rows |
+| U | U | **Verified: uncertain** | Set **Verified** to `uncertain` on the selected rows |
 | C | C | **Edit Comment** | Open the **Comment** field for text editing |
 | S | S | **Edit Corrected Species** | Open the **Corrected Species** dropdown |
+| Ctrl+C | ⌘C | **Copy Rows** | Copy the selected rows to the clipboard as tab-separated text |
 
 > **Note:** While the Comment field or the Corrected Species dropdown is open at the Examine panel, all single-key shortcuts are suspended so you can type freely. Press `Escape` or `Enter` / `Return` to return to normal navigation.

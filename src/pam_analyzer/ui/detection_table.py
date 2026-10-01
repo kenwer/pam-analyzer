@@ -10,8 +10,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import polars as pl
 from PySide6.QtCore import QItemSelectionModel, QLocale, QModelIndex, QPoint, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QKeySequence, QPainter, QPalette, QShortcut
+from PySide6.QtGui import QAction, QGuiApplication, QKeySequence, QPainter, QPalette, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QMenu,
@@ -31,6 +32,7 @@ from ..widgets.header_filter_row import HeaderFilterRow
 from ..widgets.multi_column_sort_table import MultiColumnSortTable
 from ..widgets.no_hover_style import disable_item_hover
 from .models.detections_table_model import PLAY_COLUMN_INDEX
+from .toasts import open_in_file_manager
 
 # The Verified combo offers exactly the domain's verification states.
 _VERIFIED_CHOICES = tuple(state.value for state in VerifiedState)
@@ -47,6 +49,16 @@ def _label(species: str, scientific_name: str, aru: str, confidence: float) -> s
 
 def _label_for(d: Detection) -> str:
     return _label(d.species, d.scientific_name, d.aru, d.confidence)
+
+
+def _cell_text(index: QModelIndex) -> str:
+    """The stored value of a cell, not its display rounding."""
+    value = index.data()
+    return "" if value is None else str(value)
+
+
+def _set_clipboard(text: str) -> None:
+    QGuiApplication.clipboard().setText(text)
 
 
 class _PlayDelegate(QStyledItemDelegate):
@@ -167,6 +179,9 @@ class DetectionTable(QWidget):
         self._table.horizontalHeader().setResizeContentsPrecision(100)
         self._table.horizontalHeader().setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.horizontalHeader().customContextMenuRequested.connect(self._show_column_menu)
+        self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._table.customContextMenuRequested.connect(self._show_row_menu)
+        self._row_menu_actions: list[QAction] = []
 
         # play delegate
         self._play_delegate = _PlayDelegate(self._table)
@@ -345,6 +360,7 @@ class DetectionTable(QWidget):
             ("S", lambda: self._start_editing_column("Corrected_Species")),
             ("J", self._player_jump_to_detection),
             ("B", self._player_seek_to_file_start),
+            (QKeySequence.StandardKey.Copy, self._copy_rows),
         )
         for sequence, handler in bindings:
             shortcut = QShortcut(QKeySequence(sequence), self._table)
@@ -366,12 +382,9 @@ class DetectionTable(QWidget):
     def _set_verified(self, value: str) -> None:
         if self._model is None:
             return
-        current = self._table.currentIndex()
-        if not current.isValid():
-            return
-        src_row = self._table.mapToSourceRow(current.row())
-        src_index = self._model.index(src_row, self._model.index_of("Verified"))
-        self._model.setData(src_index, value, Qt.ItemDataRole.EditRole)
+        col = self._model.index_of("Verified")
+        for row in self.selectedRows():
+            self._model.setData(self._model.index(row, col), value, Qt.ItemDataRole.EditRole)
 
     def _start_editing_column(self, col_name: str) -> None:
         if self._model is None:
@@ -528,6 +541,114 @@ class DetectionTable(QWidget):
         if self._model is None:
             return
         self.statusChanged.emit(self._model.rowCount())
+
+    def addRowMenuAction(self, action: QAction) -> None:  # noqa: N802 (Qt-style)
+        """Append a host-owned action to the row context menu.
+
+        The action is enabled while at least one row is selected. Read the
+        rows it should act on from selectedRows().
+        """
+        self._row_menu_actions.append(action)
+
+    def selectedRows(self) -> list[int]:  # noqa: N802 (Qt-style)
+        """Model rows of the selected table rows, in display order."""
+        proxy_rows = sorted(index.row() for index in self._table.selectionModel().selectedRows())
+        return [self._table.mapToSourceRow(row) for row in proxy_rows]
+
+    def clearFilters(self) -> None:  # noqa: N802 (Qt-style)
+        """Drop every column filter, in the filter row and in the model."""
+        if self._model is None:
+            return
+        for col in range(self._model.columnCount()):
+            self._filter_row.clear_column(col)
+        self._model.clear_filters()
+
+    def _show_row_menu(self, pos: QPoint) -> None:
+        menu = self._build_row_menu(self._table.indexAt(pos))
+        menu.exec(self._table.viewport().mapToGlobal(pos))
+        menu.deleteLater()
+
+    def _build_row_menu(self, index: QModelIndex) -> QMenu:
+        """Build the context menu for a right click on the table cell *index*.
+
+        Cell entries act on *index*, row entries on the whole selection.
+        An invalid index (a click below the last row) leaves only the
+        entries that need no row.
+        """
+        menu = QMenu(self)
+        if index.isValid() and self._model is not None:
+            count = len(self._table.selectionModel().selectedRows())
+            rows = "Row" if count == 1 else f"{count} Rows"
+            is_data_cell = index.column() != PLAY_COLUMN_INDEX
+            path = self._audio_path(index)
+
+            copy_cell = menu.addAction("Copy Cell")
+            copy_cell.setEnabled(is_data_cell)
+            copy_cell.triggered.connect(lambda: _set_clipboard(_cell_text(index)))
+            copy_rows = menu.addAction(f"Copy {rows}")
+            copy_rows.triggered.connect(lambda: self._copy_rows())
+            copy_with_headers = menu.addAction(f"Copy {rows} with Headers")
+            copy_with_headers.triggered.connect(lambda: self._copy_rows(headers=True))
+            copy_path = menu.addAction("Copy File Path")
+            copy_path.setEnabled(path is not None)
+            copy_path.triggered.connect(lambda: _set_clipboard(str(path)))
+            for action in (copy_rows, copy_with_headers):
+                action.setEnabled(count > 0)
+
+            menu.addSeparator()
+            filter_by = menu.addAction("Filter by This Value")
+            filter_by.setEnabled(is_data_cell)
+            filter_by.triggered.connect(lambda: self._filter_by_cell(index))
+
+        clear_filters = menu.addAction("Clear All Filters")
+        clear_filters.setEnabled(self._model is not None and self._model.has_filters())
+        clear_filters.triggered.connect(self.clearFilters)
+
+        if index.isValid() and self._model is not None:
+            menu.addSeparator()
+            mark = menu.addMenu("Mark as")
+            mark.setEnabled(count > 0)
+            for state in (VerifiedState.TRUE, VerifiedState.FALSE, VerifiedState.UNCERTAIN, VerifiedState.UNSET):
+                action = mark.addAction(state.value.capitalize() or "Unset")
+                action.triggered.connect(lambda _checked=False, value=state.value: self._set_verified(value))
+
+            menu.addSeparator()
+            open_folder = menu.addAction("Open Audio File Folder")
+            open_folder.setEnabled(path is not None and path.parent.is_dir())
+            open_folder.triggered.connect(lambda: open_in_file_manager(path.parent))
+            for action in self._row_menu_actions:
+                action.setEnabled(count > 0)
+                menu.addAction(action)
+        return menu
+
+    def _audio_path(self, index: QModelIndex) -> Path | None:
+        """Path of the audio file behind the row of *index*, or None when it names no file."""
+        file = self._model.value_at(self._table.mapToSourceRow(index.row()), "File")
+        if not file:
+            return None
+        return self._audio_root / file if self._audio_root else Path(file)
+
+    def _copy_rows(self, *, headers: bool = False) -> None:
+        """Copy the selected rows as tab-separated text, shown columns only, in on-screen order."""
+        rows = self.selectedRows()
+        if self._model is None or not rows:
+            return
+        header = self._table.horizontalHeader()
+        names = self._model.column_names(include_play=True)
+        shown = [
+            names[logical]
+            for logical in (header.logicalIndex(visual) for visual in range(header.count()))
+            if logical != PLAY_COLUMN_INDEX and not self._table.isColumnHidden(logical)
+        ]
+        frame = self._model.rows_frame(rows).select(shown)
+        # A tab or line break inside a cell would shift the columns of the pasted rows.
+        frame = frame.with_columns(pl.col(pl.String).str.replace_all(r"[\t\r\n]+", " "))
+        text = frame.write_csv(separator="\t", include_header=headers, quote_style="never", line_terminator="\n")
+        _set_clipboard(text.removesuffix("\n"))
+
+    def _filter_by_cell(self, index: QModelIndex) -> None:
+        text = _cell_text(index)
+        self._filter_row.set_filter(index.column(), text, FilterOp.EQUALS if text else FilterOp.BLANK)
 
     def makeColumnsMenu(  # noqa: N802 (Qt-style)
         self, parent: QWidget | None = None

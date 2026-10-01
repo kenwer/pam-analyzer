@@ -1066,3 +1066,299 @@ def test_context_detections_are_other_visible_rows_in_the_same_file(panel: Exami
     ]
     assert sorted((start, end) for start, end, _label in ctx) == sorted(expected)
     assert len(ctx) == 2  # the fixture has 3 rows per campaign, all in f.wav
+
+
+def _quiet(panel: ExaminePanel, monkeypatch) -> None:
+    """Keep row selection from priming the player with the dummy f.wav."""
+    monkeypatch.setattr(panel.ui.detections_table, "_present", lambda *a, **k: None)
+
+
+def _select_rows(panel: ExaminePanel, rows: list[int]) -> None:
+    from PySide6.QtCore import QItemSelectionModel
+
+    view = panel.ui.detections_table.table()
+    flags = QItemSelectionModel.SelectionFlag
+    view.selectionModel().clearSelection()
+    for row in rows:
+        view.selectionModel().select(view.model().index(row, 0), flags.Select | flags.Rows)
+
+
+def _row_menu(panel: ExaminePanel, row: int, column: str):
+    """The context menu for a right click on *column* of visible *row*."""
+    view = panel.ui.detections_table.table()
+    return panel.ui.detections_table._build_row_menu(view.model().index(row, panel._model.index_of(column)))
+
+
+def _menu_action(menu, text: str):
+    for action in menu.actions():
+        if action.text() == text:
+            return action
+        if action.menu() is not None:
+            found = _menu_action(action.menu(), text)
+            if found is not None:
+                return found
+    return None
+
+
+def _clipboard() -> str:
+    from PySide6.QtWidgets import QApplication
+
+    return QApplication.clipboard().text()
+
+
+def test_context_menu_copies_the_clicked_cell(panel: ExaminePanel, monkeypatch) -> None:
+    _quiet(panel, monkeypatch)
+    _select_rows(panel, [0])
+    _menu_action(_row_menu(panel, 0, "ARU"), "Copy Cell").trigger()
+    assert _clipboard() == "MSD-1"
+
+
+def test_context_menu_copies_the_selected_row_as_tab_separated_text(panel: ExaminePanel, monkeypatch) -> None:
+    _quiet(panel, monkeypatch)
+    _select_rows(panel, [0])
+    _menu_action(_row_menu(panel, 0, "ARU"), "Copy Row").trigger()
+
+    fields = _clipboard().split("\t")
+    # Default sort puts the highest confidence of alpha / MSD-1 first.
+    assert fields[:2] == ["alpha", "MSD-1"]
+    assert "0.7" in fields
+    assert "\n" not in _clipboard()
+
+
+def test_context_menu_copies_several_selected_rows(panel: ExaminePanel, monkeypatch) -> None:
+    _quiet(panel, monkeypatch)
+    _select_rows(panel, [0, 1, 3])
+    _menu_action(_row_menu(panel, 1, "ARU"), "Copy 3 Rows").trigger()
+
+    lines = _clipboard().split("\n")
+    assert [line.split("\t")[:2] for line in lines] == [["alpha", "MSD-1"], ["alpha", "MSD-1"], ["beta", "MSD-2"]]
+
+
+def test_context_menu_copies_rows_with_a_header_line(panel: ExaminePanel, monkeypatch) -> None:
+    _quiet(panel, monkeypatch)
+    _select_rows(panel, [0])
+    _menu_action(_row_menu(panel, 0, "ARU"), "Copy Row with Headers").trigger()
+
+    header, row = (line.split("\t") for line in _clipboard().split("\n"))
+    assert header[:2] == ["Campaign", "ARU"]
+    assert len(header) == len(row)
+    # Hidden by default, and the play column has no content to copy.
+    assert "Start_Time" not in header
+    assert "" not in header
+
+
+def test_copied_rows_follow_the_on_screen_column_order_and_visibility(panel: ExaminePanel, monkeypatch) -> None:
+    _quiet(panel, monkeypatch)
+    table = panel.ui.detections_table
+    header = table.table().horizontalHeader()
+    table._toggle_column(panel._model.index_of("ARU"), False)
+    header.moveSection(header.visualIndex(panel._model.index_of("Species")), 1)
+
+    _select_rows(panel, [0])
+    _menu_action(_row_menu(panel, 0, "Species"), "Copy Row with Headers").trigger()
+
+    names, row = (line.split("\t") for line in _clipboard().split("\n"))
+    assert names[:2] == ["Species", "Campaign"]
+    assert row[:2] == ["Robin", "alpha"]
+    assert "ARU" not in names
+
+
+def test_copied_rows_keep_one_line_per_row_when_a_comment_has_tabs_or_newlines(
+    panel: ExaminePanel, monkeypatch
+) -> None:
+    _quiet(panel, monkeypatch)
+    panel._model.setData(panel._model.index(0, panel._model.index_of("Comment")), "two\tbirds\nfar away")
+    _select_rows(panel, [0])
+    _menu_action(_row_menu(panel, 0, "ARU"), "Copy Row with Headers").trigger()
+
+    header, row = (line.split("\t") for line in _clipboard().split("\n"))
+    assert len(header) == len(row)
+    assert "two birds far away" in row
+
+
+def test_copy_shortcut_copies_the_selected_rows(qtbot, panel: ExaminePanel, monkeypatch) -> None:
+    from PySide6.QtGui import QKeySequence
+    from PySide6.QtWidgets import QApplication
+
+    _quiet(panel, monkeypatch)
+    panel.show()
+    qtbot.waitExposed(panel)
+    table = panel.ui.detections_table.table()
+    qtbot.waitUntil(lambda: QApplication.focusWidget() in (table, table.viewport()))
+    _select_rows(panel, [3, 4])
+    QApplication.clipboard().setText("stale")
+
+    qtbot.keySequence(table, QKeySequence(QKeySequence.StandardKey.Copy))
+
+    assert [line.split("\t")[0] for line in _clipboard().split("\n")] == ["beta", "beta"]
+    QCoreApplication.processEvents()
+
+
+def test_context_menu_copies_the_audio_file_path(panel: ExaminePanel, project: Project, monkeypatch) -> None:
+    _quiet(panel, monkeypatch)
+    _select_rows(panel, [0])
+    _menu_action(_row_menu(panel, 0, "ARU"), "Copy File Path").trigger()
+    assert _clipboard() == str(project.folder / panel._model.detection_at(0).file)
+
+
+def test_context_menu_opens_the_audio_file_folder(panel: ExaminePanel, project: Project, monkeypatch) -> None:
+    _quiet(panel, monkeypatch)
+    opened: list[Path] = []
+    monkeypatch.setattr("pam_analyzer.ui.detection_table.open_in_file_manager", opened.append)
+    _select_rows(panel, [0])
+    _menu_action(_row_menu(panel, 0, "ARU"), "Open Audio File Folder").trigger()
+    assert opened == [(project.folder / panel._model.detection_at(0).file).parent]
+
+
+def test_open_audio_file_folder_is_disabled_when_the_folder_is_missing(
+    panel: ExaminePanel, tmp_path: Path, monkeypatch
+) -> None:
+    _quiet(panel, monkeypatch)
+    panel.ui.detections_table.setAudioRoot(tmp_path / "unplugged")
+    _select_rows(panel, [0])
+    assert not _menu_action(_row_menu(panel, 0, "ARU"), "Open Audio File Folder").isEnabled()
+
+
+def test_context_menu_filters_by_the_clicked_value(panel: ExaminePanel, monkeypatch) -> None:
+    _quiet(panel, monkeypatch)
+    col = panel._model.index_of("ARU")
+    _menu_action(_row_menu(panel, 4, "ARU"), "Filter by This Value").trigger()
+
+    assert {d.aru for d in _visible(panel)} == {"MSD-2"}
+    filter_row = panel.ui.detections_table._filter_row
+    # The filter row shows the filter, so the user can see and edit it.
+    assert filter_row._slots[col].edit.text() == "MSD-2"
+    assert filter_row.column_op(col) is FilterOp.EQUALS
+    QCoreApplication.processEvents()
+
+
+def test_context_menu_filters_a_blank_cell_with_the_blank_operator(panel: ExaminePanel, monkeypatch) -> None:
+    _quiet(panel, monkeypatch)
+    comment = panel._model.index_of("Comment")
+    panel._model.setData(panel._model.index(0, comment), "keep")
+    _menu_action(_row_menu(panel, 1, "Comment"), "Filter by This Value").trigger()
+
+    assert panel._model.rowCount() == 5
+    assert panel.ui.detections_table._filter_row.column_op(comment) is FilterOp.BLANK
+    QCoreApplication.processEvents()
+
+
+def test_context_menu_clears_all_filters(panel: ExaminePanel, monkeypatch) -> None:
+    _quiet(panel, monkeypatch)
+    assert not _menu_action(_row_menu(panel, 0, "ARU"), "Clear All Filters").isEnabled()
+    _menu_action(_row_menu(panel, 4, "ARU"), "Filter by This Value").trigger()
+    _menu_action(_row_menu(panel, 0, "Species"), "Filter by This Value").trigger()
+    assert panel._model.rowCount() == 3
+
+    _menu_action(_row_menu(panel, 0, "ARU"), "Clear All Filters").trigger()
+
+    assert panel._model.rowCount() == 6
+    filter_row = panel.ui.detections_table._filter_row
+    assert filter_row._slots[panel._model.index_of("ARU")].edit.text() == ""
+    assert filter_row.column_op(panel._model.index_of("Species")) is FilterOp.CONTAINS
+    QCoreApplication.processEvents()
+
+
+def test_context_menu_offers_no_cell_actions_on_the_play_column(panel: ExaminePanel, monkeypatch) -> None:
+    _quiet(panel, monkeypatch)
+    _select_rows(panel, [0])
+    view = panel.ui.detections_table.table()
+    menu = panel.ui.detections_table._build_row_menu(view.model().index(0, 0))
+    assert not _menu_action(menu, "Copy Cell").isEnabled()
+    assert not _menu_action(menu, "Filter by This Value").isEnabled()
+    assert _menu_action(menu, "Copy Row").isEnabled()
+
+
+def test_context_menu_below_the_last_row_only_offers_clearing_filters(panel: ExaminePanel) -> None:
+    from PySide6.QtCore import QModelIndex
+
+    menu = panel.ui.detections_table._build_row_menu(QModelIndex())
+    assert [a.text() for a in menu.actions()] == ["Clear All Filters"]
+
+
+def test_context_menu_marks_all_selected_rows(panel: ExaminePanel, monkeypatch) -> None:
+    from pam_analyzer.domain import VerifiedState
+
+    _quiet(panel, monkeypatch)
+    _select_rows(panel, [0, 2])
+    _menu_action(_row_menu(panel, 0, "ARU"), "True").trigger()
+    assert [d.verified for d in _visible(panel)[:3]] == [VerifiedState.TRUE, VerifiedState.UNSET, VerifiedState.TRUE]
+
+    _menu_action(_row_menu(panel, 0, "ARU"), "Unset").trigger()
+    assert {d.verified for d in _visible(panel)} == {VerifiedState.UNSET}
+
+
+def test_verified_shortcut_marks_all_selected_rows(panel: ExaminePanel, monkeypatch) -> None:
+    from pam_analyzer.domain import VerifiedState
+
+    _quiet(panel, monkeypatch)
+    _select_rows(panel, [1, 2])
+    panel.ui.detections_table._set_verified("false")
+    assert [d.verified for d in _visible(panel)[:3]] == [VerifiedState.UNSET, VerifiedState.FALSE, VerifiedState.FALSE]
+
+
+def test_context_menu_exports_only_the_selected_rows_as_snippets(
+    panel: ExaminePanel, project: Project, tmp_path: Path, monkeypatch, toasts
+) -> None:
+    _quiet(panel, monkeypatch)
+    _prepare_snippet_export(panel, project, tmp_path, monkeypatch)
+    starts: list[float] = []
+    monkeypatch.setattr(
+        "pam_analyzer.ui.panels.examine_panel.extract_snippet", lambda _src, start, _end, _dst: starts.append(start)
+    )
+    _select_rows(panel, [0, 2])
+    _menu_action(_row_menu(panel, 0, "ARU"), "Export Selected as Audio Snippets…").trigger()
+
+    assert starts == [panel._model.detection_at(0).start_time, panel._model.detection_at(2).start_time]
+    [(kind, _title, text, _kwargs)] = toasts
+    assert kind == "success"
+    assert "2 snippets" in text
+
+
+def test_right_click_selects_an_unselected_row_but_keeps_a_multi_selection(
+    qtbot, panel: ExaminePanel, monkeypatch
+) -> None:
+    _quiet(panel, monkeypatch)
+    panel.show()
+    qtbot.waitExposed(panel)
+    view = panel.ui.detections_table.table()
+    aru = panel._model.index_of("ARU")
+
+    def right_click(row: int) -> None:
+        pos = view.visualRect(view.model().index(row, aru)).center()
+        qtbot.mouseClick(view.viewport(), Qt.MouseButton.RightButton, pos=pos)
+
+    right_click(4)
+    assert panel.ui.detections_table.selectedRows() == [4]
+
+    _select_rows(panel, [1, 2, 4])
+    right_click(2)
+    assert panel.ui.detections_table.selectedRows() == [1, 2, 4]
+    QCoreApplication.processEvents()
+
+
+def test_right_click_position_opens_the_menu_for_the_cell_under_it(qtbot, panel: ExaminePanel, monkeypatch) -> None:
+    from PySide6.QtCore import QTimer
+    from PySide6.QtWidgets import QApplication, QMenu
+
+    _quiet(panel, monkeypatch)
+    panel.show()
+    qtbot.waitExposed(panel)
+    view = panel.ui.detections_table.table()
+    _select_rows(panel, [1])
+    seen: list[str] = []
+
+    def _copy_cell_and_close() -> None:
+        menu = QApplication.activePopupWidget()
+        assert isinstance(menu, QMenu)
+        seen.extend(a.text() for a in menu.actions())
+        _menu_action(menu, "Copy Cell").trigger()
+        menu.close()
+
+    # QMenu.exec blocks, so the popup is driven from a single-shot timer.
+    QTimer.singleShot(0, _copy_cell_and_close)
+    view.customContextMenuRequested.emit(view.visualRect(view.model().index(1, panel._model.index_of("ARU"))).center())
+
+    assert "Export Selected as Audio Snippets…" in seen
+    assert _clipboard() == "MSD-1"
+    QCoreApplication.processEvents()
