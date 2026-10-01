@@ -730,6 +730,61 @@ def test_clear_filter_via_empty_text_with_default_op(panel: ExaminePanel) -> Non
     assert panel._model.rowCount() == 6
 
 
+def test_not_blank_filter_can_be_switched_back_from_the_funnel(qtbot, panel: ExaminePanel) -> None:
+    """The funnel must stay clickable while a value-less op grays out the input."""
+    from PySide6.QtCore import QTimer
+    from PySide6.QtWidgets import QApplication
+
+    from pam_analyzer.domain.filter_ops import default_op, label_for
+
+    panel.show()
+    qtbot.waitExposed(panel)
+    filter_row = panel.ui.detections_table._filter_row
+    col = panel._model.index_of("Comment")
+    slot = filter_row._slots[col]
+    original_op = default_op(slot.kind)
+
+    filter_row._set_op(col, FilterOp.NOT_BLANK)
+    assert panel._model.rowCount() == 0
+    assert not slot.edit.isEnabled()
+
+    def _pick_original_op() -> None:
+        menu = QApplication.activePopupWidget()
+        if menu is None:
+            # A dead funnel opens no menu. The asserts below report it.
+            return
+        action = next(a for a in menu.actions() if a.text() == label_for(original_op))
+        action.trigger()
+        menu.close()
+
+    QTimer.singleShot(0, _pick_original_op)
+    qtbot.mouseClick(slot.button, Qt.MouseButton.LeftButton)
+    QCoreApplication.processEvents()
+
+    assert filter_row.column_op(col) is original_op
+    assert slot.edit.isEnabled()
+    assert panel._model.rowCount() == 6
+
+
+def test_hiding_a_column_resets_its_blank_filter(panel: ExaminePanel) -> None:
+    detection_table = panel.ui.detections_table
+    filter_row = detection_table._filter_row
+    col = panel._model.index_of("Comment")
+    slot = filter_row._slots[col]
+    original_op = filter_row.column_op(col)
+
+    filter_row._set_op(col, FilterOp.NOT_BLANK)
+    assert panel._model.rowCount() == 0
+
+    detection_table._toggle_column(col, False)
+    detection_table._toggle_column(col, True)
+
+    assert panel._model.rowCount() == 6
+    assert filter_row.column_op(col) is original_op
+    assert slot.edit.isEnabled()
+    QCoreApplication.processEvents()
+
+
 def test_date_range_filter(panel: ExaminePanel) -> None:
     # Fixture dates are 2026-04-25/26/27 (one per row, both campaigns).
     col = panel._model.index_of("Recording_Time")

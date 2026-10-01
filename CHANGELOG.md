@@ -5,6 +5,9 @@
 - Improved file naming when exporting audio snippets.
 - The CSV and audio snippet export dialogs remember the folder of the last export.
 
+### Fixed
+- A column filter set to `Blank` or `Not blank` in the Examine panel can be changed again.
+
 ## [0.7.1] - 2026-09-29
 ### Added
 - New help menu entry `Keyboard Shortcuts` that shows the list of shortcuts.

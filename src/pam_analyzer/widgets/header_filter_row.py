@@ -176,6 +176,12 @@ class HeaderFilterRow(QObject):
         slot.edit.clear()
         slot.edit.blockSignals(False)
         slot.pending_text = ""
+        # Back to the default op too. A leftover BLANK or NOT_BLANK would
+        # keep the input disabled with no filter behind it.
+        slot.timer.stop()
+        slot.op = default_op(slot.kind)
+        slot.button.setToolTip(label_for(slot.op))
+        slot.edit.setEnabled(True)
         slot.button.setActive(False)
 
     def set_column_visible(self, col: int, visible: bool) -> None:
@@ -209,7 +215,9 @@ class HeaderFilterRow(QObject):
         # keep the cell white under a dark theme.
         edit.setStyleSheet("QLineEdit { padding: 1px 3px; }")
 
-        button = _FunnelButton(edit)
+        # A sibling of the input, not a child. Value-less ops disable the
+        # input, and a child funnel would go dead with it.
+        button = _FunnelButton(self._header)
         op = default_op(kind)
         button.setToolTip(label_for(op))
 
@@ -330,13 +338,15 @@ class HeaderFilterRow(QObject):
         for col, slot in enumerate(self._slots):
             if col in self._suppressed or self._table.isColumnHidden(col):
                 slot.edit.hide()
+                slot.button.hide()
                 continue
             x = header.sectionViewportPosition(col)
             w = header.sectionSize(col)
             slot.edit.setGeometry(x, y, w, self._height)
             slot.edit.show()
-            # Position the funnel inside the QLineEdit, hugging the right edge.
-            btn_x = max(0, w - size - _BUTTON_PAD)
-            btn_y = (self._height - size) // 2
+            # Position the funnel over the QLineEdit, hugging the right edge.
+            btn_x = x + max(0, w - size - _BUTTON_PAD)
+            btn_y = y + (self._height - size) // 2
             slot.button.setGeometry(btn_x, btn_y, size, size)
             slot.button.show()
+            slot.button.raise_()
