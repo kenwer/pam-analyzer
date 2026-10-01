@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+### Changed
+- Improved file naming when exporting audio snippets.
+
 ## [0.7.1] - 2026-09-29
 ### Added
 - New help menu entry `Keyboard Shortcuts` that shows the list of shortcuts.

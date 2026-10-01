@@ -1,5 +1,7 @@
 """Examine panel: review detections in a multi-column-sort table."""
 
+import re
+import unicodedata
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
@@ -19,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidgetAction,
 )
 
-from ...domain import Campaign, Detection, DetectionStore
+from ...domain import Campaign, Detection, DetectionStore, VerifiedState
 from ...infrastructure import extract_snippet
 from ..app_state import AppState
 from ..models.detections_table_model import DetectionsTableModel
@@ -504,22 +506,52 @@ def _write_visible_csv(path: Path, frame: pl.DataFrame, columns: list[str]) -> N
     out.write_csv(path, line_terminator="\r\n")
 
 
-def _snippet_filename(d: Detection, start: float, end: float) -> str:
-    """Build a descriptive .flac filename per detection.
+_SNIPPET_STATUS = {
+    VerifiedState.TRUE: "confirmed",
+    VerifiedState.FALSE: "incorrect",
+    VerifiedState.UNCERTAIN: "uncertain",
+}
+_SNIPPET_COMMENT_CHARS = 20
 
-    Slimmer than the original AG Grid version: campaign / aru / species
-    name / start / end / confidence is enough for human-readable export.
+
+def _safe_field(text: str) -> str:
+    """Reduce *text* to letters, digits, '-', '.' and single underscores.
+
+    The result never contains "__", which separates the fields of a snippet
+    filename.
+    """
+    # NFC first: a decomposed umlaut's combining mark is not a letter.
+    text = unicodedata.normalize("NFC", text or "")
+    text = text.replace("'", "").replace("’", "")
+    return re.sub(r"(?:[^\w.-]|_)+", "_", text).strip("_.-")
+
+
+def _snippet_filename(d: Detection, start: float, end: float) -> str:
+    """Build the .flac filename of an exported snippet.
+
+    The fields are joined by "__". The README documents the format.
     """
     try:
         stamp = datetime.fromisoformat(d.recording_time).strftime("%Y%m%d_%H%M%S")
     except (ValueError, TypeError):
-        stamp = d.recording_time or "unknown_time"
+        stamp = _safe_field(d.recording_time) or "unknown_time"
+    corrected = _safe_field(d.corrected_species)
+    if not corrected:
+        status = _SNIPPET_STATUS.get(d.verified, "")
+    elif d.verified is VerifiedState.UNCERTAIN:
+        status = "corrected_uncertain"
+    else:
+        # The status describes the species in the name, so not "incorrect".
+        status = "corrected"
+    comment = _safe_field(_safe_field(d.comment)[:_SNIPPET_COMMENT_CHARS])
     parts = [
-        d.campaign or "unknown",
-        d.aru or "unknown",
-        (d.species or d.scientific_name or "unknown").replace(" ", "_"),
+        _safe_field(d.campaign) or "unknown",
+        _safe_field(d.aru) or "unknown",
+        corrected or _safe_field(d.species) or _safe_field(d.scientific_name) or "unknown",
         stamp,
         f"{start:.1f}-{end:.1f}",
-        f"conf{d.confidence:.4f}",
+        f"conf{d.confidence:.2f}",
+        status,
+        f"comment_{comment}" if comment else "",
     ]
-    return "_-_".join(p for p in parts if p) + ".flac"
+    return "__".join(p for p in parts if p) + ".flac"

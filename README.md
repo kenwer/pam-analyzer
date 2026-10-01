@@ -3,33 +3,34 @@ Automated bird species detection from acoustic recordings.
 
 <!--TOC-->
 
-- [About](#about)
-- [Download](#download)
-- [Features](#features)
-- [Usage](#usage)
-  - [Migrating legacy projects](#migrating-legacy-projects)
-- [Workflow](#workflow)
-  - [Project Settings](#project-settings)
-  - [Campaigns](#campaigns)
-  - [Run bird species detection](#run-bird-species-detection)
-  - [Output files](#output-files)
-  - [Examine Detections](#examine-detections)
-- [Keyboard shortcuts](#keyboard-shortcuts)
-- [Core Concepts](#core-concepts)
-  - [Project](#project)
-  - [Campaign](#campaign)
-  - [ARU (Autonomous Recording Unit)](#aru-autonomous-recording-unit)
-- [Models](#models)
-  - [Species names](#species-names)
-  - [Perch confidence](#perch-confidence)
-  - [Region filtering](#region-filtering)
-- [Troubleshooting](#troubleshooting)
-  - [Changing the log level](#changing-the-log-level)
-    - [Overriding the level from the environment](#overriding-the-level-from-the-environment)
-- [Changelog](#changelog)
-- [Acknowledgements](#acknowledgements)
-- [Citation](#citation)
-- [License](#license)
+- [PAM Analyzer](#pam-analyzer)
+  - [About](#about)
+  - [Download](#download)
+  - [Features](#features)
+  - [Usage](#usage)
+    - [Migrating legacy projects](#migrating-legacy-projects)
+  - [Workflow](#workflow)
+    - [Project Settings](#project-settings)
+    - [Campaigns](#campaigns)
+    - [Run bird species detection](#run-bird-species-detection)
+    - [Output files](#output-files)
+    - [Examine Detections](#examine-detections)
+  - [Keyboard shortcuts](#keyboard-shortcuts)
+  - [Core Concepts](#core-concepts)
+    - [Project](#project)
+    - [Campaign](#campaign)
+    - [ARU (Autonomous Recording Unit)](#aru-autonomous-recording-unit)
+  - [Models](#models)
+    - [Species names](#species-names)
+    - [Perch confidence](#perch-confidence)
+    - [Region filtering](#region-filtering)
+  - [Troubleshooting](#troubleshooting)
+    - [Changing the log level](#changing-the-log-level)
+      - [Overriding the level from the environment](#overriding-the-level-from-the-environment)
+  - [Changelog](#changelog)
+  - [Acknowledgements](#acknowledgements)
+  - [Citation](#citation)
+  - [License](#license)
 
 <!--TOC-->
 
@@ -155,11 +156,39 @@ Review and annotate results. Detection CSVs are loaded into a grid with multi-co
 - **Annotations**: Verified, Corrected_Species, and Comment edits are written back to the source CSV automatically.
 - **Export**: The `⬇` button offers CSV export of the currently filtered rows and audio snippet extraction with configurable padding.
 
-When exporting audio snippets, annotation values are reflected in the output filenames:
-- **Verified**: appends `_confirmed`, `_incorrect`, or `_uncertain` depending on the value.
-- **Corrected_Species**: replaces the original species name in the filename with the corrected one (scientific name looked up from the project language) and appends `_corrected`.
+Exported audio snippets are FLAC files named after the detection. The fields are joined by a double underscore (`__`):
 
-Both suffixes can appear together, e.g. `…_corrected_confirmed.flac`.
+```
+Campaign__ARU__Species__YYYYMMDD_HHMMSS__start-end__confN.NN[__status][__comment_Text].flac
+```
+
+| Field | Content | Example |
+|---|---|---|
+| Campaign | Campaign name | `CmpRot2_Zollhauser-Bach-Riedlingen` |
+| ARU | Recorder name | `ID_106` |
+| Species | Species name in the project's main language | `Long-eared_Owl` |
+| Timestamp | Start of the recording | `20260501_053000` |
+| Range | Start and end of the snippet within the recording in seconds, padding included | `12.0-15.0` |
+| Confidence | The model's score for the species it detected | `conf0.87` |
+| Status | Only present on annotated detections, see below | `confirmed` |
+| Comment | Only present when a comment is set: the first 20 characters of it | `comment_two_birds` |
+
+The annotations are reflected in the file name as follows:
+- **Verified**: adds the status `confirmed`, `incorrect`, or `uncertain`.
+- **Corrected_Species**: replaces the detected species name with the corrected one and sets the status to `corrected`. This status takes the place of `confirmed` and `incorrect`, because the status always describes the species shown in the file name. If Verified is `uncertain`, the status is `corrected_uncertain`. The confidence remains the model's score for the species it originally detected.
+- **Comment**: adds `comment_` followed by the first 20 characters of the comment.
+
+For example, a confirmed `Long-eared Owl` detection with the comment `two birds` is exported as:
+
+```
+CmpRot2_Zollhauser-Bach-Riedlingen__ID_106__Long-eared_Owl__20260501_053000__12.0-15.0__conf0.87__confirmed__comment_two_birds.flac
+```
+
+A `Tawny Owl` detection that was marked as wrong and corrected to `Long-eared Owl` is exported as:
+
+```
+CmpRot2_Zollhauser-Bach-Riedlingen__ID_106__Long-eared_Owl__20260501_053000__12.0-15.0__conf0.87__corrected.flac
+```
 
 
 ## Keyboard shortcuts
