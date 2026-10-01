@@ -269,10 +269,17 @@ class HeaderFilterRow(QObject):
             action.setChecked(op is slot.op)
             group.addAction(action)
             # `_checked` swallows QAction.triggered's bool arg. We don't use it.
-            action.triggered.connect(lambda _checked=False, o=op, c=col: self._set_op(c, o))
+            action.triggered.connect(lambda _checked=False, o=op, c=col: self._on_op_picked(c, o))
         # Anchor the menu under the funnel button.
         global_pos = slot.button.mapToGlobal(QPoint(0, slot.button.height()))
         menu.exec(global_pos)
+
+    def _on_op_picked(self, col: int, op: FilterOp) -> None:
+        slot = self._slots[col]
+        if op is slot.op and not needs_value(op):
+            # Picking the checked BLANK or NOT_BLANK again turns it off.
+            op = default_op(slot.kind)
+        self._set_op(col, op)
 
     def _set_op(self, col: int, op: FilterOp) -> None:
         slot = self._slots[col]

@@ -4,6 +4,7 @@
 ### Changed
 - Improved file naming when exporting audio snippets.
 - The CSV and audio snippet export dialogs remember the folder of the last export.
+- Selecting the checked `Blank` or `Not blank` column filter again in the Examine panel removes the filter.
 
 ### Fixed
 - A column filter set to `Blank` or `Not blank` in the Examine panel can be changed again.

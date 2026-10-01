@@ -785,6 +785,38 @@ def test_hiding_a_column_resets_its_blank_filter(panel: ExaminePanel) -> None:
     QCoreApplication.processEvents()
 
 
+def test_picking_the_checked_not_blank_again_lifts_the_filter(panel: ExaminePanel) -> None:
+    from PySide6.QtCore import QTimer
+    from PySide6.QtWidgets import QApplication, QMenu
+
+    from pam_analyzer.domain.filter_ops import label_for
+
+    filter_row = panel.ui.detections_table._filter_row
+    col = panel._model.index_of("Comment")
+    slot = filter_row._slots[col]
+    original_op = filter_row.column_op(col)
+
+    def _pick_not_blank() -> None:
+        menu = QApplication.activePopupWidget()
+        assert isinstance(menu, QMenu)
+        action = next(a for a in menu.actions() if a.text() == label_for(FilterOp.NOT_BLANK))
+        action.trigger()
+        menu.close()
+
+    QTimer.singleShot(0, _pick_not_blank)
+    filter_row._show_op_menu(col)
+    assert filter_row.column_op(col) is FilterOp.NOT_BLANK
+    assert panel._model.rowCount() == 0
+
+    QTimer.singleShot(0, _pick_not_blank)
+    filter_row._show_op_menu(col)
+    assert filter_row.column_op(col) is original_op
+    assert slot.edit.isEnabled()
+    assert not slot.button._active
+    assert panel._model.rowCount() == 6
+    QCoreApplication.processEvents()
+
+
 def test_date_range_filter(panel: ExaminePanel) -> None:
     # Fixture dates are 2026-04-25/26/27 (one per row, both campaigns).
     col = panel._model.index_of("Recording_Time")
