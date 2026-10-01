@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.7.2] - 2026-10-01
 ### Changed
 - Improved file naming when exporting audio snippets.
 - The CSV and audio snippet export dialogs remember the folder of the last export.
