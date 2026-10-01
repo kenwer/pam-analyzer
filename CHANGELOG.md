@@ -8,6 +8,7 @@
 
 ### Fixed
 - A column filter set to `Blank` or `Not blank` in the Examine panel can be changed again.
+- Playing a detection from a newly loaded audio file no longer occasionally starts at the beginning of the file.
 
 ## [0.7.1] - 2026-09-29
 ### Added

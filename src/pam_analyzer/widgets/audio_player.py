@@ -274,7 +274,7 @@ class AudioPlayerPanel(QWidget):
 
         # Loaded/EndOfMedia -> seek to detection start and optionally play
         # (only when we initiated the load ourselves)
-        if self._load_in_progress and status in _LOADED_STATUSES:
+        if self._load_in_progress and self._pending_load_file is None and status in _LOADED_STATUSES:
             self._load_in_progress = False
             start_ms = self._seek_to_start()
 
