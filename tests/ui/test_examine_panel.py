@@ -1337,6 +1337,32 @@ def test_right_click_selects_an_unselected_row_but_keeps_a_multi_selection(
     QCoreApplication.processEvents()
 
 
+def test_marking_several_rows_emits_one_data_change(panel: ExaminePanel, monkeypatch) -> None:
+    _quiet(panel, monkeypatch)
+    _select_rows(panel, [0, 2, 3])
+    verified = panel._model.index_of("Verified")
+    changes: list[tuple[int, int, int, int]] = []
+    panel._model.dataChanged.connect(
+        lambda top_left, bottom_right, _roles: changes.append(
+            (top_left.row(), top_left.column(), bottom_right.row(), bottom_right.column())
+        )
+    )
+
+    panel.ui.detections_table._set_verified("true")
+
+    assert changes == [(0, verified, 3, verified)]
+    assert [d.verified.value for d in _visible(panel)][:4] == ["true", "", "true", "true"]
+    assert panel._detections.dirty_count == 3
+
+
+def test_model_set_annotation_rejects_bad_input(panel: ExaminePanel) -> None:
+    assert not panel._model.set_annotation([0, 1], "Verified", "maybe")
+    assert not panel._model.set_annotation([0, 1], "Species", "Crow")
+    assert not panel._model.set_annotation([], "Verified", "true")
+    assert not panel._model.set_annotation([0, 99], "Verified", "true")
+    assert panel._detections.dirty_count == 0
+
+
 def test_selected_rows_after_select_all_does_not_query_every_cell(qtbot, panel: ExaminePanel, monkeypatch) -> None:
     from pam_analyzer.ui.detection_table import DetectionTable
     from pam_analyzer.ui.models.detections_table_model import DetectionsTableModel

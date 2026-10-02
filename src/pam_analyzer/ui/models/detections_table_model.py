@@ -7,7 +7,7 @@ fast-path bypasses the Qt proxy comparator on large datasets, plus
 filter row, play-button delegate, and audio player.
 
 Cells are read straight from the store's polars frame and edits go back
-through DetectionStore.set_annotation, so the table, its filters and the
+through DetectionStore.set_annotations, so the table, its filters and the
 saved CSVs all see one copy of the data.
 
 Column 0 is a virtual play-button column (no payload, never sortable).
@@ -350,14 +350,26 @@ class DetectionsTableModel(QAbstractTableModel):
         col = self._columns[index.column()]
         if not col.editable:
             return False
-        row = index.row()
-        if not (0 <= row < len(self._visible)):
+        return self.set_annotation([index.row()], col.name, "" if value is None else str(value))
+
+    def set_annotation(self, visible_rows: list[int], name: str, value: str) -> bool:
+        """Set annotation column *name* to *value* on the given visible rows.
+
+        Emits a single dataChanged spanning the first to the last of those
+        rows. Returns False, with nothing changed, for no rows, a row out of
+        range, or a column or value the store rejects.
+        """
+        if not visible_rows:
+            return False
+        first, last = min(visible_rows), max(visible_rows)
+        if first < 0 or last >= len(self._visible):
             return False
         try:
-            self._store.set_annotation(self._visible[row], col.name, "" if value is None else str(value))
+            self._store.set_annotations([self._visible[r] for r in visible_rows], name, value)
         except ValueError:
             return False
-        self.dataChanged.emit(index, index, [Qt.DisplayRole, Qt.EditRole])
+        col = self.index_of(name)
+        self.dataChanged.emit(self.index(first, col), self.index(last, col), [Qt.DisplayRole, Qt.EditRole])
         return True
 
     # MultiColumnSortTable fast path

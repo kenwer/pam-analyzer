@@ -382,9 +382,7 @@ class DetectionTable(QWidget):
     def _set_verified(self, value: str) -> None:
         if self._model is None:
             return
-        col = self._model.index_of("Verified")
-        for row in self.selectedRows():
-            self._model.setData(self._model.index(row, col), value, Qt.ItemDataRole.EditRole)
+        self._model.set_annotation(self.selectedRows(), "Verified", value)
 
     def _start_editing_column(self, col_name: str) -> None:
         if self._model is None:

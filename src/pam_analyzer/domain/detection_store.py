@@ -10,7 +10,7 @@ Reading parses cells the way detection_schema.detection_from_row does.
 """
 
 import os
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -192,7 +192,11 @@ class DetectionStore:
         return schema.detection_from_record(self._frame.row(row_id, named=True))
 
     def set_annotation(self, row_id: int, column: str, value: str) -> None:
-        """Set one annotation cell and mark its row dirty.
+        """Set one annotation cell and mark its row dirty. See set_annotations."""
+        self.set_annotations([row_id], column, value)
+
+    def set_annotations(self, row_ids: Sequence[int], column: str, value: str) -> None:
+        """Set one annotation column to *value* on every row in *row_ids* and mark them dirty.
 
         Raises ValueError for a column that is not an annotation column, or a
         value the column's parser rejects (an unknown Verified state).
@@ -202,8 +206,9 @@ class DetectionStore:
             raise ValueError(f"{column} is not an editable column")
         # VerifiedState is a StrEnum, so str() yields its CSV value.
         text = str(spec.parse(value))
-        self._frame = self._frame.with_columns(self._frame.get_column(column).scatter(row_id, text))
-        self._dirty.add(row_id)
+        # One scatter for all rows, because each scatter copies the whole column.
+        self._frame = self._frame.with_columns(self._frame.get_column(column).scatter(row_ids, text))
+        self._dirty.update(row_ids)
 
     def save(self) -> None:
         """Write every file back to its CSV."""

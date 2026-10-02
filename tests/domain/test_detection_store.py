@@ -217,6 +217,29 @@ def test_set_annotation_rejects_read_only_column_and_bad_value(tmp_path: Path, m
     assert store.dirty_count == 0
 
 
+def test_set_annotations_edits_many_rows_at_once(tmp_path: Path, model_key: str) -> None:
+    folder = _seed_csv(tmp_path, "east", [_sample("east"), _sample("east"), _sample("east")], model_key)
+    store = DetectionStore.load_for_campaign(folder)
+    store.set_annotations([0, 2], "Verified", "true")
+    assert store.frame["Verified"].to_list() == ["true", "", "true"]
+    assert store.dirty_count == 2
+    assert store.save_dirty() == 2
+    assert [d.verified for d in _rows(DetectionStore.load_for_campaign(folder))] == [
+        VerifiedState.TRUE,
+        VerifiedState.UNSET,
+        VerifiedState.TRUE,
+    ]
+
+
+def test_set_annotations_rejects_bad_input_without_editing(tmp_path: Path, model_key: str) -> None:
+    store = DetectionStore.load_for_campaign(_seed_csv(tmp_path, "east", [_sample("east")], model_key))
+    with pytest.raises(ValueError):
+        store.set_annotations([0], "Species", "Crow")
+    with pytest.raises(ValueError):
+        store.set_annotations([0], "Verified", "maybe")
+    assert store.dirty_count == 0
+
+
 def test_edit_does_not_change_an_earlier_frame(tmp_path: Path, model_key: str) -> None:
     store = DetectionStore.load_for_campaign(_seed_csv(tmp_path, "east", [_sample("east")], model_key))
     before = store.frame

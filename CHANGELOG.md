@@ -12,7 +12,7 @@
 
 ### Changed
 - On the Examine data table the `T`, `F` and `U` shortcuts adjust `Verified` on all selected rows.
-- Improved performance when selecting all rows in large Examine tables.
+- Improved performance when selecting and marking many rows in large Examine tables.
 
 ## [0.7.2] - 2026-10-01
 ### Changed
