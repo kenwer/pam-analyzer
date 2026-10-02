@@ -6,6 +6,7 @@ from collections.abc import Iterable
 
 from PySide6.QtCore import (
     QAbstractItemModel,
+    QItemSelectionModel,
     QModelIndex,
     QObject,
     QSize,
@@ -254,6 +255,7 @@ class MultiColumnSortTable(QTableView):
 
         self._header = _MultiSortHeaderView(Qt.Horizontal, self)
         self.setHorizontalHeader(self._header)
+        self._header.setSelectionModel(QItemSelectionModel(self._proxy, self._header))
         self._header.setSectionsMovable(True)
         self._header.sectionClicked.connect(self._on_header_clicked)
 

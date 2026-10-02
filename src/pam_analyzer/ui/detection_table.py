@@ -552,8 +552,18 @@ class DetectionTable(QWidget):
 
     def selectedRows(self) -> list[int]:  # noqa: N802 (Qt-style)
         """Model rows of the selected table rows, in display order."""
-        proxy_rows = sorted(index.row() for index in self._table.selectionModel().selectedRows())
-        return [self._table.mapToSourceRow(row) for row in proxy_rows]
+        return [self._table.mapToSourceRow(row) for row in self._selected_view_rows()]
+
+    def _selected_view_rows(self) -> list[int]:
+        """View rows of the selection, in display order.
+
+        Reads the selection ranges, because QItemSelectionModel.selectedRows()
+        checks every cell of every row.
+        """
+        rows: set[int] = set()
+        for selected in self._table.selectionModel().selection():
+            rows.update(range(selected.top(), selected.bottom() + 1))
+        return sorted(rows)
 
     def clearFilters(self) -> None:  # noqa: N802 (Qt-style)
         """Drop every column filter, in the filter row and in the model."""
@@ -577,7 +587,7 @@ class DetectionTable(QWidget):
         """
         menu = QMenu(self)
         if index.isValid() and self._model is not None:
-            count = len(self._table.selectionModel().selectedRows())
+            count = len(self._selected_view_rows())
             rows = "Row" if count == 1 else f"{count} Rows"
             is_data_cell = index.column() != PLAY_COLUMN_INDEX
             path = self._audio_path(index)

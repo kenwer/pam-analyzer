@@ -1337,6 +1337,32 @@ def test_right_click_selects_an_unselected_row_but_keeps_a_multi_selection(
     QCoreApplication.processEvents()
 
 
+def test_selected_rows_after_select_all_does_not_query_every_cell(qtbot, panel: ExaminePanel, monkeypatch) -> None:
+    from pam_analyzer.ui.detection_table import DetectionTable
+    from pam_analyzer.ui.models.detections_table_model import DetectionsTableModel
+
+    class CountingModel(DetectionsTableModel):
+        flags_calls = 0
+
+        def flags(self, index):
+            self.flags_calls += 1
+            return super().flags(index)
+
+    model = CountingModel()
+    model.set_store(panel._model.store)
+    table = DetectionTable()
+    qtbot.addWidget(table)
+    monkeypatch.setattr(table, "_present", lambda *a, **k: None)
+    table.setModel(model)
+    table.table().selectAll()
+    model.flags_calls = 0
+
+    assert table.selectedRows() == list(range(model.rowCount()))
+    menu = table._build_row_menu(table.table().model().index(0, 1))
+    assert f"Copy {model.rowCount()} Rows" in [action.text() for action in menu.actions()]
+    assert model.flags_calls < model.rowCount()
+
+
 def test_right_click_position_opens_the_menu_for_the_cell_under_it(qtbot, panel: ExaminePanel, monkeypatch) -> None:
     from PySide6.QtCore import QTimer
     from PySide6.QtWidgets import QApplication, QMenu
