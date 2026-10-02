@@ -58,7 +58,7 @@ def test_worker_run_emits_pending_tree_then_sized(qtbot, project_dir: Path) -> N
     assert [phase for phase, _, _ in received] == ["pending", "sized"]
     (_, pending_folder, pending_inv), (_, sized_folder, sized_inv) = received
     assert pending_folder == project_dir == sized_folder
-    # Same structure both times; only the sizes differ.
+    # Same structure both times. Only the sizes differ.
     assert pending_inv.sizes_pending is True
     assert pending_inv.for_campaign("alpha").file_count == 2
     assert sized_inv.sizes_pending is False
@@ -132,7 +132,7 @@ def test_refresh_given_inventory_emits_sized_once(qtbot) -> None:
 
 
 def test_second_refresh_supersedes_the_first(qtbot, project_dir: Path) -> None:
-    """A refresh while one is in flight cancels it; the final sized result is the
+    """A refresh while one is in flight cancels it. The final sized result is the
     second call's. The sender-identity guard drops any late emit from the first."""
     refresher = AudioInventoryRefresher()
 

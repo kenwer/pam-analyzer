@@ -40,13 +40,13 @@ class _FakeSession:
     def __init__(self, path, sess_options=None, providers=None, **kwargs) -> None:
         type(self).last_kwargs = {"path": path, "sess_options": sess_options, "providers": providers, **kwargs}
 
-    def get_inputs(self):  # noqa: ANN202
+    def get_inputs(self):
         return [_FakeIO()]
 
-    def get_outputs(self):  # noqa: ANN202
+    def get_outputs(self):
         return [_FakeIO()]
 
-    def get_providers(self):  # noqa: ANN202
+    def get_providers(self):
         return ["CPUExecutionProvider"]
 
 
@@ -67,7 +67,7 @@ class _FakeModel:
 
 
 @pytest.fixture(autouse=True)
-def restore_thread_count():  # noqa: ANN201
+def restore_thread_count():
     """Keep a test's chosen thread count from leaking into the next one."""
     before = onnx_threads._session_threads
     yield

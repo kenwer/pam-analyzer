@@ -23,23 +23,23 @@ class _FfmpegLikePlayer:
         self._play_requested = False
         self.position_ms = 0
 
-    def mediaStatus(self) -> QMediaPlayer.MediaStatus:  # noqa: N802 (Qt API)
+    def mediaStatus(self) -> QMediaPlayer.MediaStatus:
         return self._status
 
-    def playbackState(self) -> QMediaPlayer.PlaybackState:  # noqa: N802 (Qt API)
+    def playbackState(self) -> QMediaPlayer.PlaybackState:
         return self._state
 
     def position(self) -> int:
         return self.position_ms
 
-    def setSource(self, url: QUrl) -> None:  # noqa: N802 (Qt API)
+    def setSource(self, url: QUrl) -> None:
         # setSource() stops the old media first, and that stop reports LoadedMedia.
         if self._status not in (_Status.NoMedia, _Status.LoadingMedia):
             self._state = _State.StoppedState
             self._set_status(_Status.LoadedMedia)
         self._set_status(_Status.NoMedia if url.isEmpty() else _Status.LoadingMedia)
 
-    def setPosition(self, ms: int) -> None:  # noqa: N802 (Qt API)
+    def setPosition(self, ms: int) -> None:
         # Seeks issued while loading are dropped.
         if self._status != _Status.LoadingMedia:
             self.position_ms = ms

@@ -9,11 +9,38 @@ than a second, harness-only path.
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import Qt, QThread
+from PySide6.QtCore import QCoreApplication, QSettings, Qt, QThread
 
 from pam_analyzer.ui import toasts as toasts_module
 from pam_analyzer.ui.app_state import AppState
+from pam_analyzer.ui.settings import AppSettings
 from pam_analyzer.workers import ProjectLoadWorker
+
+
+@pytest.fixture(autouse=True)
+def _isolated_qsettings(tmp_path, monkeypatch) -> None:
+    """Route QSettings to a per-test scratch directory so AppSettings reads
+    don't leak between tests or pollute the developer's real config."""
+    QCoreApplication.setOrganizationName("PAMAnalyzerTest")
+    QCoreApplication.setApplicationName(f"PAMAnalyzerTest-{tmp_path.name}")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "qsettings"))
+    QSettings.setDefaultFormat(QSettings.Format.IniFormat)
+    QSettings.setPath(
+        QSettings.Format.IniFormat,
+        QSettings.Scope.UserScope,
+        str(tmp_path / "qsettings"),
+    )
+    # AppSettings uses the QSettings(organization, application) constructor,
+    # which Qt hardcodes to NativeFormat (the real CFPreferences store on
+    # macOS) regardless of setDefaultFormat()/setPath() above. Redirect it
+    # separately via an explicit file-backed QSettings so tests can never
+    # write to the developer's actual application preferences.
+    ini_path = tmp_path / "qsettings" / "app_settings.ini"
+    monkeypatch.setattr(
+        AppSettings,
+        "__init__",
+        lambda self: setattr(self, "_settings", QSettings(str(ini_path), QSettings.Format.IniFormat)),
+    )
 
 
 @pytest.fixture(autouse=True)

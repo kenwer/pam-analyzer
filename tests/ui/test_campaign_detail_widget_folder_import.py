@@ -1,7 +1,7 @@
 """End-to-end pytest-qt coverage for folder import via drag-and-drop: drives
 the real dragEnterEvent/dropEvent handlers and the real FolderImportDialog,
 and confirms files land in campaign_folder/<card>/week_NN/ exactly like an SD
-import. There is no dedicated button; dropping a folder onto the widget while
+import. There is no dedicated button. Dropping a folder onto the widget while
 viewing a campaign is the only entry point.
 
 FolderImportDialog's exec() is monkeypatched in every test: a real exec()
@@ -35,7 +35,7 @@ STAMP = "20260619_073000"  # parses to a recording time, so week bucketing is ex
 
 
 class _FakeScanner:
-    """Minimal stand-in for PsutilSdCardScanner; records any eject() calls."""
+    """Minimal stand-in for PsutilSdCardScanner. Records any eject() calls."""
 
     def __init__(self) -> None:
         self.ejected: list[DetectedCard] = []
@@ -74,33 +74,6 @@ def _drop_event(paths: list[Path]) -> QDropEvent:
     )
     event._mime = mime  # type: ignore[attr-defined]
     return event
-
-
-@pytest.fixture(autouse=True)
-def _isolated_qsettings(tmp_path, monkeypatch):
-    from PySide6.QtCore import QCoreApplication, QSettings
-
-    from pam_analyzer.ui.settings import AppSettings
-
-    QCoreApplication.setOrganizationName("PAMAnalyzerTest")
-    QCoreApplication.setApplicationName(f"PAMAnalyzerTest-{tmp_path.name}")
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "qsettings"))
-    QSettings.setDefaultFormat(QSettings.Format.IniFormat)
-    QSettings.setPath(
-        QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(tmp_path / "qsettings")
-    )
-    # AppSettings uses the QSettings(organization, application) constructor,
-    # which Qt hardcodes to NativeFormat (the real CFPreferences store on
-    # macOS) regardless of setDefaultFormat()/setPath() above. Redirect it
-    # separately via an explicit file-backed QSettings so tests can never
-    # write to the developer's actual application preferences.
-    ini_path = tmp_path / "qsettings" / "app_settings.ini"
-    monkeypatch.setattr(
-        AppSettings,
-        "__init__",
-        lambda self: setattr(self, "_settings", QSettings(str(ini_path), QSettings.Format.IniFormat)),
-    )
-    yield
 
 
 @pytest.fixture
@@ -195,7 +168,7 @@ def test_batch_subfolder_import_creates_one_card_per_subfolder(
     _write_wav(card_b / f"{STAMP}.WAV")
 
     def fake_exec(self) -> QDialog.DialogCode:
-        # Two rows are expected (one per subfolder); leave names as proposed.
+        # Two rows are expected (one per subfolder). Leave names as proposed.
         assert self.ui.card_table.rowCount() == 2
         return QDialog.DialogCode.Accepted
 
@@ -250,7 +223,6 @@ def test_folder_import_deletes_source_when_clear_after_checked(
     """clear_after is a checkbox inside FolderImportDialog itself (scoped to
     the batch being confirmed), not the SD-only clear_check next to
     watch_button, since 'clear card after copy' reads oddly for a folder."""
-    _, campaign = project_with_campaign
     detail = panel._detail
     _open_view_page(qtbot, panel)
 

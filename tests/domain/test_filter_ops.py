@@ -129,7 +129,7 @@ def test_parse_date(text, expected):
         ("2026-04-25 - 2026-05-02", (date(2026, 4, 25), date(2026, 5, 2))),
         # Reversed bounds swap.
         ("2026-05-02 .. 2026-04-25", (date(2026, 4, 25), date(2026, 5, 2))),
-        # A single date contains hyphens; it must not split on them.
+        # A single date contains hyphens. It must not split on them.
         ("2026-04-25", None),
         ("2026-04-25 .. garbage", None),
         ("", None),
@@ -158,7 +158,7 @@ def test_parse_time(text, expected):
     [
         ("04:00 - 08:00", (time(4, 0), time(8, 0))),
         ("04:00..08:00", (time(4, 0), time(8, 0))),
-        # Start after end means an overnight window; bounds must NOT swap.
+        # Start after end means an overnight window. Bounds must NOT swap.
         ("22:00 - 04:00", (time(22, 0), time(4, 0))),
         ("04:00", None),
         ("04:00 - later", None),
@@ -191,7 +191,7 @@ def test_parse_set_values(text, expected):
         ("2026-04-25 08:00:00", "2026-04-25", FilterOp.ON_DATE, True),
         ("2026-04-25T23:59:59", "2026-04-25", FilterOp.ON_DATE, True),
         ("2026-04-26 00:00:00", "2026-04-25", FilterOp.ON_DATE, False),
-        # BEFORE/AFTER are strict on the date part; same-day never matches.
+        # BEFORE/AFTER are strict on the date part. Same-day never matches.
         ("2026-04-25 08:00:00", "2026-04-25", FilterOp.BEFORE_DATE, False),
         ("2026-04-24 23:59:59", "2026-04-25", FilterOp.BEFORE_DATE, True),
         ("2026-04-25 23:59:59", "2026-04-25", FilterOp.AFTER_DATE, False),

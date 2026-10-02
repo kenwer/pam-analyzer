@@ -23,7 +23,7 @@ from pam_analyzer.infrastructure.perch_onnx import label_set
 
 @pytest.mark.slow
 @pytest.mark.parametrize("taxonomy", [TAXONOMY_V2_4, TAXONOMY_V3_0], ids=["v2.4", "v3.0"])
-def test_no_birdnet_list_entry_is_spelled_like_a_perch_label(taxonomy) -> None:  # noqa: ANN001
+def test_no_birdnet_list_entry_is_spelled_like_a_perch_label(taxonomy) -> None:
     """A user's list carries whole 'Scientific_Common' entries, which is the
     only shape a Perch run could mistake for one of its own class names. The
     bare scientific name a user may equally have typed needs no such check: if

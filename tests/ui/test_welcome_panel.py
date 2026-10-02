@@ -3,8 +3,9 @@
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QMimeData, QPoint, Qt, QUrl
+from PySide6.QtCore import QMimeData, QPoint, Qt, QTimer, QUrl
 from PySide6.QtGui import QDragEnterEvent, QDropEvent
+from PySide6.QtWidgets import QApplication
 
 from pam_analyzer.ui.panels.welcome_panel import WelcomePanel
 
@@ -80,9 +81,6 @@ def test_drop_ignored_while_loading(qtbot, panel: WelcomePanel, tmp_path: Path):
 
 def _choose_from_context_menu(panel: WelcomePanel, row: int, label: str) -> list[str]:
     """Open the recent list's context menu on *row*, trigger *label*, and return the menu's labels."""
-    from PySide6.QtCore import QTimer
-    from PySide6.QtWidgets import QApplication
-
     recent_list = panel.ui.recent_list
     labels: list[str] = []
 
@@ -125,12 +123,10 @@ def test_context_menu_on_placeholder_does_nothing(qtbot, panel: WelcomePanel):
 
 
 def test_delete_key_removes_the_current_recent_project(qtbot, panel: WelcomePanel):
-    from PySide6.QtWidgets import QApplication
-
     panel.set_recent_projects(["/a/one", "/b/two"])
     recent_list = panel.ui.recent_list
-    panel.show()
-    qtbot.waitExposed(panel)
+    with qtbot.waitExposed(panel):
+        panel.show()
     panel.activateWindow()
     recent_list.setFocus()
     qtbot.waitUntil(lambda: QApplication.focusWidget() is recent_list)

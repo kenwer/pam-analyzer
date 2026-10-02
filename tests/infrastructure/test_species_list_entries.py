@@ -40,7 +40,7 @@ from pam_analyzer.infrastructure.perch_runner import PerchRunner
         ("Parus major", "Parus major"),
     ],
 )
-def test_birdnet_always_drops_the_common_name_half(runner, line: str, expected: str) -> None:  # noqa: ANN001
+def test_birdnet_always_drops_the_common_name_half(runner, line: str, expected: str) -> None:
     """Every shape a BirdNET label file produces, including the genus-only and
     family-only entries whose scientific half is one word and so looks exactly
     like a Perch sound event. No BirdNET class is spelled with an underscore,
@@ -91,7 +91,7 @@ def test_perch_leaves_a_plain_name_alone() -> None:
     ],
     ids=["birdnet-entry", "perch-sound-event", "perch-legacy-name"],
 )
-def test_resolve_reads_lines_then_canonicalises(runner, line: str, expected: set[str]) -> None:  # noqa: ANN001
+def test_resolve_reads_lines_then_canonicalises(runner, line: str, expected: set[str]) -> None:
     """The runner's contribution to the domain's ResolveNames port, exercised
     through SpeciesFilter.resolve rather than called directly, so the seam the
     runner actually hands over is the one under test."""

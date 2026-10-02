@@ -40,7 +40,7 @@ PERCH_CLASSES = 14795
 LOGIT_TOLERANCE = 1e-4
 
 
-def _load_backend():  # noqa: ANN202
+def _load_backend():
     """Instantiate the backend the way birdnet's BackendLoader does."""
     backend = perch_onnx.AcousticOnnxBackendFP32PerchV2(
         model_path=perch_onnx.require_weights(perch_onnx.model_path()),
@@ -51,7 +51,7 @@ def _load_backend():  # noqa: ANN202
     return backend
 
 
-def _predict(backend, x):  # noqa: ANN001, ANN202
+def _predict(backend, x):
     return backend.copy_from_device(backend.predict(backend.copy_to_device(x)))
 
 

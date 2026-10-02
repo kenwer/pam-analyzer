@@ -5,9 +5,13 @@ import os
 import time
 import unicodedata
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
+from PySide6.QtCore import QPoint, Qt, QTimer
 from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QApplication, QInputDialog, QMenu, QMessageBox
 
 from pam_analyzer.domain import AudioInventory, Campaign, FilterMode, LatLon, Project
 from pam_analyzer.domain.audio_import import DetectedCard, ImportSource
@@ -50,37 +54,6 @@ class _NeverResolvingRefresher(AudioInventoryRefresher):
 
     def refresh(self, folder: Path, inventory: AudioInventory | None = None) -> None:
         pass
-
-
-@pytest.fixture(autouse=True)
-def _isolated_qsettings(tmp_path, monkeypatch):
-    """Route QSettings to a per-test scratch directory so AppSettings reads
-    don't leak between tests or pollute the developer's real config."""
-    from PySide6.QtCore import QCoreApplication, QSettings
-
-    from pam_analyzer.ui.settings import AppSettings
-
-    QCoreApplication.setOrganizationName("PAMAnalyzerTest")
-    QCoreApplication.setApplicationName(f"PAMAnalyzerTest-{tmp_path.name}")
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "qsettings"))
-    QSettings.setDefaultFormat(QSettings.Format.IniFormat)
-    QSettings.setPath(
-        QSettings.Format.IniFormat,
-        QSettings.Scope.UserScope,
-        str(tmp_path / "qsettings"),
-    )
-    # AppSettings uses the QSettings(organization, application) constructor,
-    # which Qt hardcodes to NativeFormat (the real CFPreferences store on
-    # macOS) regardless of setDefaultFormat()/setPath() above. Redirect it
-    # separately via an explicit file-backed QSettings so tests can never
-    # write to the developer's actual application preferences.
-    ini_path = tmp_path / "qsettings" / "app_settings.ini"
-    monkeypatch.setattr(
-        AppSettings,
-        "__init__",
-        lambda self: setattr(self, "_settings", QSettings(str(ini_path), QSettings.Format.IniFormat)),
-    )
-    yield
 
 
 @pytest.fixture
@@ -251,7 +224,7 @@ def test_inventory_tree_reflects_imported_files(
     assert model.rowCount() == 1  # one card
     card_item = model.item(0, 0)
     assert card_item.text() == "MSD-TEST"
-    # One week under the card; under that week, two files.
+    # One week under the card. Under that week, two files.
     assert card_item.rowCount() == 1
     assert card_item.child(0, 0).text() == "Week 01"
     assert card_item.child(0, 0).rowCount() == 2
@@ -270,7 +243,7 @@ def test_watch_button_lives_on_view_page(qtbot, panel: CampaignsPanel):
         lambda: panel._detail.ui.stack.currentWidget() is panel._detail.ui.view_page,
         timeout=1000,
     )
-    # _watch_button lives on the view page; isEnabled is the right check
+    # _watch_button lives on the view page, isEnabled is the right check
     # because isVisible is False until the parent widget is show()n.
     assert panel._detail.ui.watch_button.isEnabled()
     assert panel._detail.is_busy() is False
@@ -299,7 +272,6 @@ def test_queue_label_shows_pending_cards(
     qtbot, panel: CampaignsPanel, scanner: _FakeScanner, project_with_campaign, tmp_path: Path
 ):
     """A multi-slot reader (cards inserted at once) should surface the queue."""
-    proj, campaign = project_with_campaign
 
     # Prepare three card folders so the scanner can offer them all in one scan.
     cards = []
@@ -319,7 +291,7 @@ def test_queue_label_shows_pending_cards(
     )
     panel._detail.ui.watch_button.click()
 
-    # Drive one poll synchronously; the first card pops and starts copying,
+    # Drive one poll synchronously. The first card pops and starts copying,
     # leaving two behind in the queue.
     panel._detail._orchestrator._poll_timer.stop()
     panel._detail._orchestrator._on_poll()
@@ -456,8 +428,6 @@ def test_sort_order_preserves_selection(panel: CampaignsPanel, project_with_camp
 
 
 def test_sort_menu_marks_current_order_checked(panel: CampaignsPanel):
-    from PySide6.QtWidgets import QMenu
-
     parent_menu = QMenu()
     submenu = panel._build_sort_menu(parent_menu)
     checked = [a.text() for a in submenu.actions() if a.isChecked()]
@@ -465,9 +435,6 @@ def test_sort_menu_marks_current_order_checked(panel: CampaignsPanel):
 
 
 def test_context_menu_offers_new_campaign_without_selection(panel: CampaignsPanel):
-    from PySide6.QtCore import QPoint, QTimer
-    from PySide6.QtWidgets import QApplication
-
     captured = {}
 
     def close_popup():
@@ -486,10 +453,6 @@ def test_context_menu_offers_new_campaign_without_selection(panel: CampaignsPane
 def test_context_menu_new_campaign_action_triggers_on_new(
     panel: CampaignsPanel, project_with_campaign, monkeypatch
 ):
-    from PySide6.QtCore import QTimer
-    from PySide6.QtWidgets import QApplication
-
-    proj, campaign = project_with_campaign
     called = []
     monkeypatch.setattr(panel, "_on_new", lambda: called.append(True))
     index = panel._model.indexFromItem(panel._model.item(0))
@@ -558,7 +521,6 @@ def test_project_close_clears_list(panel: CampaignsPanel):
 
 
 def test_create_campaign_appears_in_list(qtbot, panel: CampaignsPanel, project_with_campaign):
-    proj, _ = project_with_campaign
     panel.ui.new_button.click()
     panel._detail.ui.name_edit.setText("beta")
     # Simulate a map click by directly setting _location_set
@@ -574,7 +536,7 @@ def test_create_campaign_appears_in_list(qtbot, panel: CampaignsPanel, project_w
 def test_create_campaign_with_nfd_folder_name_closes_form(
     qtbot, panel: CampaignsPanel, monkeypatch
 ):
-    """HFS+ style drives hand back NFD-normalized folder names; the typed NFC
+    """HFS+ style drives hand back NFD-normalized folder names. The typed NFC
     name must still match so the form closes and the new campaign is shown."""
     real_discover = Campaign.discover  # bound classmethod
 
@@ -641,8 +603,6 @@ def test_rename_rejects_windows_hostile_name(
     panel: CampaignsPanel, project_with_campaign, monkeypatch
 ):
     """The rename dialog applies the same name policy as the creation form."""
-    from PySide6.QtWidgets import QInputDialog, QMessageBox
-
     _, campaign = project_with_campaign
     monkeypatch.setattr(
         QInputDialog, "getText", staticmethod(lambda *a, **k: ("Site A.", True))
@@ -703,8 +663,6 @@ def test_delete_confirm_page_shows_audio_count(qtbot, panel: CampaignsPanel, pro
 
 def test_map_widget_set_location_calls_qml(panel: CampaignsPanel, monkeypatch):
     """set_location should delegate to the QML rootObject.setMarker method."""
-    from unittest.mock import MagicMock
-
     mock_root = MagicMock()
     monkeypatch.setattr(panel._detail._map._qw, "rootObject", lambda: mock_root)
 
@@ -718,8 +676,6 @@ def test_map_widget_set_location_calls_qml(panel: CampaignsPanel, monkeypatch):
 
 def test_map_widget_clear_calls_qml(panel: CampaignsPanel, monkeypatch):
     """clear should delegate to the QML rootObject.clearMarker method."""
-    from unittest.mock import MagicMock
-
     mock_root = MagicMock()
     monkeypatch.setattr(panel._detail._map._qw, "rootObject", lambda: mock_root)
 
@@ -770,9 +726,6 @@ def test_deselecting_campaign_returns_to_overview(qtbot, panel: CampaignsPanel):
 
 def test_clicking_empty_space_deselects_and_shows_overview(qtbot, panel: CampaignsPanel):
     """Clicking below the items clears the selection and shows the overview."""
-    from PySide6.QtCore import QPoint, Qt
-    from PySide6.QtTest import QTest
-
     lst = panel.ui.campaign_list
     idx = panel._model.index(0, 0)
     lst.show()

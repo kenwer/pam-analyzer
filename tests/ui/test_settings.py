@@ -1,27 +1,7 @@
 """AppSettings keys that no panel test already covers."""
 
-import pytest
-from PySide6.QtCore import QSettings
 
 from pam_analyzer.ui.settings import AppSettings
-
-
-@pytest.fixture(autouse=True)
-def _isolated_qsettings(tmp_path, monkeypatch):
-    """Route AppSettings at a per-test INI file.
-
-    Mirrors the fixture in tests/ui/test_campaigns_panel.py: the
-    QSettings(organization, application) constructor is hardcoded to
-    NativeFormat, so only replacing __init__ keeps the developer's real
-    preferences untouched.
-    """
-    ini_path = tmp_path / "app_settings.ini"
-    monkeypatch.setattr(
-        AppSettings,
-        "__init__",
-        lambda self: setattr(self, "_settings", QSettings(str(ini_path), QSettings.Format.IniFormat)),
-    )
-    yield
 
 
 def test_log_level_defaults_to_warning():

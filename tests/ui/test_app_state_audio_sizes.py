@@ -1,6 +1,6 @@
 """AppState.apply_resolved_audio_sizes: the second-phase size swap and its guard.
 
-Project open applies a size-less audio inventory first; apply_loaded_project
+Project open applies a size-less audio inventory first, apply_loaded_project
 then triggers resolve_pending_audio_sizes() itself, and a worker resolves
 sizes and hands them back here. These tests cover that the swap fires
 audioInventoryChanged, that a late result for a different folder is dropped,

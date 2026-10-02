@@ -471,7 +471,7 @@ def _card(mountpoint: Path) -> DetectedCard:
 
 
 def _run(importer, card, files, dest, **kw):
-    """Drive import_card with default callbacks; returns the CardImportResult."""
+    """Drive import_card with default callbacks. Returns the CardImportResult."""
     return importer.import_card(
         card,
         files,

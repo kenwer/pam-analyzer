@@ -63,7 +63,7 @@ def reference() -> dict[str, np.ndarray]:
         return {k: data[k] for k in data.files}
 
 
-def _load_backend(kind: str):  # noqa: ANN202
+def _load_backend(kind: str):
     """Instantiate one of our backends the way BackendLoader does."""
     backend_type = (
         onnx_v2_4.AcousticOnnxBackendFP32V2_4 if kind == "acoustic" else onnx_v2_4.GeoOnnxBackendFP32V2_4
@@ -78,12 +78,12 @@ def _load_backend(kind: str):  # noqa: ANN202
 
 
 @pytest.fixture(scope="module")
-def acoustic():  # noqa: ANN201
+def acoustic():
     return _load_backend("acoustic")
 
 
 @pytest.fixture(scope="module")
-def geo():  # noqa: ANN201
+def geo():
     return _load_backend("geo")
 
 

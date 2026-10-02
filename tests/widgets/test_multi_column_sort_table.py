@@ -12,10 +12,10 @@ class _CountingModel(QAbstractTableModel):
         self._columns = columns
         self.flags_calls = 0
 
-    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: B008, N802
+    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: B008
         return 0 if parent.isValid() else self._rows
 
-    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: B008, N802
+    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: B008
         return 0 if parent.isValid() else self._columns
 
     def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole):

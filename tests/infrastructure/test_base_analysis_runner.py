@@ -114,7 +114,7 @@ def test_cancel_keeps_completed_campaigns(tmp_path: Path) -> None:
     )
 
     assert result.status is RunStatus.CANCELLED
-    # a and b finished before the cancel; c was never started.
+    # a and b finished before the cancel, c was never started.
     assert [c.campaign_name for c in result.campaigns] == ["a", "b"]
     assert runner.ran == ["a", "b"]
 
@@ -124,7 +124,7 @@ def test_failure_keeps_earlier_campaigns_and_carries_message(tmp_path: Path) -> 
     result = _run(runner, _campaigns(tmp_path, ["a", "b", "c"]), _CountingProgress())
 
     assert result.status is RunStatus.FAILED
-    # a completed before b blew up; c after the failure never ran.
+    # a completed before b blew up, c after the failure never ran.
     assert [c.campaign_name for c in result.campaigns] == ["a"]
     assert result.error is not None
     assert "boom in b" in result.error

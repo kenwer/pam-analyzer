@@ -252,7 +252,7 @@ def test_list_mode_filters_to_supplied_species(campaign_with_minute_wav: Path) -
 
     with open(result.campaigns[0].detections_csv, newline="", encoding="utf-8") as f:
         rows = list(_csv.DictReader(f))
-    # A low threshold on noise may still produce zero rows; if anything
+    # A low threshold on noise may still produce zero rows. If anything
     # fires, every row must obey the supplied list.
     allowed = {"Parus major", "Pseudobird fakensis"}
     bad = [r["Scientific_Name"] for r in rows if r["Scientific_Name"] not in allowed]
@@ -263,7 +263,7 @@ def test_list_mode_filters_to_supplied_species(campaign_with_minute_wav: Path) -
 def test_legacy_species_name_still_matches(campaign_with_minute_wav: Path) -> None:
     """A species list written on the old axis matches the v3.0 spelling.
 
-    'Accipiter gentilis' is not a v3.0 class; the model emits 'Astur
+    'Accipiter gentilis' is not a v3.0 class. The model emits 'Astur
     gentilis'. Without the legacy alias expansion the filter would admit
     nothing, so the assertion is that the alias reaches the allow-list.
     """

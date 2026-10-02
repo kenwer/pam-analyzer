@@ -1,18 +1,34 @@
 """pytest-qt smoke tests for the Examine panel."""
 
 import csv
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QCoreApplication, QPoint, Qt
-from PySide6.QtWidgets import QProgressDialog, QTabWidget, QWidget
+from PySide6.QtCore import QCoreApplication, QItemSelectionModel, QModelIndex, QPoint, Qt, QTimer
+from PySide6.QtGui import QKeySequence
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QApplication,
+    QComboBox,
+    QLineEdit,
+    QMenu,
+    QProgressDialog,
+    QPushButton,
+    QStyleOptionViewItem,
+    QTabWidget,
+    QWidget,
+)
 
-from pam_analyzer.domain import Campaign, Detection, FilterMode, LatLon, Project
-from pam_analyzer.domain.filter_ops import FilterOp
+from pam_analyzer.domain import Campaign, Detection, FilterMode, LatLon, Project, VerifiedState, paths
+from pam_analyzer.domain.filter_ops import FilterOp, default_op, label_for
 from pam_analyzer.ui.app_state import AppState
-from pam_analyzer.ui.models.detections_table_model import COLUMNS_BY_NAME
+from pam_analyzer.ui.detection_table import DetectionTable
+from pam_analyzer.ui.models.detections_table_model import COLUMNS_BY_NAME, DetectionsTableModel
 from pam_analyzer.ui.panels.examine_panel import ExaminePanel
 from pam_analyzer.ui.settings import AppSettings
+from pam_analyzer.widgets.combo_delegate import ComboDelegate
+from pam_analyzer.widgets.filter_popups import SetPopup
 from tests.conftest import DEFAULT_MODEL_KEY
 
 
@@ -83,37 +99,6 @@ def project(tmp_path: Path) -> Project:
     return proj
 
 
-@pytest.fixture(autouse=True)
-def _isolated_qsettings(tmp_path, monkeypatch):
-    """Route QSettings to a per-test scratch directory so AppSettings reads
-    don't leak between tests or pollute the developer's real config."""
-    from PySide6.QtCore import QCoreApplication, QSettings
-
-    from pam_analyzer.ui.settings import AppSettings
-
-    QCoreApplication.setOrganizationName("PAMAnalyzerTest")
-    QCoreApplication.setApplicationName(f"PAMAnalyzerTest-{tmp_path.name}")
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "qsettings"))
-    QSettings.setDefaultFormat(QSettings.Format.IniFormat)
-    QSettings.setPath(
-        QSettings.Format.IniFormat,
-        QSettings.Scope.UserScope,
-        str(tmp_path / "qsettings"),
-    )
-    # AppSettings uses the QSettings(organization, application) constructor,
-    # which Qt hardcodes to NativeFormat (the real CFPreferences store on
-    # macOS) regardless of setDefaultFormat()/setPath() above. Redirect it
-    # separately via an explicit file-backed QSettings so tests can never
-    # write to the developer's actual application preferences.
-    ini_path = tmp_path / "qsettings" / "app_settings.ini"
-    monkeypatch.setattr(
-        AppSettings,
-        "__init__",
-        lambda self: setattr(self, "_settings", QSettings(str(ini_path), QSettings.Format.IniFormat)),
-    )
-    yield
-
-
 @pytest.fixture
 def panel(qtbot, project: Project, load_project) -> ExaminePanel:
     state = AppState()
@@ -144,14 +129,14 @@ def test_info_label_breaks_down_counts_by_model(
     # A campaign switch selects a row, which schedules a deferred audio prepare
     # that would try to open the dummy f.wav. Patch the presentation call it
     # ends up in (the timer is already bound to the real _do_prepare, so
-    # patching that method wouldn't take); this test is about label text, not
+    # patching that method wouldn't take). This test is about label text, not
     # playback.
     monkeypatch.setattr(panel.ui.detections_table, "_present", lambda *a, **k: None)
 
     # Alpha ends up with a current run plus a CSV from the retired Perch
     # model, which is what a campaign analyzed before the upgrade looks like.
     # The base fixture omits the Model column, so its rows would load as model
-    # "" and show up as a third "unknown" group; overwrite that same file with
+    # "" and show up as a third "unknown" group. Overwrite that same file with
     # one that names its model, matching what a real runner writes.
     _write_model_csv(
         project.folder / "alpha" / f"detections-{DEFAULT_MODEL_KEY}.csv", "alpha", "MSD-1", DEFAULT_MODEL_KEY, rows=3
@@ -238,7 +223,7 @@ def test_max_per_caps_after_column_filter(panel: ExaminePanel) -> None:
     # Exclude the overall-best 0.7 row, leaving 0.5 and 0.6.
     panel._model.set_column_filter(conf_col, "0.7", FilterOp.LESS_THAN)
     panel.ui.max_per_spin.setValue(1)
-    # Cap-first would rank 0.7 top then drop it (0 rows); filter-first keeps 0.6.
+    # Cap-first would rank 0.7 top then drop it (0 rows). Filter-first keeps 0.6.
     assert panel._model.rowCount() == 1
     assert float(panel._model.data(panel._model.index(0, conf_col))) == pytest.approx(0.6)
 
@@ -314,9 +299,6 @@ def test_autosave_rewrites_only_the_edited_campaign(qtbot, panel: ExaminePanel, 
 
 def test_combo_delegate_choices_for_verified(panel: ExaminePanel) -> None:
     """The Verified column delegate must offer the four canonical values."""
-    from PySide6.QtWidgets import QComboBox, QStyleOptionViewItem
-
-    from pam_analyzer.widgets.combo_delegate import ComboDelegate
 
     delegate = panel.ui.detections_table.table().itemDelegateForColumn(COLUMNS_BY_NAME["Verified"])
     assert isinstance(delegate, ComboDelegate)
@@ -332,11 +314,9 @@ def test_combo_delegate_choices_for_verified(panel: ExaminePanel) -> None:
 
 
 def test_single_click_opens_the_dropdown_of_an_unselected_row(qtbot, panel: ExaminePanel, monkeypatch) -> None:
-    from PySide6.QtWidgets import QApplication, QComboBox
-
     monkeypatch.setattr(panel.ui.detections_table, "_present", lambda *a, **k: None)
-    panel.show()
-    qtbot.waitExposed(panel)
+    with qtbot.waitExposed(panel):
+        panel.show()
     view = panel.ui.detections_table.table()
 
     verified = view.model().index(2, panel._model.index_of("Verified"))
@@ -348,11 +328,9 @@ def test_single_click_opens_the_dropdown_of_an_unselected_row(qtbot, panel: Exam
 
 
 def test_single_click_on_comment_accepts_typing_until_return(qtbot, panel: ExaminePanel, monkeypatch) -> None:
-    from PySide6.QtWidgets import QAbstractItemView, QLineEdit
-
     monkeypatch.setattr(panel.ui.detections_table, "_present", lambda *a, **k: None)
-    panel.show()
-    qtbot.waitExposed(panel)
+    with qtbot.waitExposed(panel):
+        panel.show()
     view = panel.ui.detections_table.table()
 
     comment = view.model().index(2, panel._model.index_of("Comment"))
@@ -370,9 +348,6 @@ def test_single_click_on_comment_accepts_typing_until_return(qtbot, panel: Exami
 def test_padding_spinboxes_init_from_project(qtbot, project: Project, load_project) -> None:
     """Loading a project populates the padding spinboxes from its TOML values."""
     # Bake non-zero padding into the project file.
-    from dataclasses import replace
-
-
     p = replace(project, snippet_padding_before=1.5, snippet_padding_after=2.0)
     p.save()
 
@@ -400,8 +375,6 @@ def test_project_toml_without_padding_loads_with_zero(
     qtbot, tmp_path: Path, load_project
 ) -> None:
     """A pam-analyzer.toml written before snippet_padding_* existed must still load."""
-    from pam_analyzer.domain import paths
-
     paths.project_toml(tmp_path).write_text(
         '[project]\nsdcard_name_pattern = "^X-"\n',
         encoding="utf-8",
@@ -631,9 +604,6 @@ def test_export_snippets_cancel_stops_the_loop(
 
 def test_combo_delegate_species_choices_reflect_data(panel: ExaminePanel) -> None:
     """Corrected_Species choices must include every loaded species (deduped, sorted)."""
-    from PySide6.QtWidgets import QComboBox, QStyleOptionViewItem
-
-    from pam_analyzer.widgets.combo_delegate import ComboDelegate
 
     delegate = panel.ui.detections_table.table().itemDelegateForColumn(COLUMNS_BY_NAME["Corrected_Species"])
     assert isinstance(delegate, ComboDelegate)
@@ -659,16 +629,15 @@ def test_filter_inputs_visible_when_mounted_in_hidden_tab(
     panel = ExaminePanel(state, AppSettings())
     tabs.addTab(panel, "Examine")
     qtbot.addWidget(tabs)
-    tabs.show()
+    with qtbot.waitExposed(tabs):
+        tabs.show()
     tabs.setCurrentIndex(0)  # Examine tab is hidden
 
     # Load project while ExaminePanel is not visible. This triggers setModel.
     load_project(state, project.folder)
-    qtbot.waitExposed(tabs)
 
     # Switch to Examine tab and let Qt settle geometry.
     tabs.setCurrentIndex(1)
-    qtbot.waitExposed(panel)
     QCoreApplication.processEvents()
 
     detection_table = panel.ui.detections_table
@@ -732,13 +701,9 @@ def test_clear_filter_via_empty_text_with_default_op(panel: ExaminePanel) -> Non
 
 def test_not_blank_filter_can_be_switched_back_from_the_funnel(qtbot, panel: ExaminePanel) -> None:
     """The funnel must stay clickable while a value-less op grays out the input."""
-    from PySide6.QtCore import QTimer
-    from PySide6.QtWidgets import QApplication
 
-    from pam_analyzer.domain.filter_ops import default_op, label_for
-
-    panel.show()
-    qtbot.waitExposed(panel)
+    with qtbot.waitExposed(panel):
+        panel.show()
     filter_row = panel.ui.detections_table._filter_row
     col = panel._model.index_of("Comment")
     slot = filter_row._slots[col]
@@ -786,11 +751,6 @@ def test_hiding_a_column_resets_its_blank_filter(panel: ExaminePanel) -> None:
 
 
 def test_picking_the_checked_not_blank_again_lifts_the_filter(panel: ExaminePanel) -> None:
-    from PySide6.QtCore import QTimer
-    from PySide6.QtWidgets import QApplication, QMenu
-
-    from pam_analyzer.domain.filter_ops import label_for
-
     filter_row = panel.ui.detections_table._filter_row
     col = panel._model.index_of("Comment")
     slot = filter_row._slots[col]
@@ -873,10 +833,6 @@ def test_funnel_menu_is_one_of_flow(panel: ExaminePanel) -> None:
     The set popup opens via its own deferred single-shot after the op menu
     closes, so the second handler retries until it appears.
     """
-    from PySide6.QtCore import QTimer
-    from PySide6.QtWidgets import QApplication, QMenu, QPushButton
-
-    from pam_analyzer.widgets.filter_popups import SetPopup
 
     detection_table = panel.ui.detections_table
     filter_row = detection_table._filter_row
@@ -916,10 +872,8 @@ def test_funnel_menu_is_one_of_flow(panel: ExaminePanel) -> None:
 def test_typing_a_filter_keeps_focus_in_the_filter_input(qtbot, panel: ExaminePanel) -> None:
     """Filtering out the selected row must not move focus to the table,
     where the armed shortcuts would swallow the rest of the typing."""
-    from PySide6.QtWidgets import QApplication
-
-    panel.show()
-    qtbot.waitExposed(panel)
+    with qtbot.waitExposed(panel):
+        panel.show()
     filter_row = panel.ui.detections_table._filter_row
     edit = filter_row._slots[panel._model.index_of("ARU")].edit
     edit.setFocus()
@@ -935,10 +889,8 @@ def test_typing_a_filter_keeps_focus_in_the_filter_input(qtbot, panel: ExaminePa
 
 
 def test_enter_in_filter_input_applies_and_focuses_table(qtbot, panel: ExaminePanel) -> None:
-    from PySide6.QtWidgets import QApplication
-
-    panel.show()
-    qtbot.waitExposed(panel)
+    with qtbot.waitExposed(panel):
+        panel.show()
     detection_table = panel.ui.detections_table
     edit = detection_table._filter_row._slots[panel._model.index_of("ARU")].edit
     edit.setFocus()
@@ -952,15 +904,12 @@ def test_enter_in_filter_input_applies_and_focuses_table(qtbot, panel: ExaminePa
     focused = QApplication.focusWidget()
     assert focused in (detection_table._table, detection_table._table.viewport())
     # Drain the deferred player prepare (armed by the row auto-select) inside
-    # the test; firing during teardown would touch half-destroyed widgets.
+    # the test. Firing during teardown would touch half-destroyed widgets.
     QCoreApplication.processEvents()
 
 
 def test_column_menu_no_qaction_error(panel: ExaminePanel) -> None:
     """Column header context menu must not raise NameError (B1 regression: QAction removed from imports)."""
-    from PySide6.QtCore import QTimer
-    from PySide6.QtWidgets import QApplication
-
     detection_table = panel.ui.detections_table
     # Close the popup in the next event-loop tick so exec() unblocks.
     QTimer.singleShot(0, lambda: (w := QApplication.activePopupWidget()) and w.close())
@@ -974,11 +923,9 @@ def test_showing_the_panel_focuses_the_table(qtbot, panel: ExaminePanel) -> None
     The single-key shortcuts (Space, T/F/U, ...) are WidgetShortcut-scoped to
     the inner table, so a pre-selected row alone leaves Space going nowhere.
     """
-    from PySide6.QtWidgets import QApplication
-
     table = panel.ui.detections_table.table()
-    panel.show()
-    qtbot.waitExposed(panel)
+    with qtbot.waitExposed(panel):
+        panel.show()
 
     qtbot.waitUntil(lambda: QApplication.focusWidget() in (table, table.viewport()))
     # Drain the deferred player prepare armed by the row auto-select.
@@ -987,16 +934,14 @@ def test_showing_the_panel_focuses_the_table(qtbot, panel: ExaminePanel) -> None
 
 def test_space_toggles_the_player_after_navigating_to_the_panel(qtbot, panel: ExaminePanel, monkeypatch) -> None:
     """End to end: the pre-selected row is playable with Space, no click first."""
-    from PySide6.QtWidgets import QApplication
-
     detection_table = panel.ui.detections_table
     monkeypatch.setattr(detection_table, "_present", lambda *a, **k: None)
     toggled: list[bool] = []
     monkeypatch.setattr(detection_table._player, "isVisible", lambda: True)
     monkeypatch.setattr(detection_table._player, "toggle", lambda: toggled.append(True))
 
-    panel.show()
-    qtbot.waitExposed(panel)
+    with qtbot.waitExposed(panel):
+        panel.show()
     table = detection_table.table()
     qtbot.waitUntil(lambda: QApplication.focusWidget() in (table, table.viewport()))
 
@@ -1008,11 +953,9 @@ def test_space_toggles_the_player_after_navigating_to_the_panel(qtbot, panel: Ex
 def test_reload_does_not_steal_focus_from_a_filter_input(qtbot, panel: ExaminePanel, monkeypatch) -> None:
     """A campaign switch reloads rows, but focus belongs to whatever the user
     is typing in, not the table."""
-    from PySide6.QtWidgets import QApplication
-
     monkeypatch.setattr(panel.ui.detections_table, "_present", lambda *a, **k: None)
-    panel.show()
-    qtbot.waitExposed(panel)
+    with qtbot.waitExposed(panel):
+        panel.show()
     edit = panel.ui.detections_table._filter_row._slots[panel._model.index_of("ARU")].edit
     edit.setFocus()
     qtbot.waitUntil(lambda: QApplication.focusWidget() is edit)
@@ -1074,8 +1017,6 @@ def _quiet(panel: ExaminePanel, monkeypatch) -> None:
 
 
 def _select_rows(panel: ExaminePanel, rows: list[int]) -> None:
-    from PySide6.QtCore import QItemSelectionModel
-
     view = panel.ui.detections_table.table()
     flags = QItemSelectionModel.SelectionFlag
     view.selectionModel().clearSelection()
@@ -1101,8 +1042,6 @@ def _menu_action(menu, text: str):
 
 
 def _clipboard() -> str:
-    from PySide6.QtWidgets import QApplication
-
     return QApplication.clipboard().text()
 
 
@@ -1177,12 +1116,9 @@ def test_copied_rows_keep_one_line_per_row_when_a_comment_has_tabs_or_newlines(
 
 
 def test_copy_shortcut_copies_the_selected_rows(qtbot, panel: ExaminePanel, monkeypatch) -> None:
-    from PySide6.QtGui import QKeySequence
-    from PySide6.QtWidgets import QApplication
-
     _quiet(panel, monkeypatch)
-    panel.show()
-    qtbot.waitExposed(panel)
+    with qtbot.waitExposed(panel):
+        panel.show()
     table = panel.ui.detections_table.table()
     qtbot.waitUntil(lambda: QApplication.focusWidget() in (table, table.viewport()))
     _select_rows(panel, [3, 4])
@@ -1270,15 +1206,11 @@ def test_context_menu_offers_no_cell_actions_on_the_play_column(panel: ExaminePa
 
 
 def test_context_menu_below_the_last_row_only_offers_clearing_filters(panel: ExaminePanel) -> None:
-    from PySide6.QtCore import QModelIndex
-
     menu = panel.ui.detections_table._build_row_menu(QModelIndex())
     assert [a.text() for a in menu.actions()] == ["Clear All Filters"]
 
 
 def test_context_menu_marks_all_selected_rows(panel: ExaminePanel, monkeypatch) -> None:
-    from pam_analyzer.domain import VerifiedState
-
     _quiet(panel, monkeypatch)
     _select_rows(panel, [0, 2])
     _menu_action(_row_menu(panel, 0, "ARU"), "True").trigger()
@@ -1289,8 +1221,6 @@ def test_context_menu_marks_all_selected_rows(panel: ExaminePanel, monkeypatch) 
 
 
 def test_verified_shortcut_marks_all_selected_rows(panel: ExaminePanel, monkeypatch) -> None:
-    from pam_analyzer.domain import VerifiedState
-
     _quiet(panel, monkeypatch)
     _select_rows(panel, [1, 2])
     panel.ui.detections_table._set_verified("false")
@@ -1319,8 +1249,8 @@ def test_right_click_selects_an_unselected_row_but_keeps_a_multi_selection(
     qtbot, panel: ExaminePanel, monkeypatch
 ) -> None:
     _quiet(panel, monkeypatch)
-    panel.show()
-    qtbot.waitExposed(panel)
+    with qtbot.waitExposed(panel):
+        panel.show()
     view = panel.ui.detections_table.table()
     aru = panel._model.index_of("ARU")
 
@@ -1364,9 +1294,6 @@ def test_model_set_annotation_rejects_bad_input(panel: ExaminePanel) -> None:
 
 
 def test_selected_rows_after_select_all_does_not_query_every_cell(qtbot, panel: ExaminePanel, monkeypatch) -> None:
-    from pam_analyzer.ui.detection_table import DetectionTable
-    from pam_analyzer.ui.models.detections_table_model import DetectionsTableModel
-
     class CountingModel(DetectionsTableModel):
         flags_calls = 0
 
@@ -1390,12 +1317,9 @@ def test_selected_rows_after_select_all_does_not_query_every_cell(qtbot, panel: 
 
 
 def test_right_click_position_opens_the_menu_for_the_cell_under_it(qtbot, panel: ExaminePanel, monkeypatch) -> None:
-    from PySide6.QtCore import QTimer
-    from PySide6.QtWidgets import QApplication, QMenu
-
     _quiet(panel, monkeypatch)
-    panel.show()
-    qtbot.waitExposed(panel)
+    with qtbot.waitExposed(panel):
+        panel.show()
     view = panel.ui.detections_table.table()
     _select_rows(panel, [1])
     seen: list[str] = []

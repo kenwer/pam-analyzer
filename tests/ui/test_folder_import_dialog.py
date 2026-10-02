@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialogButtonBox
 
 from pam_analyzer.domain.audio_import import DetectedCard, ImportSource
@@ -60,7 +61,7 @@ def test_result_cards_reflects_edited_names_in_order():
     dialog.ui.card_table.item(0, 0).setText("Renamed")
     renamed = dialog.result_cards()
     assert [c.name for c in renamed] == ["Renamed", "CardB"]
-    # Only the name changes; mountpoint/device/source carry over unchanged.
+    # Only the name changes. Mountpoint/device/source carry over unchanged.
     assert renamed[0].mountpoint == Path("/data/CardA")
     assert renamed[0].source is ImportSource.FOLDER
 
@@ -70,8 +71,6 @@ def test_file_counts_shown_read_only(qtbot):
     qtbot.addWidget(dialog)
     files_item = dialog.ui.card_table.item(0, 1)
     assert files_item.text() == "7"
-    from PySide6.QtCore import Qt
-
     assert not (files_item.flags() & Qt.ItemFlag.ItemIsEditable)
 
 

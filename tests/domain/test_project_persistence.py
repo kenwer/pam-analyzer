@@ -50,7 +50,7 @@ def test_load_ignores_legacy_path_keys(tmp_path: Path) -> None:
 
 
 def test_reads_birdnet_prefixed_keys(tmp_path: Path) -> None:
-    """On disk the knobs keep their birdnet_ prefix; the domain drops it."""
+    """On disk the knobs keep their birdnet_ prefix. The domain drops it."""
     paths.project_toml(tmp_path).write_text(
         "[project]\n"
         "birdnet_min_conf = 0.4\n"

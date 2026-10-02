@@ -62,7 +62,7 @@ def test_time_range_popup_roundtrip(qtbot):
 
 
 def test_time_range_popup_keeps_overnight_order(qtbot):
-    """Start after end means a window wrapping midnight; it must not swap."""
+    """Start after end means a window wrapping midnight. It must not swap."""
     popup = TimeRangePopup("22:00 - 04:00")
     qtbot.addWidget(popup)
     assert _applied(qtbot, popup) == "22:00 - 04:00"

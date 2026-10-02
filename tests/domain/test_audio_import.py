@@ -88,7 +88,7 @@ def test_card_queue_seen_across_offers():
     q = CardQueue()
     q.offer([_card("A")])
     q.pop()
-    q.offer([_card("A")])  # already seen; should not be re-added
+    q.offer([_card("A")])  # already seen, should not be re-added
     assert q.pop() is None
 
 

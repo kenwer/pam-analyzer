@@ -35,30 +35,6 @@ class _FakeScanner:
         pass
 
 
-@pytest.fixture(autouse=True)
-def _isolated_qsettings(tmp_path, monkeypatch):
-    from PySide6.QtCore import QCoreApplication, QSettings
-
-    QCoreApplication.setOrganizationName("PAMAnalyzerTest")
-    QCoreApplication.setApplicationName(f"PAMAnalyzerTest-{tmp_path.name}")
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "qsettings"))
-    QSettings.setDefaultFormat(QSettings.Format.IniFormat)
-    QSettings.setPath(
-        QSettings.Format.IniFormat,
-        QSettings.Scope.UserScope,
-        str(tmp_path / "qsettings"),
-    )
-    # AppSettings' QSettings(organization, application) constructor ignores the
-    # redirects above on macOS, so point it at an explicit ini file instead.
-    ini_path = tmp_path / "qsettings" / "app_settings.ini"
-    monkeypatch.setattr(
-        AppSettings,
-        "__init__",
-        lambda self: setattr(self, "_settings", QSettings(str(ini_path), QSettings.Format.IniFormat)),
-    )
-    yield
-
-
 @pytest.fixture
 def window(qtbot) -> MainWindow:
     w = MainWindow(
