@@ -96,7 +96,10 @@ prewarm = { cmd = "uv run --script scripts/build.py --prewarm-only", help = "Dow
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra -q"
+# --no-qt-log: pytest-qt swaps a Python Qt message handler in and out per test.
+# PySide6 segfaults when a non-Python thread (FFmpeg's loader) is logging
+# through that handler while it is removed. Qt messages go to stderr instead.
+addopts = "-ra -q --no-qt-log"
 # Dump all-thread tracebacks to stderr when a single test exceeds this many
 # seconds, so a hang identifies itself in CI logs (it does not kill the test).
 faulthandler_timeout = 120
