@@ -15,6 +15,7 @@
 - Improved performance when selecting and marking many rows in large Examine tables.
 - [Dev] UI tests wait for the window to be exposed and share one QSettings isolation fixture.
 - [Dev] Tests no longer capture Qt log messages, which fixes a rare segfault in the macOS test run.
+- [Dev] Upgrade dependencies.
 
 ## [0.7.2] - 2026-10-01
 ### Changed
