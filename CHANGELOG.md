@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.7.3] - 2026-10-02
 ### Added
 - Context menu on the Examine table to:
   - copy the clicked cell, the selected rows (with or without headers) or the audio file path
