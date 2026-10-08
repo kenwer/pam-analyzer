@@ -439,6 +439,10 @@ def main() -> None:
         # override in pyproject.toml already keeps it out of the venv. Saying
         # so here too means dropping that override cannot silently add 32 MB.
         '--nofollow-import-to=ai_edge_litert',
+        # Same for pandas and pyarrow, which birdnet imports only inside result
+        # export methods this app never calls. Together they would add 99 MB.
+        '--nofollow-import-to=pandas',
+        '--nofollow-import-to=pyarrow',
         # birdnet resolves backends by name at runtime, so following its
         # imports statically does not reach every module it loads.
         '--include-package=birdnet',

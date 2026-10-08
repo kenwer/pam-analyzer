@@ -3,6 +3,7 @@
 ## [Unreleased]
 ### Changed
 - [Dev] Upgrade dependencies, including Polars 2.0 and PySide 6.12.
+- [Dev] The build no longer bundles pandas and pyarrow.
 
 ## [0.7.3] - 2026-10-02
 ### Added

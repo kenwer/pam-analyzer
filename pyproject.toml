@@ -45,7 +45,15 @@ build = [
 # satisfies drops it from the lock and the venv. birdnet imports it lazily,
 # inside load_lib_litert_model, so its absence is only reachable by asking for
 # a TFLite backend, which this app never does.
-override-dependencies = ["ai-edge-litert; sys_platform == 'never'"]
+#
+# pandas and pyarrow are dropped the same way. birdnet imports them only inside
+# its result export methods (to_dataframe, to_arrow_table, to_parquet), and this
+# app reads results through to_structured_array.
+override-dependencies = [
+    "ai-edge-litert; sys_platform == 'never'",
+    "pandas; sys_platform == 'never'",
+    "pyarrow; sys_platform == 'never'",
+]
 
 [build-system]
 requires = ["hatchling"]
