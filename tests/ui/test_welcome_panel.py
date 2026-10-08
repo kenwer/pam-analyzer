@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QMimeData, QPoint, Qt, QTimer, QUrl
+from PySide6.QtCore import QMimeData, QPointF, Qt, QTimer, QUrl
 from PySide6.QtGui import QDragEnterEvent, QDropEvent
 from PySide6.QtWidgets import QApplication
 
@@ -25,7 +25,7 @@ def _mime(*paths: Path) -> QMimeData:
 
 def _drag_enter(panel: WelcomePanel, mime: QMimeData) -> bool:
     event = QDragEnterEvent(
-        QPoint(10, 10), Qt.DropAction.CopyAction, mime, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier
+        QPointF(10, 10), Qt.DropAction.CopyAction, mime, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier
     )
     panel.dragEnterEvent(event)
     return event.isAccepted()
@@ -33,7 +33,7 @@ def _drag_enter(panel: WelcomePanel, mime: QMimeData) -> bool:
 
 def _drop(panel: WelcomePanel, mime: QMimeData) -> None:
     event = QDropEvent(
-        QPoint(10, 10), Qt.DropAction.CopyAction, mime, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier
+        QPointF(10, 10), Qt.DropAction.CopyAction, mime, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier
     )
     panel.dropEvent(event)
 

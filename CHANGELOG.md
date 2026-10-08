@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+### Changed
+- [Dev] Upgrade dependencies, including Polars 2.0 and PySide 6.12.
+
 ## [0.7.3] - 2026-10-02
 ### Added
 - Context menu on the Examine table to:
