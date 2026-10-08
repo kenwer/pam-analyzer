@@ -26,6 +26,11 @@ Item {
                 name: "osm.mapping.custom.host"
                 value: "https://tile.openstreetmap.org/"
             }
+            // Only the custom host above is used
+            PluginParameter {
+                name: "osm.mapping.providersrepository.disabled"
+                value: true
+            }
         }
 
         Component.onCompleted: {
