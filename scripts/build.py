@@ -343,7 +343,7 @@ def main() -> None:
 
     print('  Creating venv')
     DIST_DIR.mkdir(parents=True, exist_ok=True)
-    run(['uv', 'venv', '--python', '3.14', '--clear', VENV_DIR])
+    run(['uv', 'venv', '--clear', VENV_DIR])
 
     print('  Syncing build venv (runtime deps + nuitka)')
     # The app is never installed. Nuitka compiles it straight from src/, which

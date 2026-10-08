@@ -38,6 +38,10 @@ build = [
 ]
 
 [tool.uv]
+# .python-version pins the exact patch. Without this, uv takes a system Python
+# (e.g. Homebrew on the macOS runner) whenever one happens to match the pin.
+python-preference = "only-managed"
+
 # birdnet depends on ai-edge-litert to run TFLite weights but this app runs all 
 # models on ONNX Runtime, so nothing in this app reaches that interpreter.
 # Since ai-edge-litert is a birdnet dep, we can't simply delete it, but we 
