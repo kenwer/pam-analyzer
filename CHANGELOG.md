@@ -5,6 +5,7 @@
 - [Dev] Upgrade dependencies, including Polars 2.0 and PySide 6.12.
 - [Dev] The build no longer bundles pandas and pyarrow.
 - [Dev] Pin Python to 3.14.8 and only use uv-managed interpreters.
+- [Dev] CI prewarms the models once for all platforms.
 
 ### Fixed
 - Windows: the campaign map no longer crashes the app when another OpenSSL is on the PATH.

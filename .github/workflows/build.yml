@@ -18,14 +18,19 @@ on:
       - 'pyproject.toml'
       - 'uv.lock'
       - '.github/workflows/build.yml'
+      - '.github/workflows/prewarm-models.yml'
       - '.github/actions/**'
 
 permissions:
   contents: read
 
 jobs:
+  models:
+    uses: ./.github/workflows/prewarm-models.yml
+
   build:
     name: Build (${{ matrix.name }})
+    needs: models
     runs-on: ${{ matrix.os }}
     timeout-minutes: 150
     permissions:
@@ -80,6 +85,8 @@ jobs:
 
       - name: Setup environment
         uses: ./.github/actions/setup-env
+        with:
+          models-cache-key: ${{ needs.models.outputs.cache-key }}
 
       - name: Run tests
         # On pull_request the Test workflow already ran them on this commit.

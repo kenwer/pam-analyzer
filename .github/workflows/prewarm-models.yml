@@ -1,0 +1,66 @@
+name: Prewarm models
+
+# Downloads and converts the models once, on one runner, and saves them to the
+# cache that every platform job then restores. Without it each matrix job on a
+# cold cache fetches about 1.1 GB and converts v2.4 itself.
+
+on:
+  workflow_call:
+    outputs:
+      cache-key:
+        description: Key of the models cache entry, to pass to the setup-env action.
+        value: ${{ jobs.models.outputs.cache-key }}
+
+permissions:
+  contents: read
+
+jobs:
+  models:
+    name: Prewarm models
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    # Test and Build both call this workflow. On a cold key they would both
+    # prewarm, and the one that loses the save would hand its jobs a key that
+    # is still uploading. Queued, the second caller finds the entry instead.
+    concurrency: prewarm-models-${{ github.ref }}
+    outputs:
+      cache-key: ${{ steps.models-cache.outputs.cache-primary-key }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Look up BirdNET models
+        id: models-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: dist/.birdnet-models
+          # The models are platform-independent data, so one archive serves
+          # every runner OS.
+          enableCrossOsArchive: true
+          # Only checks that the entry exists. Nothing here reads the models
+          # on a hit, so downloading the 940 MB archive is left to the jobs
+          # that do.
+          lookup-only: true
+          # Every file that decides which weights land in the cache: the engine
+          # list (build.py), the v2.4 converter, the Perch pin, and the birdnet
+          # version (uv.lock).
+          key: birdnet-models-${{ hashFiles('uv.lock', 'scripts/build.py', 'scripts/convert_birdnet_2_4_onnx.py', 'scripts/fetch_perch_onnx.py') }}
+
+      - name: Install uv
+        if: steps.models-cache.outputs.cache-hit != 'true'
+        uses: astral-sh/setup-uv@v9.0.0
+
+      - name: Prewarm models
+        if: steps.models-cache.outputs.cache-hit != 'true'
+        run: uv run --script scripts/build.py --prewarm-only
+
+      - name: Save BirdNET models
+        if: steps.models-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          # path and enableCrossOsArchive have to match the lookup above and
+          # the restore in the setup-env action, or the entry is not found.
+          path: dist/.birdnet-models
+          enableCrossOsArchive: true
+          key: ${{ steps.models-cache.outputs.cache-primary-key }}

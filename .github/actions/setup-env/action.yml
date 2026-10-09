@@ -1,5 +1,10 @@
 name: Setup environment
-description: Install uv, system dependencies, and prewarm the BirdNET models cache. Assumes the repo is already checked out.
+description: Install uv, system dependencies, the project environment, and restore the BirdNET models cache. Assumes the repo is already checked out.
+
+inputs:
+  models-cache-key:
+    description: Key of the models cache entry, the cache-key output of the prewarm-models workflow.
+    required: true
 
 runs:
   using: composite
@@ -15,22 +20,19 @@ runs:
         sudo apt-get update -q
         sudo apt-get install -y libegl1 libpulse0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-util1 libxcb-render-util0 libxcb-image0 libxcb-shape0 libxcb-xkb1 libxcb-icccm4 libxcb-keysyms1 libtiff6 libminizip1t64 libgstreamer-plugins-base1.0-0 libgstreamer-plugins-good1.0-0 libgstreamer-plugins-bad1.0-0 libgstreamer-gl1.0-0
 
-    - name: Cache BirdNET models
-      uses: actions/cache@v6
+    - name: Restore BirdNET models
+      uses: actions/cache/restore@v6
       with:
         path: dist/.birdnet-models
-        # build.py is in the key because it names which models get prewarmed.
-        # Without it, adding an engine keeps hitting a cache that predates it,
-        # and every run re-downloads the new weights without ever saving them.
-        # convert_birdnet_2_4_onnx.py is in it for the same reason: it produces
-        # the v2.4 weights, so a change to how it converts has to invalidate
-        # the models it converted. fetch_perch_onnx.py holds the pinned commit
-        # and checksum of the Perch export, so moving the pin has to invalidate
-        # the 413 MB file it fetched.
-        key: birdnet-models-${{ hashFiles('uv.lock', 'scripts/build.py', 'scripts/convert_birdnet_2_4_onnx.py', 'scripts/fetch_perch_onnx.py') }}
+        enableCrossOsArchive: true
+        key: ${{ inputs.models-cache-key }}
+        # The prewarm-models workflow found or saved this entry before this
+        # job started. A miss means that hand-off broke, and falling through
+        # would leave pytest or the build to download the models un-retried.
+        fail-on-cache-miss: true
 
-    # Populates the cache (with retry-on-failure) up front, so a cold cache
-    # never triggers a bare, un-retried download from inside pytest or the build.
-    - name: Prewarm models
+    # Synced here so a cold uv cache does not eat into the callers' timeout on
+    # the test step.
+    - name: Sync project environment
       shell: bash
-      run: uv run --script scripts/build.py --prewarm-only
+      run: uv sync

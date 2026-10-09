@@ -10,8 +10,12 @@ permissions:
   contents: read
 
 jobs:
+  models:
+    uses: ./.github/workflows/prewarm-models.yml
+
   test:
     name: Test (${{ matrix.name }})
+    needs: models
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -32,6 +36,8 @@ jobs:
 
       - name: Setup environment
         uses: ./.github/actions/setup-env
+        with:
+          models-cache-key: ${{ needs.models.outputs.cache-key }}
 
       - name: Run tests
         timeout-minutes: 15

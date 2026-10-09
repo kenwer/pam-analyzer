@@ -205,7 +205,7 @@ def _prewarm_models(download_env: dict, uv_run_prefix: list) -> None:
     venv (['uv', 'run', '--no-project'], with VIRTUAL_ENV/UV_PROJECT_ENVIRONMENT
     set in download_env) for packaging, or the regular project venv
     (['uv', 'run']) for CI's --prewarm-only, which only needs the models on
-    disk before tests run and has no isolated venv to point at.
+    disk to cache them and has no isolated venv to point at.
     """
     BIRDNET_APP_DATA_CACHE.mkdir(parents=True, exist_ok=True)
 
@@ -310,8 +310,8 @@ def main() -> None:
         action='store_true',
         help=(
             'Only pre-download models into MODEL_CACHE using the project venv, then exit. '
-            'Used by CI to warm the cache before the test step runs, so slow model-loading '
-            'tests never trigger a bare, un-retried download.'
+            'Used by the prewarm-models CI workflow to fill the cache that the test and '
+            'build jobs restore, so they never trigger a bare, un-retried download.'
         ),
     )
     args = parser.parse_args()

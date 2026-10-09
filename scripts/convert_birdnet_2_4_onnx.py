@@ -1,7 +1,9 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12,<3.13"
-# dependencies = ["birdnet>=1.1", "tensorflow", "tf2onnx", "onnx", "numpy"]
+# # The packages that write the ONNX graph are pinned, so moving to a new release
+# # changes this file and with it the CI models cache key.
+# dependencies = ["birdnet>=1.1", "tensorflow==2.21.0", "tf2onnx==1.17.0", "onnx==1.23.2", "numpy"]
 # ///
 """Convert BirdNET v2.4 from its TensorFlow SavedModel to ONNX.
 
