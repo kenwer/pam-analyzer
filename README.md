@@ -365,7 +365,7 @@ If you use PAM Analyzer in your work, you can [cite](CITATION.cff) it:
   author  = {Werner, Ken},
   title   = {PAM Analyzer},
   url     = {https://github.com/kenwer/pam-analyzer},
-  version = {0.7.3},
+  version = {0.7.4},
   year    = {2026}
 }
 ```

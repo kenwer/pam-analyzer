@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.7.4] - 2026-10-09
 ### Changed
 - [Dev] Upgrade dependencies, including Polars 2.0 and PySide 6.12.
 - [Dev] The build no longer bundles pandas and pyarrow.
