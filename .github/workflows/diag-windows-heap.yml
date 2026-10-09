@@ -1,0 +1,161 @@
+name: Diagnose Windows heap crash
+
+# Temporary. Hunts the exit 139 that the fast suite hits on Windows with the
+# uv-managed interpreter. Lives on this branch only and must not reach master.
+on:
+  push:
+    branches: [ "diag/windows-heap" ]
+
+permissions:
+  contents: read
+
+env:
+  DUMP_DIR: ${{ github.workspace }}\crashdumps
+  BIRDNET_APP_DATA: ${{ github.workspace }}/dist/.birdnet-models/birdnet-app-data
+
+jobs:
+  diagnose:
+    name: Diagnose (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-env
+
+      # Windows Error Reporting writes a full dump for any python.exe that dies
+      # on an unhandled exception. The key is per image name, so it also covers
+      # the base interpreter that the venv launcher starts.
+      - name: Enable crash dumps for python.exe
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path $env:DUMP_DIR | Out-Null
+          $wer = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting'
+          New-ItemProperty -Path $wer -Name DontShowUI -Value 1 -PropertyType DWord -Force | Out-Null
+          $key = "$wer\LocalDumps\python.exe"
+          New-Item -Path $key -Force | Out-Null
+          New-ItemProperty -Path $key -Name DumpFolder -Value $env:DUMP_DIR -PropertyType ExpandString -Force | Out-Null
+          New-ItemProperty -Path $key -Name DumpType -Value 2 -PropertyType DWord -Force | Out-Null
+          New-ItemProperty -Path $key -Name DumpCount -Value 10 -PropertyType DWord -Force | Out-Null
+
+      - name: Show interpreter
+        shell: bash
+        run: |
+          uv run python -c "import sys; print(sys.version); print(sys.executable); print(sys._base_executable)"
+          uv run poe compile-ui
+          uv run poe compile-qrc
+
+      # Phase 1: the failing command, unchanged. Its dump shows the native
+      # stack of the thread that tripped over the damaged heap.
+      - name: Phase 1, full fast suite
+        id: phase1
+        continue-on-error: true
+        timeout-minutes: 15
+        shell: bash
+        run: |
+          date -u
+          uv run pytest -m 'not slow'
+
+      # Phase 2: does the crashing file need the 443 tests before it?
+      - name: Phase 2, folder import file alone, 3 runs
+        id: phase2
+        continue-on-error: true
+        timeout-minutes: 15
+        shell: bash
+        run: |
+          date -u
+          status=0
+          for i in 1 2 3; do
+            echo "::group::isolated run $i"
+            uv run pytest tests/ui/test_campaign_detail_widget_folder_import.py || status=$?
+            echo "run $i exit status: $status"
+            echo "::endgroup::"
+          done
+          exit $status
+
+      - name: Phase 2b, tests/ui alone
+        id: phase2b
+        continue-on-error: true
+        timeout-minutes: 15
+        shell: bash
+        run: |
+          date -u
+          uv run pytest -m 'not slow' tests/ui
+
+      # Full page heap puts every heap block against a guard page, so the write
+      # that damages the heap faults on the spot, in the thread that made it.
+      # 0x02000000 is FLG_HEAP_PAGE_ALLOCS and PageHeapFlags 0x3 is full page
+      # heap with allocation stack traces.
+      - name: Enable full page heap for python.exe
+        shell: pwsh
+        run: |
+          $key = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\python.exe'
+          New-Item -Path $key -Force | Out-Null
+          New-ItemProperty -Path $key -Name GlobalFlag -Value 0x02000000 -PropertyType DWord -Force | Out-Null
+          New-ItemProperty -Path $key -Name PageHeapFlags -Value 0x3 -PropertyType DWord -Force | Out-Null
+          Get-ItemProperty -Path $key
+
+      - name: Phase 3, full fast suite under page heap
+        id: phase3
+        continue-on-error: true
+        timeout-minutes: 45
+        shell: bash
+        run: |
+          date -u
+          uv run pytest -m 'not slow'
+
+      - name: Disable page heap
+        if: always()
+        shell: pwsh
+        run: |
+          Remove-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\python.exe' -Recurse -Force -ErrorAction SilentlyContinue
+
+      - name: Summary
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Host "phase1 (full suite):        ${{ steps.phase1.outcome }}"
+          Write-Host "phase2 (file alone x3):     ${{ steps.phase2.outcome }}"
+          Write-Host "phase2b (tests/ui alone):   ${{ steps.phase2b.outcome }}"
+          Write-Host "phase3 (page heap):         ${{ steps.phase3.outcome }}"
+          Get-ChildItem $env:DUMP_DIR -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTimeUtc |
+            Format-Table Name, Length, LastWriteTimeUtc -AutoSize
+
+      # Prints the stacks into the log so the dump rarely needs downloading.
+      # lmf lists every loaded module with its path, which shows which copies
+      # of vcruntime140, msvcp140 and ucrtbase the process ended up with.
+      - name: Analyze dumps with cdb
+        if: always()
+        timeout-minutes: 30
+        shell: pwsh
+        run: |
+          $cdb = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe' -ErrorAction SilentlyContinue
+          if (-not $cdb) {
+            Write-Host "::warning::cdb.exe not found on this image, download the dump artifact instead"
+            exit 0
+          }
+          $env:_NT_SYMBOL_PATH = "srv*$env:RUNNER_TEMP\symbols*https://msdl.microsoft.com/download/symbols"
+          $dumps = Get-ChildItem $env:DUMP_DIR -Filter *.dmp -ErrorAction SilentlyContinue | Sort-Object LastWriteTimeUtc
+          if (-not $dumps) {
+            Write-Host "::warning::no dumps were written"
+            exit 0
+          }
+          foreach ($dump in $dumps) {
+            Write-Host "::group::$($dump.Name) written $($dump.LastWriteTimeUtc)"
+            & $cdb.FullName -z $dump.FullName -c ".ecxr; kn 60; !analyze -v; ~*kn 30; lmf; q"
+            Write-Host "::endgroup::"
+          }
+          exit 0
+
+      - name: Upload dumps
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-crashdumps
+          path: crashdumps/
+          if-no-files-found: warn
+          retention-days: 3
