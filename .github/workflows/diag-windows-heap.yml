@@ -11,8 +11,7 @@ permissions:
 
 env:
   CRASHING_FILE: tests/ui/test_campaign_detail_widget_folder_import.py
-  # Lets pytest import the gcdiag plugin.
-  PYTHONPATH: ${{ github.workspace }}\.github\diag
+  DUMP_DIR: ${{ github.workspace }}\crashdumps
 
 jobs:
   diagnose:
@@ -37,106 +36,160 @@ jobs:
           uv run poe compile-ui
           uv run poe compile-qrc
 
-      # The crash is sensitive to how pytest is started: `python -m pytest`
-      # under procdump passed 3 of 3. So every variant below keeps the failing
-      # command line and runs 3 times, and noop tells whether merely loading
-      # the plugin already hides the crash.
-      - name: Control, no plugin
-        id: control
+      # Round 4 ruled the garbage collector out: the crash survived gc.disable()
+      # and no collection ran off the main thread. These variants test whether
+      # destroying the previous test's panel while the next loader thread runs
+      # is the trigger. See tests/ui/test_diag_mut.py.
+      - name: Variant base, copy of the crashing shape
+        id: base
+        continue-on-error: true
+        timeout-minutes: 5
+        shell: bash
+        env:
+          DIAG: base
+        run: |
+          status=0
+          for i in 1 2; do
+            uv run pytest tests/ui/test_diag_mut.py && echo "RUN $i: passed" || { status=$?; echo "RUN $i: exit $status"; }
+          done
+          exit $status
+
+      - name: Variant noview, first test skips the view page
+        id: noview
+        continue-on-error: true
+        timeout-minutes: 5
+        shell: bash
+        env:
+          DIAG: noview
+        run: |
+          status=0
+          for i in 1 2; do
+            uv run pytest tests/ui/test_diag_mut.py && echo "RUN $i: passed" || { status=$?; echo "RUN $i: exit $status"; }
+          done
+          exit $status
+
+      - name: Variant preflush, deferred deletes flushed first
+        id: preflush
+        continue-on-error: true
+        timeout-minutes: 5
+        shell: bash
+        env:
+          DIAG: preflush
+        run: |
+          status=0
+          for i in 1 2; do
+            uv run pytest tests/ui/test_diag_mut.py && echo "RUN $i: passed" || { status=$?; echo "RUN $i: exit $status"; }
+          done
+          exit $status
+
+      - name: Variant immortal, nothing is ever destroyed
+        id: immortal
+        continue-on-error: true
+        timeout-minutes: 5
+        shell: bash
+        env:
+          DIAG: immortal
+        run: |
+          status=0
+          for i in 1 2; do
+            uv run pytest tests/ui/test_diag_mut.py && echo "RUN $i: passed" || { status=$?; echo "RUN $i: exit $status"; }
+          done
+          exit $status
+
+      # Round 3's procdump runs passed. Was that the debugger, or starting
+      # pytest as a module from the base interpreter?
+      - name: Launch as uv run python -m pytest
+        id: launch_m
         continue-on-error: true
         timeout-minutes: 5
         shell: bash
         run: |
           status=0
-          for i in 1 2 3; do
-            uv run pytest "$CRASHING_FILE" && echo "RUN $i: passed" || { status=$?; echo "RUN $i: exit $status"; }
+          for i in 1 2; do
+            uv run python -m pytest "$CRASHING_FILE" && echo "RUN $i: passed" || { status=$?; echo "RUN $i: exit $status"; }
           done
           exit $status
 
-      - name: Plugin loaded, noop
-        id: noop
+      - name: Resolve the base interpreter
+        shell: pwsh
+        run: |
+          $base = uv run python -c "import sys; print(sys._base_executable)"
+          "BASE_PYTHON=$base" >> $env:GITHUB_ENV
+          "VENV_LAUNCHER=$((Resolve-Path .venv\Scripts\python.exe).Path)" >> $env:GITHUB_ENV
+
+      - name: Launch the base interpreter directly, no debugger
+        id: launch_base
         continue-on-error: true
         timeout-minutes: 5
         shell: bash
-        env:
-          GCDIAG: noop
         run: |
           status=0
-          for i in 1 2 3; do
-            uv run pytest -p gcdiag "$CRASHING_FILE" && echo "RUN $i: passed" || { status=$?; echo "RUN $i: exit $status"; }
+          for i in 1 2; do
+            __PYVENV_LAUNCHER__="$VENV_LAUNCHER" "$BASE_PYTHON" -m pytest "$CRASHING_FILE" && echo "RUN $i: passed" || { status=$?; echo "RUN $i: exit $status"; }
           done
           exit $status
 
-      - name: Log collections that run off the main thread
-        id: log
+      # A debugger attached from the start hid the crash, so register procdump
+      # as the postmortem debugger instead. It is only started once a process
+      # has already died on an unhandled exception.
+      - name: Register procdump as postmortem debugger
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $zip = "$env:RUNNER_TEMP\procdump.zip"
+          Invoke-WebRequest -Uri https://download.sysinternals.com/files/Procdump.zip -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath "$env:RUNNER_TEMP\procdump" -Force
+          New-Item -ItemType Directory -Force -Path $env:DUMP_DIR | Out-Null
+          $wer = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting'
+          Get-ItemProperty -Path $wer | Format-List Disabled, DontShowUI
+          Get-Service WerSvc | Format-List Name, Status, StartType
+          New-ItemProperty -Path $wer -Name Disabled -Value 0 -PropertyType DWord -Force | Out-Null
+          Set-Service WerSvc -StartupType Manual
+          & "$env:RUNNER_TEMP\procdump\procdump64.exe" -accepteula -ma -i $env:DUMP_DIR
+          Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AeDebug' | Format-List Debugger, Auto
+
+      - name: Crashing file with the postmortem debugger registered
+        id: postmortem
         continue-on-error: true
         timeout-minutes: 5
         shell: bash
-        env:
-          GCDIAG: log
         run: |
-          status=0
-          for i in 1 2 3; do
-            uv run pytest -p gcdiag "$CRASHING_FILE" && echo "RUN $i: passed" || { status=$?; echo "RUN $i: exit $status"; }
-          done
-          exit $status
-
-      - name: Automatic collection disabled
-        id: disable
-        continue-on-error: true
-        timeout-minutes: 5
-        shell: bash
-        env:
-          GCDIAG: disable
-        run: |
-          status=0
-          for i in 1 2 3; do
-            uv run pytest -p gcdiag "$CRASHING_FILE" && echo "RUN $i: passed" || { status=$?; echo "RUN $i: exit $status"; }
-          done
-          exit $status
-
-      - name: Collect on the main thread before each test
-        id: collect
-        continue-on-error: true
-        timeout-minutes: 5
-        shell: bash
-        env:
-          GCDIAG: collect
-        run: |
-          status=0
-          for i in 1 2 3; do
-            uv run pytest -p gcdiag "$CRASHING_FILE" && echo "RUN $i: passed" || { status=$?; echo "RUN $i: exit $status"; }
-          done
-          exit $status
-
-      # The same two decisive variants against the whole fast suite would need
-      # the models, so tests/ui stands in for it.
-      - name: tests/ui with automatic collection disabled
-        id: ui_disable
-        continue-on-error: true
-        timeout-minutes: 10
-        shell: bash
-        env:
-          GCDIAG: disable
-        run: uv run pytest -p gcdiag -m 'not slow' tests/ui
-
-      - name: tests/ui with a main thread collect before each test
-        id: ui_collect
-        continue-on-error: true
-        timeout-minutes: 10
-        shell: bash
-        env:
-          GCDIAG: collect
-        run: uv run pytest -p gcdiag -m 'not slow' tests/ui
+          uv run pytest "$CRASHING_FILE" || echo "exit $?"
+          sleep 20
+          ls -la crashdumps || true
 
       - name: Summary
         if: always()
         shell: pwsh
         run: |
-          Write-Host "control, no plugin:               ${{ steps.control.outcome }}"
-          Write-Host "plugin loaded, noop:              ${{ steps.noop.outcome }}"
-          Write-Host "log off-main collections:         ${{ steps.log.outcome }}"
-          Write-Host "automatic collection disabled:    ${{ steps.disable.outcome }}"
-          Write-Host "main thread collect per test:     ${{ steps.collect.outcome }}"
-          Write-Host "tests/ui, collection disabled:    ${{ steps.ui_disable.outcome }}"
-          Write-Host "tests/ui, collect per test:       ${{ steps.ui_collect.outcome }}"
+          Write-Host "variant base:                     ${{ steps.base.outcome }}"
+          Write-Host "variant noview:                   ${{ steps.noview.outcome }}"
+          Write-Host "variant preflush:                 ${{ steps.preflush.outcome }}"
+          Write-Host "variant immortal:                 ${{ steps.immortal.outcome }}"
+          Write-Host "uv run python -m pytest:          ${{ steps.launch_m.outcome }}"
+          Write-Host "base interpreter, no debugger:    ${{ steps.launch_base.outcome }}"
+          Get-ChildItem $env:DUMP_DIR -Recurse -Filter *.dmp -ErrorAction SilentlyContinue |
+            Format-Table FullName, Length, LastWriteTimeUtc -AutoSize
+
+      - name: Summarize dumps
+        if: always()
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          $dumps = Get-ChildItem $env:DUMP_DIR -Recurse -Filter *.dmp -ErrorAction SilentlyContinue | Sort-Object LastWriteTimeUtc
+          if (-not $dumps) {
+            Write-Host "::warning::no dumps were written"
+            exit 0
+          }
+          # -I and an absolute script path: the dumps are data from a crashed
+          # process, so the interpreter must not import anything from beside them.
+          & $env:BASE_PYTHON -I "$env:GITHUB_WORKSPACE\.github\diag\dump_summary.py" @($dumps.FullName)
+
+      - name: Upload dumps
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-crashdumps
+          path: crashdumps/
+          if-no-files-found: warn
+          retention-days: 3
