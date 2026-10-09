@@ -30,6 +30,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # Keyed on the locked birdnet version rather than the whole of uv.lock,
+      # which also records this project's own version and so changed on every
+      # release.
+      - name: Read locked birdnet version
+        id: birdnet
+        run: |
+          version=$(awk '/^name = "birdnet"$/ { found = 1; next } found && /^version = / { gsub(/"/, "", $3); print $3; exit }' uv.lock)
+          if [ -z "$version" ]; then
+            echo "::error::birdnet not found in uv.lock"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Look up BirdNET models
         id: models-cache
         uses: actions/cache/restore@v6
@@ -42,10 +55,10 @@ jobs:
           # on a hit, so downloading the 940 MB archive is left to the jobs
           # that do.
           lookup-only: true
-          # Every file that decides which weights land in the cache: the engine
-          # list (build.py), the v2.4 converter, the Perch pin, and the birdnet
-          # version (uv.lock).
-          key: birdnet-models-${{ hashFiles('uv.lock', 'scripts/build.py', 'scripts/convert_birdnet_2_4_onnx.py', 'scripts/fetch_perch_onnx.py') }}
+          # Everything that decides which weights land in the cache: the birdnet
+          # version, the engine list (build.py), the v2.4 converter with its
+          # pinned toolchain, and the Perch pin.
+          key: birdnet-models-${{ steps.birdnet.outputs.version }}-${{ hashFiles('scripts/build.py', 'scripts/convert_birdnet_2_4_onnx.py', 'scripts/fetch_perch_onnx.py') }}
 
       - name: Install uv
         if: steps.models-cache.outputs.cache-hit != 'true'

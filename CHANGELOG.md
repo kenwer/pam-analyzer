@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+### Changed
+- [Dev] A release no longer invalidates the CI models cache.
+- [Dev] The release script skips the pre-push hook.
+
 ## [0.7.4] - 2026-10-09
 ### Changed
 - [Dev] Upgrade dependencies, including Polars 2.0 and PySide 6.12.
