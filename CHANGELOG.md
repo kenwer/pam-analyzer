@@ -4,7 +4,7 @@
 ### Changed
 - [Dev] Upgrade dependencies, including Polars 2.0 and PySide 6.12.
 - [Dev] The build no longer bundles pandas and pyarrow.
-- [Dev] Pin Python to 3.14.8 and only use uv-managed interpreters.
+- [Dev] Pin Python to 3.14.7 and only use uv-managed interpreters.
 
 ## [0.7.3] - 2026-10-02
 ### Added
