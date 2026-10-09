@@ -5,6 +5,9 @@
 - [Dev] A release no longer invalidates the CI models cache.
 - [Dev] The release script skips the pre-push hook.
 
+### Fixed
+- A rare crash when the audio player is deleted while a background thread is running.
+
 ## [0.7.4] - 2026-10-09
 ### Changed
 - [Dev] Upgrade dependencies, including Polars 2.0 and PySide 6.12.

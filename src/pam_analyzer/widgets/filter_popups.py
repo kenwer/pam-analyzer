@@ -195,14 +195,15 @@ class SetPopup(QWidget):
         none_button = QPushButton("None", self)
         all_button.clicked.connect(lambda: self._set_visible_checked(True))
         none_button.clicked.connect(lambda: self._set_visible_checked(False))
-        buttons = QHBoxLayout()
-        buttons.addWidget(all_button)
-        buttons.addWidget(none_button)
 
         layout = QVBoxLayout(self)
         layout.addWidget(self._search)
         layout.addWidget(self._list)
+        # Joined to its parent before the buttons go in, see AudioPlayerPanel._build_ui.
+        buttons = QHBoxLayout()
         layout.addLayout(buttons)
+        buttons.addWidget(all_button)
+        buttons.addWidget(none_button)
         _add_apply(self, layout).clicked.connect(self._apply)
 
     def _items(self) -> list[QListWidgetItem]:

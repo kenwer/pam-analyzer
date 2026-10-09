@@ -364,25 +364,28 @@ class AudioPlayerPanel(QWidget):
         self._time_label = QLabel("0:00 / 0:00")
         self._time_label.setStyleSheet("font-size: 10px;")
 
-        btns_row = QHBoxLayout()
-        btns_row.setContentsMargins(0, 0, 0, 0)
-        btns_row.setSpacing(4)
-        btns_row.addWidget(self._play_btn)
-        btns_row.addWidget(self._jump_btn)
-
-        controls = QVBoxLayout()
-        controls.setContentsMargins(6, 6, 6, 6)
-        controls.setSpacing(4)
-        controls.addLayout(btns_row)
-        controls.addWidget(self._time_label)
-        controls.addStretch()
-
+        # Each layout joins its parent before anything is added to it. A
+        # parentless layout keeps its contents as Python-owned references,
+        # and freeing those at teardown races a collection on another thread.
         # Main layout: narrow controls column left, spectrogram right
         main_layout = QHBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
+
+        controls = QVBoxLayout()
+        controls.setContentsMargins(6, 6, 6, 6)
+        controls.setSpacing(4)
         main_layout.addLayout(controls)
         main_layout.addWidget(self._spectrogram, 1)
+
+        btns_row = QHBoxLayout()
+        btns_row.setContentsMargins(0, 0, 0, 0)
+        btns_row.setSpacing(4)
+        controls.addLayout(btns_row)
+        btns_row.addWidget(self._play_btn)
+        btns_row.addWidget(self._jump_btn)
+        controls.addWidget(self._time_label)
+        controls.addStretch()
 
         self.setMinimumHeight(60)
 

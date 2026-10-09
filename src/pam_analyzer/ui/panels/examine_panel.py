@@ -150,11 +150,12 @@ class ExaminePanel(QWidget):
         form.setContentsMargins(0, 0, 0, 0)
         form.setHorizontalSpacing(8)
         form.setVerticalSpacing(4)
+        # Joined to its parent before the rows go in, see AudioPlayerPanel._build_ui.
+        outer.addLayout(form)
         self.pad_before_spin = self._make_padding_spin(popup)
         self.pad_after_spin = self._make_padding_spin(popup)
         form.addRow("Before (s)", self.pad_before_spin)
         form.addRow("After (s)", self.pad_after_spin)
-        outer.addLayout(form)
 
         menu = QMenu(self.ui.padding_button)
         action = QWidgetAction(menu)
