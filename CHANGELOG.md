@@ -4,6 +4,7 @@
 ### Changed
 - [Dev] A release no longer invalidates the CI models cache.
 - [Dev] The release script skips the pre-push hook.
+- [Dev] Qt warnings no longer clutter the test output.
 
 ### Fixed
 - A rare crash when the audio player is deleted while a background thread is running.

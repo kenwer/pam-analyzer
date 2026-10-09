@@ -8,7 +8,7 @@ import gc
 import os
 
 import pytest
-from PySide6.QtCore import QThread
+from PySide6.QtCore import QCoreApplication, QThread
 from PySide6.QtQuickWidgets import QQuickWidget
 
 from pam_analyzer.infrastructure.birdnet_2_4_runner import MODEL_KEY as MODEL_KEY_V2_4
@@ -26,6 +26,29 @@ ALT_MODEL_KEY = MODEL_KEY_V3_0
 # Keys the app can still read but no longer writes. Only tests whose subject
 # is that continuity should name one of these, and they should say so.
 RETIRED_MODEL_KEYS = ("Perch-2.0",)
+
+
+def _drain_qt_events() -> None:
+    app = QCoreApplication.instance()
+    if app is not None:
+        app.processEvents()
+
+
+# pytest-qt processes pending events after setup and call, but outside
+# pytest's capture, so Qt warnings from deferred events reach the terminal.
+# trylast puts these wrappers inside the capture, where they drain first.
+@pytest.hookimpl(wrapper=True, trylast=True)
+def pytest_runtest_setup(item):
+    result = yield
+    _drain_qt_events()
+    return result
+
+
+@pytest.hookimpl(wrapper=True, trylast=True)
+def pytest_runtest_call(item):
+    result = yield
+    _drain_qt_events()
+    return result
 
 
 @pytest.fixture(autouse=True)
