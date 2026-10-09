@@ -36,21 +36,36 @@ jobs:
           uv run poe compile-ui
           uv run poe compile-qrc
 
-      # Is a QThread alone enough, or a thread pool inside a QThread, with no
-      # pytest, widgets or project code involved?
-      - name: Phase A1, standalone QThread without a pool
-        id: a1
+      # The standalone QThread plus thread pool script ran 300 clean rounds, so
+      # the ladder in tests/ui/test_diag_bisect.py adds the app's pieces one at
+      # a time. Each rung gets its own process so one crash cannot hide the next.
+      - name: Rung 1, loader_only
+        id: rung1
         continue-on-error: true
         timeout-minutes: 5
         shell: bash
-        run: uv run python .github/diag/qthread_pool_repro.py nopool
+        run: uv run pytest tests/ui/test_diag_bisect.py -k rung1
 
-      - name: Phase A2, standalone QThread with a thread pool
-        id: a2
+      - name: Rung 2, state_only
+        id: rung2
         continue-on-error: true
         timeout-minutes: 5
         shell: bash
-        run: uv run python .github/diag/qthread_pool_repro.py pool
+        run: uv run pytest tests/ui/test_diag_bisect.py -k rung2
+
+      - name: Rung 3, panel
+        id: rung3
+        continue-on-error: true
+        timeout-minutes: 5
+        shell: bash
+        run: uv run pytest tests/ui/test_diag_bisect.py -k rung3
+
+      - name: Rung 4, panel_view
+        id: rung4
+        continue-on-error: true
+        timeout-minutes: 5
+        shell: bash
+        run: uv run pytest tests/ui/test_diag_bisect.py -k rung4
 
       - name: Phase A3, crashing file, unchanged
         id: a3
@@ -65,7 +80,10 @@ jobs:
           $zip = "$env:RUNNER_TEMP\procdump.zip"
           Invoke-WebRequest -Uri https://download.sysinternals.com/files/Procdump.zip -OutFile $zip
           Expand-Archive -Path $zip -DestinationPath "$env:RUNNER_TEMP\procdump" -Force
-          New-Item -ItemType Directory -Force -Path $env:DUMP_DIR | Out-Null
+          # procdump refuses a dump folder that does not exist yet.
+          foreach ($name in 'normal', 'pageheap', 'pageheap-malloc') {
+            New-Item -ItemType Directory -Force -Path "$env:DUMP_DIR\$name" | Out-Null
+          }
           # procdump has to launch the real interpreter, not the venv launcher
           # that would start it as a child. __PYVENV_LAUNCHER__ is how that
           # launcher tells the interpreter which venv it belongs to.
@@ -137,8 +155,10 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          Write-Host "A1 standalone QThread, no pool:   ${{ steps.a1.outcome }}"
-          Write-Host "A2 standalone QThread with pool:  ${{ steps.a2.outcome }}"
+          Write-Host "rung 1, loader thread only:       ${{ steps.rung1.outcome }}"
+          Write-Host "rung 2, plus AppState:            ${{ steps.rung2.outcome }}"
+          Write-Host "rung 3, plus CampaignsPanel:      ${{ steps.rung3.outcome }}"
+          Write-Host "rung 4, plus opening view page:   ${{ steps.rung4.outcome }}"
           Write-Host "A3 crashing file, unchanged:      ${{ steps.a3.outcome }}"
           Write-Host "B, C, D always report success, look at the dumps:"
           Get-ChildItem $env:DUMP_DIR -Recurse -Filter *.dmp -ErrorAction SilentlyContinue |
