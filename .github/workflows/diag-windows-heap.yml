@@ -10,14 +10,15 @@ permissions:
   contents: read
 
 env:
-  DUMP_DIR: ${{ github.workspace }}\crashdumps
   CRASHING_FILE: tests/ui/test_campaign_detail_widget_folder_import.py
+  # Lets pytest import the gcdiag plugin.
+  PYTHONPATH: ${{ github.workspace }}\.github\diag
 
 jobs:
   diagnose:
     name: Diagnose (Windows)
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -32,157 +33,110 @@ jobs:
         shell: bash
         run: |
           uv sync
-          uv run python -c "import sys; print(sys.version); print(sys.executable); print(sys._base_executable)"
+          uv run python -c "import sys; print(sys.version); print(sys._base_executable)"
           uv run poe compile-ui
           uv run poe compile-qrc
 
-      # The standalone QThread plus thread pool script ran 300 clean rounds, so
-      # the ladder in tests/ui/test_diag_bisect.py adds the app's pieces one at
-      # a time. Each rung gets its own process so one crash cannot hide the next.
-      - name: Rung 1, loader_only
-        id: rung1
+      # The crash is sensitive to how pytest is started: `python -m pytest`
+      # under procdump passed 3 of 3. So every variant below keeps the failing
+      # command line and runs 3 times, and noop tells whether merely loading
+      # the plugin already hides the crash.
+      - name: Control, no plugin
+        id: control
         continue-on-error: true
         timeout-minutes: 5
         shell: bash
-        run: uv run pytest tests/ui/test_diag_bisect.py -k rung1
-
-      - name: Rung 2, state_only
-        id: rung2
-        continue-on-error: true
-        timeout-minutes: 5
-        shell: bash
-        run: uv run pytest tests/ui/test_diag_bisect.py -k rung2
-
-      - name: Rung 3, panel
-        id: rung3
-        continue-on-error: true
-        timeout-minutes: 5
-        shell: bash
-        run: uv run pytest tests/ui/test_diag_bisect.py -k rung3
-
-      - name: Rung 4, panel_view
-        id: rung4
-        continue-on-error: true
-        timeout-minutes: 5
-        shell: bash
-        run: uv run pytest tests/ui/test_diag_bisect.py -k rung4
-
-      - name: Phase A3, crashing file, unchanged
-        id: a3
-        continue-on-error: true
-        timeout-minutes: 5
-        shell: bash
-        run: uv run pytest "$CRASHING_FILE"
-
-      - name: Fetch procdump
-        shell: pwsh
         run: |
-          $zip = "$env:RUNNER_TEMP\procdump.zip"
-          Invoke-WebRequest -Uri https://download.sysinternals.com/files/Procdump.zip -OutFile $zip
-          Expand-Archive -Path $zip -DestinationPath "$env:RUNNER_TEMP\procdump" -Force
-          # procdump refuses a dump folder that does not exist yet.
-          foreach ($name in 'normal', 'pageheap', 'pageheap-malloc') {
-            New-Item -ItemType Directory -Force -Path "$env:DUMP_DIR\$name" | Out-Null
-          }
-          # procdump has to launch the real interpreter, not the venv launcher
-          # that would start it as a child. __PYVENV_LAUNCHER__ is how that
-          # launcher tells the interpreter which venv it belongs to.
-          $base = uv run python -c "import sys; print(sys._base_executable)"
-          $launcher = (Resolve-Path .venv\Scripts\python.exe).Path
-          "PROCDUMP=$env:RUNNER_TEMP\procdump\procdump64.exe" >> $env:GITHUB_ENV
-          "BASE_PYTHON=$base" >> $env:GITHUB_ENV
-          "__PYVENV_LAUNCHER__=$launcher" >> $env:GITHUB_ENV
+          status=0
+          for i in 1 2 3; do
+            uv run pytest "$CRASHING_FILE" && echo "RUN $i: passed" || { status=$?; echo "RUN $i: exit $status"; }
+          done
+          exit $status
 
-      - name: Check the direct launch lands in the venv
-        shell: pwsh
+      - name: Plugin loaded, noop
+        id: noop
+        continue-on-error: true
+        timeout-minutes: 5
+        shell: bash
+        env:
+          GCDIAG: noop
         run: |
-          & $env:BASE_PYTHON -c "import sys, pytest; print(sys.prefix); print(pytest.__file__)"
+          status=0
+          for i in 1 2 3; do
+            uv run pytest -p gcdiag "$CRASHING_FILE" && echo "RUN $i: passed" || { status=$?; echo "RUN $i: exit $status"; }
+          done
+          exit $status
 
-      # _NO_DEBUG_HEAP keeps the normal heap. Without it a process started
-      # under a debugger gets the debug heap, which would change the layout.
-      - name: Phase B, crashing file under procdump
-        id: b
+      - name: Log collections that run off the main thread
+        id: log
+        continue-on-error: true
+        timeout-minutes: 5
+        shell: bash
+        env:
+          GCDIAG: log
+        run: |
+          status=0
+          for i in 1 2 3; do
+            uv run pytest -p gcdiag "$CRASHING_FILE" && echo "RUN $i: passed" || { status=$?; echo "RUN $i: exit $status"; }
+          done
+          exit $status
+
+      - name: Automatic collection disabled
+        id: disable
+        continue-on-error: true
+        timeout-minutes: 5
+        shell: bash
+        env:
+          GCDIAG: disable
+        run: |
+          status=0
+          for i in 1 2 3; do
+            uv run pytest -p gcdiag "$CRASHING_FILE" && echo "RUN $i: passed" || { status=$?; echo "RUN $i: exit $status"; }
+          done
+          exit $status
+
+      - name: Collect on the main thread before each test
+        id: collect
+        continue-on-error: true
+        timeout-minutes: 5
+        shell: bash
+        env:
+          GCDIAG: collect
+        run: |
+          status=0
+          for i in 1 2 3; do
+            uv run pytest -p gcdiag "$CRASHING_FILE" && echo "RUN $i: passed" || { status=$?; echo "RUN $i: exit $status"; }
+          done
+          exit $status
+
+      # The same two decisive variants against the whole fast suite would need
+      # the models, so tests/ui stands in for it.
+      - name: tests/ui with automatic collection disabled
+        id: ui_disable
         continue-on-error: true
         timeout-minutes: 10
-        shell: pwsh
+        shell: bash
         env:
-          _NO_DEBUG_HEAP: "1"
-        run: |
-          & $env:PROCDUMP -accepteula -ma -e -x "$env:DUMP_DIR\normal" $env:BASE_PYTHON -m pytest $env:CRASHING_FILE
-          Get-ChildItem "$env:DUMP_DIR\normal" -ErrorAction SilentlyContinue
+          GCDIAG: disable
+        run: uv run pytest -p gcdiag -m 'not slow' tests/ui
 
-      # Full page heap puts every heap block against a guard page, so the write
-      # that damages the heap faults on the spot, in the thread that made it.
-      # 0x02000000 is FLG_HEAP_PAGE_ALLOCS and PageHeapFlags 0x3 is full page
-      # heap with allocation stack traces.
-      - name: Enable full page heap for python.exe
-        shell: pwsh
-        run: |
-          $key = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\python.exe'
-          New-Item -Path $key -Force | Out-Null
-          New-ItemProperty -Path $key -Name GlobalFlag -Value 0x02000000 -PropertyType DWord -Force | Out-Null
-          New-ItemProperty -Path $key -Name PageHeapFlags -Value 0x3 -PropertyType DWord -Force | Out-Null
-
-      - name: Phase C, crashing file under procdump with page heap
-        id: c
+      - name: tests/ui with a main thread collect before each test
+        id: ui_collect
         continue-on-error: true
-        timeout-minutes: 15
-        shell: pwsh
-        run: |
-          & $env:PROCDUMP -accepteula -ma -e -x "$env:DUMP_DIR\pageheap" $env:BASE_PYTHON -m pytest $env:CRASHING_FILE
-          Get-ChildItem "$env:DUMP_DIR\pageheap" -ErrorAction SilentlyContinue
-
-      # PYTHONMALLOC=malloc routes Python's own small objects through the
-      # system heap too, so page heap also guards those.
-      - name: Phase D, same with PYTHONMALLOC=malloc
-        id: d
-        continue-on-error: true
-        timeout-minutes: 15
-        shell: pwsh
+        timeout-minutes: 10
+        shell: bash
         env:
-          PYTHONMALLOC: malloc
-        run: |
-          & $env:PROCDUMP -accepteula -ma -e -x "$env:DUMP_DIR\pageheap-malloc" $env:BASE_PYTHON -m pytest $env:CRASHING_FILE
-          Get-ChildItem "$env:DUMP_DIR\pageheap-malloc" -ErrorAction SilentlyContinue
-
-      - name: Disable page heap
-        if: always()
-        shell: pwsh
-        run: |
-          Remove-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\python.exe' -Recurse -Force -ErrorAction SilentlyContinue
+          GCDIAG: collect
+        run: uv run pytest -p gcdiag -m 'not slow' tests/ui
 
       - name: Summary
         if: always()
         shell: pwsh
         run: |
-          Write-Host "rung 1, loader thread only:       ${{ steps.rung1.outcome }}"
-          Write-Host "rung 2, plus AppState:            ${{ steps.rung2.outcome }}"
-          Write-Host "rung 3, plus CampaignsPanel:      ${{ steps.rung3.outcome }}"
-          Write-Host "rung 4, plus opening view page:   ${{ steps.rung4.outcome }}"
-          Write-Host "A3 crashing file, unchanged:      ${{ steps.a3.outcome }}"
-          Write-Host "B, C, D always report success, look at the dumps:"
-          Get-ChildItem $env:DUMP_DIR -Recurse -Filter *.dmp -ErrorAction SilentlyContinue |
-            Format-Table FullName, Length, LastWriteTimeUtc -AutoSize
-
-      - name: Summarize dumps
-        if: always()
-        timeout-minutes: 10
-        shell: pwsh
-        run: |
-          $dumps = Get-ChildItem $env:DUMP_DIR -Recurse -Filter *.dmp -ErrorAction SilentlyContinue | Sort-Object LastWriteTimeUtc
-          if (-not $dumps) {
-            Write-Host "::warning::no dumps were written"
-            exit 0
-          }
-          # -I and an absolute script path: the dumps are data from a crashed
-          # process, so the interpreter must not import anything from beside them.
-          & $env:BASE_PYTHON -I "$env:GITHUB_WORKSPACE\.github\diag\dump_summary.py" @($dumps.FullName)
-
-      - name: Upload dumps
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: windows-crashdumps
-          path: crashdumps/
-          if-no-files-found: warn
-          retention-days: 3
+          Write-Host "control, no plugin:               ${{ steps.control.outcome }}"
+          Write-Host "plugin loaded, noop:              ${{ steps.noop.outcome }}"
+          Write-Host "log off-main collections:         ${{ steps.log.outcome }}"
+          Write-Host "automatic collection disabled:    ${{ steps.disable.outcome }}"
+          Write-Host "main thread collect per test:     ${{ steps.collect.outcome }}"
+          Write-Host "tests/ui, collection disabled:    ${{ steps.ui_disable.outcome }}"
+          Write-Host "tests/ui, collect per test:       ${{ steps.ui_collect.outcome }}"
