@@ -6,6 +6,9 @@
 - [Dev] The build no longer bundles pandas and pyarrow.
 - [Dev] Pin Python to 3.14.8 and only use uv-managed interpreters.
 
+### Fixed
+- Windows: the campaign map no longer crashes the app when another OpenSSL is on the PATH.
+
 ## [0.7.3] - 2026-10-02
 ### Added
 - Context menu on the Examine table to:
