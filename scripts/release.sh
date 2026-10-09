@@ -31,10 +31,10 @@ set -euo pipefail
 #      git add pyproject.toml CITATION.cff README.md CHANGELOG.md uv.lock && git commit -m "Bump version to X.Y.Z"
 #
 #   10. Push to remote and wait for GitHub Actions to complete
-#      git push
+#      git push --no-verify
 #
 #   11. Tag the release and push the tag to trigger the release workflow
-#      V="0.2.0"; git tag -a "v${V}" -m "Release version ${V}" && git push -u origin "v${V}"
+#      V="0.2.0"; git tag -a "v${V}" -m "Release version ${V}" && git push --no-verify -u origin "v${V}"
 #
 # Usage:
 #   ./scripts/release.sh                         # Run the release process
@@ -121,7 +121,7 @@ if [[ "${1:-}" == "--delete-tag" ]]; then
     fi
 
     info "Deleting remote tag ${TAG}..."
-    if git push origin ":${TAG}"; then
+    if git push --no-verify origin ":${TAG}"; then
         success "Remote tag deleted"
     else
         warn "Remote tag not found or already deleted"
@@ -335,7 +335,8 @@ if ! confirm "Push these commits to ${CURRENT_BRANCH}?"; then
     fi
 fi
 
-git push
+# Skip the pre-push hook (test-fast). The CI wait below gates the release.
+git push --no-verify
 success "Pushed to remote"
 
 echo ""
@@ -412,7 +413,7 @@ if ! confirm "Push tag to remote?"; then
     exit 1
 fi
 
-git push -u origin "v${NEW_VERSION}"
+git push --no-verify -u origin "v${NEW_VERSION}"
 success "Tag pushed"
 
 echo ""
