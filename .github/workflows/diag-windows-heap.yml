@@ -11,79 +11,87 @@ permissions:
 
 env:
   DUMP_DIR: ${{ github.workspace }}\crashdumps
-  BIRDNET_APP_DATA: ${{ github.workspace }}/dist/.birdnet-models/birdnet-app-data
+  CRASHING_FILE: tests/ui/test_campaign_detail_widget_folder_import.py
 
 jobs:
   diagnose:
     name: Diagnose (Windows)
     runs-on: windows-latest
-    timeout-minutes: 120
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup environment
-        uses: ./.github/actions/setup-env
+      # Not setup-env: the crashing file needs no models, and the prewarm
+      # costs ten minutes per round.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v9.0.0
 
-      # Windows Error Reporting writes a full dump for any python.exe that dies
-      # on an unhandled exception. The key is per image name, so it also covers
-      # the base interpreter that the venv launcher starts.
-      - name: Enable crash dumps for python.exe
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path $env:DUMP_DIR | Out-Null
-          $wer = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting'
-          New-ItemProperty -Path $wer -Name DontShowUI -Value 1 -PropertyType DWord -Force | Out-Null
-          $key = "$wer\LocalDumps\python.exe"
-          New-Item -Path $key -Force | Out-Null
-          New-ItemProperty -Path $key -Name DumpFolder -Value $env:DUMP_DIR -PropertyType ExpandString -Force | Out-Null
-          New-ItemProperty -Path $key -Name DumpType -Value 2 -PropertyType DWord -Force | Out-Null
-          New-ItemProperty -Path $key -Name DumpCount -Value 10 -PropertyType DWord -Force | Out-Null
-
-      - name: Show interpreter
+      - name: Sync and compile UI
         shell: bash
         run: |
+          uv sync
           uv run python -c "import sys; print(sys.version); print(sys.executable); print(sys._base_executable)"
           uv run poe compile-ui
           uv run poe compile-qrc
 
-      # Phase 1: the failing command, unchanged. Its dump shows the native
-      # stack of the thread that tripped over the damaged heap.
-      - name: Phase 1, full fast suite
-        id: phase1
+      # Is a QThread alone enough, or a thread pool inside a QThread, with no
+      # pytest, widgets or project code involved?
+      - name: Phase A1, standalone QThread without a pool
+        id: a1
         continue-on-error: true
-        timeout-minutes: 15
+        timeout-minutes: 5
         shell: bash
-        run: |
-          date -u
-          uv run pytest -m 'not slow'
+        run: uv run python .github/diag/qthread_pool_repro.py nopool
 
-      # Phase 2: does the crashing file need the 443 tests before it?
-      - name: Phase 2, folder import file alone, 3 runs
-        id: phase2
+      - name: Phase A2, standalone QThread with a thread pool
+        id: a2
         continue-on-error: true
-        timeout-minutes: 15
+        timeout-minutes: 5
         shell: bash
-        run: |
-          date -u
-          status=0
-          for i in 1 2 3; do
-            echo "::group::isolated run $i"
-            uv run pytest tests/ui/test_campaign_detail_widget_folder_import.py || status=$?
-            echo "run $i exit status: $status"
-            echo "::endgroup::"
-          done
-          exit $status
+        run: uv run python .github/diag/qthread_pool_repro.py pool
 
-      - name: Phase 2b, tests/ui alone
-        id: phase2b
+      - name: Phase A3, crashing file, unchanged
+        id: a3
         continue-on-error: true
-        timeout-minutes: 15
+        timeout-minutes: 5
         shell: bash
+        run: uv run pytest "$CRASHING_FILE"
+
+      - name: Fetch procdump
+        shell: pwsh
         run: |
-          date -u
-          uv run pytest -m 'not slow' tests/ui
+          $zip = "$env:RUNNER_TEMP\procdump.zip"
+          Invoke-WebRequest -Uri https://download.sysinternals.com/files/Procdump.zip -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath "$env:RUNNER_TEMP\procdump" -Force
+          New-Item -ItemType Directory -Force -Path $env:DUMP_DIR | Out-Null
+          # procdump has to launch the real interpreter, not the venv launcher
+          # that would start it as a child. __PYVENV_LAUNCHER__ is how that
+          # launcher tells the interpreter which venv it belongs to.
+          $base = uv run python -c "import sys; print(sys._base_executable)"
+          $launcher = (Resolve-Path .venv\Scripts\python.exe).Path
+          "PROCDUMP=$env:RUNNER_TEMP\procdump\procdump64.exe" >> $env:GITHUB_ENV
+          "BASE_PYTHON=$base" >> $env:GITHUB_ENV
+          "__PYVENV_LAUNCHER__=$launcher" >> $env:GITHUB_ENV
+
+      - name: Check the direct launch lands in the venv
+        shell: pwsh
+        run: |
+          & $env:BASE_PYTHON -c "import sys, pytest; print(sys.prefix); print(pytest.__file__)"
+
+      # _NO_DEBUG_HEAP keeps the normal heap. Without it a process started
+      # under a debugger gets the debug heap, which would change the layout.
+      - name: Phase B, crashing file under procdump
+        id: b
+        continue-on-error: true
+        timeout-minutes: 10
+        shell: pwsh
+        env:
+          _NO_DEBUG_HEAP: "1"
+        run: |
+          & $env:PROCDUMP -accepteula -ma -e -x "$env:DUMP_DIR\normal" $env:BASE_PYTHON -m pytest $env:CRASHING_FILE
+          Get-ChildItem "$env:DUMP_DIR\normal" -ErrorAction SilentlyContinue
 
       # Full page heap puts every heap block against a guard page, so the write
       # that damages the heap faults on the spot, in the thread that made it.
@@ -96,16 +104,28 @@ jobs:
           New-Item -Path $key -Force | Out-Null
           New-ItemProperty -Path $key -Name GlobalFlag -Value 0x02000000 -PropertyType DWord -Force | Out-Null
           New-ItemProperty -Path $key -Name PageHeapFlags -Value 0x3 -PropertyType DWord -Force | Out-Null
-          Get-ItemProperty -Path $key
 
-      - name: Phase 3, full fast suite under page heap
-        id: phase3
+      - name: Phase C, crashing file under procdump with page heap
+        id: c
         continue-on-error: true
-        timeout-minutes: 45
-        shell: bash
+        timeout-minutes: 15
+        shell: pwsh
         run: |
-          date -u
-          uv run pytest -m 'not slow'
+          & $env:PROCDUMP -accepteula -ma -e -x "$env:DUMP_DIR\pageheap" $env:BASE_PYTHON -m pytest $env:CRASHING_FILE
+          Get-ChildItem "$env:DUMP_DIR\pageheap" -ErrorAction SilentlyContinue
+
+      # PYTHONMALLOC=malloc routes Python's own small objects through the
+      # system heap too, so page heap also guards those.
+      - name: Phase D, same with PYTHONMALLOC=malloc
+        id: d
+        continue-on-error: true
+        timeout-minutes: 15
+        shell: pwsh
+        env:
+          PYTHONMALLOC: malloc
+        run: |
+          & $env:PROCDUMP -accepteula -ma -e -x "$env:DUMP_DIR\pageheap-malloc" $env:BASE_PYTHON -m pytest $env:CRASHING_FILE
+          Get-ChildItem "$env:DUMP_DIR\pageheap-malloc" -ErrorAction SilentlyContinue
 
       - name: Disable page heap
         if: always()
@@ -117,39 +137,26 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          Write-Host "phase1 (full suite):        ${{ steps.phase1.outcome }}"
-          Write-Host "phase2 (file alone x3):     ${{ steps.phase2.outcome }}"
-          Write-Host "phase2b (tests/ui alone):   ${{ steps.phase2b.outcome }}"
-          Write-Host "phase3 (page heap):         ${{ steps.phase3.outcome }}"
-          Get-ChildItem $env:DUMP_DIR -ErrorAction SilentlyContinue |
-            Sort-Object LastWriteTimeUtc |
-            Format-Table Name, Length, LastWriteTimeUtc -AutoSize
+          Write-Host "A1 standalone QThread, no pool:   ${{ steps.a1.outcome }}"
+          Write-Host "A2 standalone QThread with pool:  ${{ steps.a2.outcome }}"
+          Write-Host "A3 crashing file, unchanged:      ${{ steps.a3.outcome }}"
+          Write-Host "B, C, D always report success, look at the dumps:"
+          Get-ChildItem $env:DUMP_DIR -Recurse -Filter *.dmp -ErrorAction SilentlyContinue |
+            Format-Table FullName, Length, LastWriteTimeUtc -AutoSize
 
-      # Prints the stacks into the log so the dump rarely needs downloading.
-      # lmf lists every loaded module with its path, which shows which copies
-      # of vcruntime140, msvcp140 and ucrtbase the process ended up with.
-      - name: Analyze dumps with cdb
+      - name: Summarize dumps
         if: always()
-        timeout-minutes: 30
+        timeout-minutes: 10
         shell: pwsh
         run: |
-          $cdb = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe' -ErrorAction SilentlyContinue
-          if (-not $cdb) {
-            Write-Host "::warning::cdb.exe not found on this image, download the dump artifact instead"
-            exit 0
-          }
-          $env:_NT_SYMBOL_PATH = "srv*$env:RUNNER_TEMP\symbols*https://msdl.microsoft.com/download/symbols"
-          $dumps = Get-ChildItem $env:DUMP_DIR -Filter *.dmp -ErrorAction SilentlyContinue | Sort-Object LastWriteTimeUtc
+          $dumps = Get-ChildItem $env:DUMP_DIR -Recurse -Filter *.dmp -ErrorAction SilentlyContinue | Sort-Object LastWriteTimeUtc
           if (-not $dumps) {
             Write-Host "::warning::no dumps were written"
             exit 0
           }
-          foreach ($dump in $dumps) {
-            Write-Host "::group::$($dump.Name) written $($dump.LastWriteTimeUtc)"
-            & $cdb.FullName -z $dump.FullName -c ".ecxr; kn 60; !analyze -v; ~*kn 30; lmf; q"
-            Write-Host "::endgroup::"
-          }
-          exit 0
+          # -I and an absolute script path: the dumps are data from a crashed
+          # process, so the interpreter must not import anything from beside them.
+          & $env:BASE_PYTHON -I "$env:GITHUB_WORKSPACE\.github\diag\dump_summary.py" @($dumps.FullName)
 
       - name: Upload dumps
         if: always()
