@@ -18,7 +18,7 @@ jobs:
   models:
     name: Prewarm models
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 30
+    timeout-minutes: 180
     # Test and Build both call this workflow. On a cold key they would both
     # prewarm, and the one that loses the save would hand its jobs a key that
     # is still uploading. Queued, the second caller finds the entry instead.
