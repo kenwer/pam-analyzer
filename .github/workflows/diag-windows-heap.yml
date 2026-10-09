@@ -11,7 +11,6 @@ permissions:
 
 env:
   CRASHING_FILE: tests/ui/test_campaign_detail_widget_folder_import.py
-  DUMP_DIR: ${{ github.workspace }}\crashdumps
 
 jobs:
   diagnose:
@@ -36,10 +35,10 @@ jobs:
           uv run poe compile-ui
           uv run poe compile-qrc
 
-      # Round 4 ruled the garbage collector out: the crash survived gc.disable()
-      # and no collection ran off the main thread. These variants test whether
-      # destroying the previous test's panel while the next loader thread runs
-      # is the trigger. See tests/ui/test_diag_mut.py.
+      # Round 5: the crash comes when the first test's panel is destroyed, on a
+      # native thread. Every panel holds a live OSM map that fetches tiles over
+      # HTTPS, so these variants take the map, the network and the TLS backend
+      # out one at a time. See tests/ui/test_diag_mut.py.
       - name: Variant base, copy of the crashing shape
         id: base
         continue-on-error: true
@@ -49,147 +48,99 @@ jobs:
           DIAG: base
         run: |
           status=0
-          for i in 1 2; do
+          for i in 1 2 3; do
             uv run pytest tests/ui/test_diag_mut.py && echo "RUN $i: passed" || { status=$?; echo "RUN $i: exit $status"; }
           done
           exit $status
 
-      - name: Variant noview, first test skips the view page
-        id: noview
+      - name: Variant nomap, map QML never loaded
+        id: nomap
         continue-on-error: true
         timeout-minutes: 5
         shell: bash
         env:
-          DIAG: noview
+          DIAG: nomap
         run: |
           status=0
-          for i in 1 2; do
+          for i in 1 2 3; do
             uv run pytest tests/ui/test_diag_mut.py && echo "RUN $i: passed" || { status=$?; echo "RUN $i: exit $status"; }
           done
           exit $status
 
-      - name: Variant preflush, deferred deletes flushed first
-        id: preflush
+      - name: Variant deadproxy, map loaded, network dead
+        id: deadproxy
         continue-on-error: true
         timeout-minutes: 5
         shell: bash
         env:
-          DIAG: preflush
+          DIAG: deadproxy
         run: |
           status=0
-          for i in 1 2; do
+          for i in 1 2 3; do
             uv run pytest tests/ui/test_diag_mut.py && echo "RUN $i: passed" || { status=$?; echo "RUN $i: exit $status"; }
           done
           exit $status
 
-      - name: Variant immortal, nothing is ever destroyed
-        id: immortal
+      - name: Variant schannel, map loaded, TLS pinned to schannel
+        id: schannel
         continue-on-error: true
         timeout-minutes: 5
         shell: bash
         env:
-          DIAG: immortal
+          DIAG: schannel
         run: |
           status=0
-          for i in 1 2; do
+          for i in 1 2 3; do
             uv run pytest tests/ui/test_diag_mut.py && echo "RUN $i: passed" || { status=$?; echo "RUN $i: exit $status"; }
           done
           exit $status
 
-      # Round 3's procdump runs passed. Was that the debugger, or starting
-      # pytest as a module from the base interpreter?
-      - name: Launch as uv run python -m pytest
-        id: launch_m
+      # The same file passes as `python -m pytest` and crashes as `pytest`.
+      # Dump the loaded modules and Qt's TLS details under both launchers, taken
+      # just before the point where the crash would come.
+      - name: Module and TLS info, launched as pytest
+        id: info_exe
         continue-on-error: true
         timeout-minutes: 5
         shell: bash
+        env:
+          DIAG_INFO: exe
+        run: uv run pytest tests/ui/test_diag_mut.py
+
+      - name: Module and TLS info, launched as python -m pytest
+        id: info_mod
+        continue-on-error: true
+        timeout-minutes: 5
+        shell: bash
+        env:
+          DIAG_INFO: mod
+        run: uv run python -m pytest tests/ui/test_diag_mut.py
+
+      - name: Compare the two launchers
+        if: always()
+        shell: bash
         run: |
-          status=0
-          for i in 1 2; do
-            uv run python -m pytest "$CRASHING_FILE" && echo "RUN $i: passed" || { status=$?; echo "RUN $i: exit $status"; }
+          for f in diag-info-exe.txt diag-info-mod.txt; do
+            echo "==== $f"
+            if [ -f "$f" ]; then
+              grep -c '^module' "$f"
+              grep '^tls' "$f"
+              echo "-- modules outside the Windows directory:"
+              grep '^module' "$f" | grep -v -i -F 'C:\Windows\' || true
+            else
+              echo "missing"
+            fi
           done
-          exit $status
-
-      - name: Resolve the base interpreter
-        shell: pwsh
-        run: |
-          $base = uv run python -c "import sys; print(sys._base_executable)"
-          "BASE_PYTHON=$base" >> $env:GITHUB_ENV
-          "VENV_LAUNCHER=$((Resolve-Path .venv\Scripts\python.exe).Path)" >> $env:GITHUB_ENV
-
-      - name: Launch the base interpreter directly, no debugger
-        id: launch_base
-        continue-on-error: true
-        timeout-minutes: 5
-        shell: bash
-        run: |
-          status=0
-          for i in 1 2; do
-            __PYVENV_LAUNCHER__="$VENV_LAUNCHER" "$BASE_PYTHON" -m pytest "$CRASHING_FILE" && echo "RUN $i: passed" || { status=$?; echo "RUN $i: exit $status"; }
-          done
-          exit $status
-
-      # A debugger attached from the start hid the crash, so register procdump
-      # as the postmortem debugger instead. It is only started once a process
-      # has already died on an unhandled exception.
-      - name: Register procdump as postmortem debugger
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          $zip = "$env:RUNNER_TEMP\procdump.zip"
-          Invoke-WebRequest -Uri https://download.sysinternals.com/files/Procdump.zip -OutFile $zip
-          Expand-Archive -Path $zip -DestinationPath "$env:RUNNER_TEMP\procdump" -Force
-          New-Item -ItemType Directory -Force -Path $env:DUMP_DIR | Out-Null
-          $wer = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting'
-          Get-ItemProperty -Path $wer | Format-List Disabled, DontShowUI
-          Get-Service WerSvc | Format-List Name, Status, StartType
-          New-ItemProperty -Path $wer -Name Disabled -Value 0 -PropertyType DWord -Force | Out-Null
-          Set-Service WerSvc -StartupType Manual
-          & "$env:RUNNER_TEMP\procdump\procdump64.exe" -accepteula -ma -i $env:DUMP_DIR
-          Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AeDebug' | Format-List Debugger, Auto
-
-      - name: Crashing file with the postmortem debugger registered
-        id: postmortem
-        continue-on-error: true
-        timeout-minutes: 5
-        shell: bash
-        run: |
-          uv run pytest "$CRASHING_FILE" || echo "exit $?"
-          sleep 20
-          ls -la crashdumps || true
+          echo "==== diff exe vs mod"
+          diff diag-info-exe.txt diag-info-mod.txt || true
 
       - name: Summary
         if: always()
         shell: pwsh
         run: |
-          Write-Host "variant base:                     ${{ steps.base.outcome }}"
-          Write-Host "variant noview:                   ${{ steps.noview.outcome }}"
-          Write-Host "variant preflush:                 ${{ steps.preflush.outcome }}"
-          Write-Host "variant immortal:                 ${{ steps.immortal.outcome }}"
-          Write-Host "uv run python -m pytest:          ${{ steps.launch_m.outcome }}"
-          Write-Host "base interpreter, no debugger:    ${{ steps.launch_base.outcome }}"
-          Get-ChildItem $env:DUMP_DIR -Recurse -Filter *.dmp -ErrorAction SilentlyContinue |
-            Format-Table FullName, Length, LastWriteTimeUtc -AutoSize
-
-      - name: Summarize dumps
-        if: always()
-        timeout-minutes: 10
-        shell: pwsh
-        run: |
-          $dumps = Get-ChildItem $env:DUMP_DIR -Recurse -Filter *.dmp -ErrorAction SilentlyContinue | Sort-Object LastWriteTimeUtc
-          if (-not $dumps) {
-            Write-Host "::warning::no dumps were written"
-            exit 0
-          }
-          # -I and an absolute script path: the dumps are data from a crashed
-          # process, so the interpreter must not import anything from beside them.
-          & $env:BASE_PYTHON -I "$env:GITHUB_WORKSPACE\.github\diag\dump_summary.py" @($dumps.FullName)
-
-      - name: Upload dumps
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: windows-crashdumps
-          path: crashdumps/
-          if-no-files-found: warn
-          retention-days: 3
+          Write-Host "variant base:                         ${{ steps.base.outcome }}"
+          Write-Host "variant nomap:                        ${{ steps.nomap.outcome }}"
+          Write-Host "variant deadproxy:                    ${{ steps.deadproxy.outcome }}"
+          Write-Host "variant schannel:                     ${{ steps.schannel.outcome }}"
+          Write-Host "info, launched as pytest:             ${{ steps.info_exe.outcome }}"
+          Write-Host "info, launched as python -m pytest:   ${{ steps.info_mod.outcome }}"
