@@ -35,17 +35,36 @@ jobs:
           uv run poe compile-ui
           uv run poe compile-qrc
 
-      # Round 5: the crash comes when the first test's panel is destroyed, on a
-      # native thread. Every panel holds a live OSM map that fetches tiles over
-      # HTTPS, so these variants take the map, the network and the TLS backend
-      # out one at a time. See tests/ui/test_diag_mut.py.
-      - name: Variant base, copy of the crashing shape
+      # Round 6 found the cause: Qt's OpenSSL backend picks up Git for Windows'
+      # libssl from PATH while Python's own copy is loaded too, and the map's
+      # tile fetch then corrupts the heap. map_picker.py now pins schannel.
+      # These steps check that the pin holds on the real tests.
+      - name: Show the TLS backend after importing the map picker
+        shell: bash
+        run: |
+          uv run python -c "
+          import pam_analyzer.widgets.map_picker
+          from PySide6.QtNetwork import QSslSocket
+          print('active backend:', QSslSocket.activeBackend())
+          "
+
+      - name: Crashing file, 5 runs
+        id: real
+        continue-on-error: true
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          status=0
+          for i in 1 2 3 4 5; do
+            uv run pytest "$CRASHING_FILE" && echo "RUN $i: passed" || { status=$?; echo "RUN $i: exit $status"; }
+          done
+          exit $status
+
+      - name: Copy of the crashing shape, 3 runs
         id: base
         continue-on-error: true
         timeout-minutes: 5
         shell: bash
-        env:
-          DIAG: base
         run: |
           status=0
           for i in 1 2 3; do
@@ -53,94 +72,22 @@ jobs:
           done
           exit $status
 
-      - name: Variant nomap, map QML never loaded
-        id: nomap
+      - name: All of tests/ui and tests/widgets, 2 runs
+        id: ui
         continue-on-error: true
-        timeout-minutes: 5
+        timeout-minutes: 15
         shell: bash
-        env:
-          DIAG: nomap
         run: |
           status=0
-          for i in 1 2 3; do
-            uv run pytest tests/ui/test_diag_mut.py && echo "RUN $i: passed" || { status=$?; echo "RUN $i: exit $status"; }
+          for i in 1 2; do
+            uv run pytest -m 'not slow' tests/ui tests/widgets && echo "RUN $i: passed" || { status=$?; echo "RUN $i: exit $status"; }
           done
           exit $status
-
-      - name: Variant deadproxy, map loaded, network dead
-        id: deadproxy
-        continue-on-error: true
-        timeout-minutes: 5
-        shell: bash
-        env:
-          DIAG: deadproxy
-        run: |
-          status=0
-          for i in 1 2 3; do
-            uv run pytest tests/ui/test_diag_mut.py && echo "RUN $i: passed" || { status=$?; echo "RUN $i: exit $status"; }
-          done
-          exit $status
-
-      - name: Variant schannel, map loaded, TLS pinned to schannel
-        id: schannel
-        continue-on-error: true
-        timeout-minutes: 5
-        shell: bash
-        env:
-          DIAG: schannel
-        run: |
-          status=0
-          for i in 1 2 3; do
-            uv run pytest tests/ui/test_diag_mut.py && echo "RUN $i: passed" || { status=$?; echo "RUN $i: exit $status"; }
-          done
-          exit $status
-
-      # The same file passes as `python -m pytest` and crashes as `pytest`.
-      # Dump the loaded modules and Qt's TLS details under both launchers, taken
-      # just before the point where the crash would come.
-      - name: Module and TLS info, launched as pytest
-        id: info_exe
-        continue-on-error: true
-        timeout-minutes: 5
-        shell: bash
-        env:
-          DIAG_INFO: exe
-        run: uv run pytest tests/ui/test_diag_mut.py
-
-      - name: Module and TLS info, launched as python -m pytest
-        id: info_mod
-        continue-on-error: true
-        timeout-minutes: 5
-        shell: bash
-        env:
-          DIAG_INFO: mod
-        run: uv run python -m pytest tests/ui/test_diag_mut.py
-
-      - name: Compare the two launchers
-        if: always()
-        shell: bash
-        run: |
-          for f in diag-info-exe.txt diag-info-mod.txt; do
-            echo "==== $f"
-            if [ -f "$f" ]; then
-              grep -c '^module' "$f"
-              grep '^tls' "$f"
-              echo "-- modules outside the Windows directory:"
-              grep '^module' "$f" | grep -v -i -F 'C:\Windows\' || true
-            else
-              echo "missing"
-            fi
-          done
-          echo "==== diff exe vs mod"
-          diff diag-info-exe.txt diag-info-mod.txt || true
 
       - name: Summary
         if: always()
         shell: pwsh
         run: |
-          Write-Host "variant base:                         ${{ steps.base.outcome }}"
-          Write-Host "variant nomap:                        ${{ steps.nomap.outcome }}"
-          Write-Host "variant deadproxy:                    ${{ steps.deadproxy.outcome }}"
-          Write-Host "variant schannel:                     ${{ steps.schannel.outcome }}"
-          Write-Host "info, launched as pytest:             ${{ steps.info_exe.outcome }}"
-          Write-Host "info, launched as python -m pytest:   ${{ steps.info_mod.outcome }}"
+          Write-Host "crashing file, 5 runs:          ${{ steps.real.outcome }}"
+          Write-Host "copy of the crashing shape:     ${{ steps.base.outcome }}"
+          Write-Host "tests/ui and tests/widgets:     ${{ steps.ui.outcome }}"

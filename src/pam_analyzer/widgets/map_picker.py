@@ -1,12 +1,19 @@
+import sys
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QShowEvent
+from PySide6.QtNetwork import QSslSocket
 from PySide6.QtQuickWidgets import QQuickWidget
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 _ZOOM_KEY = "map/zoom_level"
 _DEFAULT_ZOOM = 10.0
+
+# Qt prefers OpenSSL whenever it finds the DLLs on PATH. A stray copy there
+# (Git for Windows ships one) crashes the tile fetch, so use Windows' own TLS.
+if sys.platform == "win32":
+    QSslSocket.setActiveBackend("schannel")
 
 
 def _resolve_qml_path() -> Path:
