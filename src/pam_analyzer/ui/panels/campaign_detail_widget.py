@@ -240,7 +240,7 @@ class CampaignDetailWidget(QWidget):
         self._reset_form(None, "", "")
         self._on_mode_toggled()
         self.ui.stack.setCurrentWidget(self.ui.form_page)
-        QTimer.singleShot(0, self._map.clear)
+        QTimer.singleShot(0, self._map, self._map.clear)
         self.ui.name_edit.setFocus()
         self.editingChanged.emit(True)
 
@@ -264,9 +264,9 @@ class CampaignDetailWidget(QWidget):
 
         if campaign.species_filter_mode == FilterMode.LOCATION and campaign.location:
             loc = campaign.location
-            QTimer.singleShot(0, lambda: self._map.set_location(loc.latitude, loc.longitude))
+            QTimer.singleShot(0, self._map, lambda: self._map.set_location(loc.latitude, loc.longitude))
         else:
-            QTimer.singleShot(0, self._map.clear)
+            QTimer.singleShot(0, self._map, self._map.clear)
 
     def show_delete_confirm(
         self,

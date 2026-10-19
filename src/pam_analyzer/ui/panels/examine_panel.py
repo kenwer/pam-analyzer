@@ -234,7 +234,7 @@ class ExaminePanel(QWidget):
         if self._reload_pending:
             return
         self._reload_pending = True
-        QTimer.singleShot(0, self._reload_current_campaign)
+        QTimer.singleShot(0, self, self._reload_current_campaign)
 
     def _reload_current_campaign(self) -> None:
         self._reload_pending = False

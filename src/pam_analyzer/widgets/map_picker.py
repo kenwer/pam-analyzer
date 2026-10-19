@@ -51,7 +51,7 @@ class MapPickerWidget(QWidget):
         # QQuickWidget inside QStackedWidget doesn't repaint on first show;
         # a deferred update forces the scene graph to render once the event
         # loop processes the visibility change.
-        QTimer.singleShot(0, self._qw.update)
+        QTimer.singleShot(0, self._qw, self._qw.update)
 
     @Slot(float, float)
     def _on_location_picked(self, lat: float, lon: float) -> None:

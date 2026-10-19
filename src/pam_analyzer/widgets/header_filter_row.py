@@ -144,7 +144,7 @@ class HeaderFilterRow(QObject):
         self._header.geometriesChanged.connect(self._sync)
         table.horizontalScrollBar().valueChanged.connect(self._sync)
         table.verticalScrollBar().valueChanged.connect(self._sync)
-        self._header.shown.connect(lambda: QTimer.singleShot(0, self._sync))
+        self._header.shown.connect(lambda: QTimer.singleShot(0, self, self._sync))
 
     # public API
     def rebuild(self, col_count: int, kinds: Mapping[int, ColumnKind] | None = None) -> None:
@@ -316,7 +316,7 @@ class HeaderFilterRow(QObject):
             # fires in an exclusive QActionGroup), which is how users reopen
             # the editor. Deferred so the op menu fully closes first; opening
             # a second popup from inside a closing menu's handler is flaky.
-            QTimer.singleShot(0, lambda c=col: self._open_popup(c))
+            QTimer.singleShot(0, self, lambda c=col: self._open_popup(c))
 
     def _open_popup(self, col: int) -> None:
         """Open the editor popup for the column's current op, prefilled from

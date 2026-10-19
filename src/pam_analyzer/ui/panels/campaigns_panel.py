@@ -160,7 +160,7 @@ class CampaignsPanel(QWidget):
         if self._overview_refresh_pending:
             return
         self._overview_refresh_pending = True
-        QTimer.singleShot(0, self._do_refresh_overview)
+        QTimer.singleShot(0, self, self._do_refresh_overview)
 
     def _do_refresh_overview(self) -> None:
         self._overview_refresh_pending = False

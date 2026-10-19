@@ -51,7 +51,7 @@ class ComboDelegate(QStyledItemDelegate):
         # Open the popup once the editor is actually on-screen. Calling
         # showPopup() directly inside createEditor is unreliable because the
         # combo isn't reparented or visible yet at that point.
-        QTimer.singleShot(0, combo.showPopup)
+        QTimer.singleShot(0, combo, combo.showPopup)
 
         # Commit-and-close as soon as the user picks a value. Use `activated`
         # rather than `currentIndexChanged` so the editor doesn't close itself
