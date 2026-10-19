@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 import shiboken6
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QCoreApplication, Qt
 from PySide6.QtGui import QCloseEvent
 
 from pam_analyzer.domain import AnalysisRunResult, Campaign, FilterMode, Project, RunStatus, paths
@@ -294,6 +294,10 @@ def stuck_load(window: MainWindow, tmp_path: Path, monkeypatch):
     release.set()
     if shiboken6.isValid(thread):  # the window deletes it once the load ends
         thread.wait()
+        # Deliver the queued failure while the toasts fixture still records. pytest-qt
+        # processes events again once it is undone, which would show a real toast.
+        # Not qtbot.wait: its event loop runs the window's pending deleteLater first.
+        QCoreApplication.processEvents()
 
 
 def test_closing_does_not_wait_for_a_project_load(
