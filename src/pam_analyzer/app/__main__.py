@@ -1,6 +1,5 @@
 """Application entry point. Builds the object graph and launches the UI."""
 
-import gc
 import logging
 import os
 import sys
@@ -35,6 +34,7 @@ def _configure_frozen_model_paths() -> None:
 _configure_frozen_model_paths()
 
 
+import shiboken6  # noqa: E402
 from PySide6.QtGui import QIcon  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
@@ -101,14 +101,13 @@ def main() -> int:
         settings.sync()  # os._exit skips the QSettings destructor that would write it
         logging.shutdown()
         os._exit(exit_code)  # Skip all Qt teardown: deleting a running QThread aborts
-    # Destroy Qt objects while Python is fully operational. Without this,
-    # PySide6's atexit handler (SbkQtCoreModule___moduleShutdown) may call
-    # QApplication::~QApplication() after Qt internals are already freed,
-    # causing a SIGSEGV. gc.collect() resolves any circular references that
-    # would otherwise keep the objects alive past interpreter shutdown.
-    del window
-    del app
-    gc.collect()
+    # Signal-connected lambdas keep the window referenced from C++, where gc
+    # cannot see them. Deleting it fires each widget's destroyed signal, which
+    # stops threads like the spectrogram renderer.
+    shiboken6.delete(window)
+    # Explicit rather than `del app` as a lingering reference would leave it to PySide6's
+    # atexit hook, which destroys it after Qt internals are freed and segfaults.
+    shiboken6.delete(app)
     return exit_code
 
 

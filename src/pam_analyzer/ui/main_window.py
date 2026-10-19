@@ -150,6 +150,7 @@ class MainWindow(QMainWindow):
         self.ui.action_open_legacy_pamproj.triggered.connect(self._on_open_legacy_pamproj)
         self.ui.action_close.triggered.connect(self._on_close_project)
         self.ui.action_clear_recent.triggered.connect(self._on_clear_recent)
+        self.ui.recent_projects_menu.triggered.connect(self._on_recent_chosen)
         self.ui.action_quit.triggered.connect(self.close)
         self.ui.action_open_log_folder.triggered.connect(self._on_open_log_folder)
         self.ui.action_keyboard_shortcuts.triggered.connect(self._on_keyboard_shortcuts)
@@ -509,13 +510,15 @@ class MainWindow(QMainWindow):
             empty.setEnabled(False)
         else:
             for path_str in recent:
-                action = QAction(paths.contract_user_path(path_str), self)
-                action.triggered.connect(lambda _checked=False, p=path_str: self._open_recent(p))
-                menu.addAction(action)
+                menu.addAction(paths.contract_user_path(path_str)).setData(path_str)
         menu.addSeparator()
         self.ui.action_clear_recent.setEnabled(bool(recent))
         menu.addAction(self.ui.action_clear_recent)
         self._welcome_panel.set_recent_projects(recent)
+
+    def _on_recent_chosen(self, action: QAction) -> None:
+        if path_str := action.data():  # Clear Recent shares the menu but carries no data
+            self._open_recent(path_str)
 
     def _open_recent(self, path_str: str) -> None:
         if self._project_open_in_progress():

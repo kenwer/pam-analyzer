@@ -10,6 +10,7 @@
 
 ### Fixed
 - A rare crash when the audio player is deleted while a background thread is running.
+- Quitting after an analysis no longer warns about leaked semaphores.
 - A folder import no longer stays busy when its last card cannot be read.
 
 ## [0.7.4] - 2026-10-09

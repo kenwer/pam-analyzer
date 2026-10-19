@@ -14,6 +14,7 @@ from pam_analyzer.ui import main_window
 from pam_analyzer.ui.app_state import AppState
 from pam_analyzer.ui.main_window import MainWindow
 from pam_analyzer.ui.settings import AppSettings
+from pam_analyzer.widgets.spectrogram_widget import SpectrogramWidget
 from pam_analyzer.workers import ImportOrchestrator, audio_inventory_refresher, project_load_worker
 from tests.conftest import (
     DEFAULT_MODEL_KEY,
@@ -93,6 +94,19 @@ def test_missing_recent_project_is_kept_until_removed_from_the_toast(
     menu_texts = [a.text() for a in window.ui.recent_projects_menu.actions()]
     assert paths.contract_user_path(kept) in menu_texts
     assert paths.contract_user_path(missing) not in menu_texts
+
+
+def test_choosing_a_recent_project_from_the_menu_opens_it(window: MainWindow, tmp_path: Path, toasts) -> None:
+    missing = str(tmp_path / "unplugged-drive" / "project")
+    window._settings.add_recent_project(missing)
+    window._rebuild_recent_menu()
+    [entry] = [a for a in window.ui.recent_projects_menu.actions() if a.text() == paths.contract_user_path(missing)]
+
+    entry.trigger()
+
+    [(_kind, title, text, _kwargs)] = toasts
+    assert title == "Project not found"
+    assert missing in text
 
 
 def test_removing_a_recent_project_on_the_welcome_screen_updates_settings_and_menu(
@@ -331,3 +345,14 @@ def test_closing_during_a_folder_import_does_not_start_the_next_card(qtbot, tmp_
     qtbot.waitUntil(lambda: w.closed)
     assert importer.imported == ["CardA"]
 
+
+def test_deleting_a_closed_window_stops_the_spectrogram_render_thread(qtbot) -> None:
+    # Not qtbot.addWidget: the window's C++ side is deleted here, so qtbot's own
+    # close at teardown would hit a deleted object.
+    w = _main_window()
+    render_thread = w.findChild(SpectrogramWidget)._thread
+    assert w.close()
+
+    shiboken6.delete(w)
+
+    assert not render_thread.isRunning()

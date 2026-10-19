@@ -62,9 +62,4 @@ if __name__ == "__main__":
     except ImportError:
         from .app.__main__ import main  # fallback: relative import works for python -m package
 
-    # os._exit() bypasses Python's atexit chain, preventing the PySide6 atexit
-    # handler (SbkQtCoreModule___moduleShutdown) from running after Qt internals
-    # are already freed, which causes a SIGSEGV in QApplication::~QApplication().
-    # For a Qt GUI app this is safe because Qt already cleaned up through its own
-    # event system when app.exec() returned.
-    os._exit(main())
+    sys.exit(main())
