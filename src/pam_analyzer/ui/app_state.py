@@ -301,14 +301,6 @@ class AppState(QObject):
             return
         self._set_audio_inventory(inventory)
 
-    def request_shutdown(self) -> None:
-        """Cancel an in-flight audio-inventory rebuild, e.g. on app close.
-
-        Called from MainWindow.closeEvent alongside the other worker shutdowns so
-        a rebuild running on a slow mount cannot outlive the window.
-        """
-        self._audio_refresher.request_shutdown()
-
     def _set_audio_inventory(self, inventory: AudioInventory) -> None:
         self._audio_inventory = inventory
         self.audioInventoryChanged.emit(inventory)

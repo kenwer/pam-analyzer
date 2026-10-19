@@ -3,6 +3,7 @@ from .audio_import_worker import AudioImportWorker
 from .audio_inventory_refresher import AudioInventoryRefresher
 from .import_orchestrator import ImportOrchestrator
 from .project_load_worker import ProjectLoadWorker
+from .read_only_thread import ReadOnlyThread
 
 __all__ = [
     "AnalysisWorker",
@@ -10,4 +11,5 @@ __all__ = [
     "AudioInventoryRefresher",
     "ImportOrchestrator",
     "ProjectLoadWorker",
+    "ReadOnlyThread",
 ]

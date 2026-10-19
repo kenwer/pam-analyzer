@@ -97,6 +97,10 @@ def main() -> int:
 
     window.show()
     exit_code = app.exec()
+    if window.running_threads():
+        settings.sync()  # os._exit skips the QSettings destructor that would write it
+        logging.shutdown()
+        os._exit(exit_code)  # Skip all Qt teardown: deleting a running QThread aborts
     # Destroy Qt objects while Python is fully operational. Without this,
     # PySide6's atexit handler (SbkQtCoreModule___moduleShutdown) may call
     # QApplication::~QApplication() after Qt internals are already freed,

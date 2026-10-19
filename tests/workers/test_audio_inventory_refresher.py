@@ -147,7 +147,3 @@ def test_second_refresh_supersedes_the_first(qtbot, project_dir: Path) -> None:
 
     assert sized == [project_dir]  # exactly one sized result, from the surviving run
 
-
-def test_request_shutdown_is_safe_with_no_active_run(qtbot) -> None:
-    refresher = AudioInventoryRefresher()
-    refresher.request_shutdown()  # nothing running: must not raise

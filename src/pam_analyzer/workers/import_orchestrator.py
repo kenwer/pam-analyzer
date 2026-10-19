@@ -122,6 +122,8 @@ class ImportOrchestrator(QObject):
 
     def stop_watching(self) -> None:
         """Cancel the current import session, SD-watching or folder batch alike."""
+        if not self.is_busy():
+            return
         self._poll_timer.stop()
         if self._thread is not None:
             self._thread.requestInterruption()
@@ -161,19 +163,10 @@ class ImportOrchestrator(QObject):
     def request_shutdown(self) -> None:
         """Cancel any running import and wait for the worker thread to finish.
         Drains queued worker signals so they are handled before the next session."""
-        was_busy = self.is_busy()
-        self._state = _State.IDLE
-        self._poll_timer.stop()
+        self.stop_watching()
         if self._thread is not None:
-            self._thread.requestInterruption()
-            self._thread.quit()
             self._thread.wait(5000)
             QCoreApplication.processEvents()
-        if was_busy:
-            if self._batch_source is ImportSource.FOLDER:
-                self.folder_import_stopped.emit()
-            else:
-                self.watching_stopped.emit()
 
     def is_busy(self) -> bool:
         return self._state in (_State.WATCHING, _State.AWAITING_CONFLICT, _State.COPYING)
@@ -201,6 +194,8 @@ class ImportOrchestrator(QObject):
             self._start_next()
 
     def _start_next(self) -> None:
+        if self._thread is not None:
+            return  # a card stop_watching() cancelled is still finishing. Its result continues the queue.
         card = self._queue.pop()
         if card is None or self._campaign is None:
             return

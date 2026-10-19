@@ -1,10 +1,11 @@
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Qt, QThread, Signal, Slot
+from PySide6.QtCore import QObject, Qt, Signal, Slot
 
 from ..domain import AudioInventory
 from ..infrastructure import discover_audio_structure, resolve_audio_sizes
+from .read_only_thread import ReadOnlyThread
 
 
 class AudioInventoryRefresher(QObject):
@@ -27,15 +28,15 @@ class AudioInventoryRefresher(QObject):
 
     It keeps the whole QThread lifecycle (launch, cancel, bounded teardown) in
     one place behind a single high-level signal, so the AppState that uses it
-    only connects to inventoryReady and calls refresh()/request_shutdown(). The
-    AudioRefreshWorker it drives is a thin moveToThread shim defined below.
+    only connects to inventoryReady and calls refresh(). The AudioRefreshWorker
+    it drives is a thin moveToThread shim defined below.
     """
 
     inventoryReady = Signal(object, object)  # (project_folder: Path, AudioInventory)
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        self._thread: QThread | None = None
+        self._thread: ReadOnlyThread | None = None
         self._worker: AudioRefreshWorker | None = None
 
     def refresh(self, folder: Path, inventory: AudioInventory | None = None) -> None:
@@ -49,7 +50,7 @@ class AudioInventoryRefresher(QObject):
         is cancelled first. Only one run happens at a time.
         """
         self._cancel_running()
-        self._thread = QThread(self)
+        self._thread = ReadOnlyThread(self)
         self._worker = AudioRefreshWorker(folder, inventory, is_cancelled=self._thread.isInterruptionRequested)
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
@@ -61,10 +62,6 @@ class AudioInventoryRefresher(QObject):
         # connects only to the success path.
         self._worker.succeeded.connect(self._thread.quit, Qt.ConnectionType.DirectConnection)
         self._thread.start()
-
-    def request_shutdown(self) -> None:
-        """Cancel any in-flight rebuild with a bounded wait, e.g. on app close."""
-        self._cancel_running()
 
     def _on_structure(self, folder: Path, inventory: AudioInventory) -> None:
         """Publish the size-less tree mid-run. Runs while the worker keeps going on

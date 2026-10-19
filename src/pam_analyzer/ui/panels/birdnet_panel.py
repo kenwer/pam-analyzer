@@ -276,10 +276,10 @@ class BirdNetPanel(QWidget):
         self.ui.run_button.setEnabled(False)
 
     def request_shutdown(self) -> None:
-        """Cancel any running analysis and wait. Called on app close and on
-        project switch. processEvents() drains the worker's queued
-        succeeded/failed/cancelled signal so it's handled while the panel is
-        still in its current session, instead of leaking into the next one.
+        """Cancel any running analysis and wait. Called on project switch.
+        processEvents() drains the worker's queued succeeded/failed/cancelled
+        signal so it's handled while the panel is still in its current session,
+        instead of leaking into the next one.
         """
         if self._state.running:
             self._request_cancel()

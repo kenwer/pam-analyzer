@@ -1,8 +1,9 @@
 import logging
 import sys
+import time
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, QUrl
+from PySide6.QtCore import Qt, QThread, QTimer, QUrl
 from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QColor, QDesktopServices, QPalette
 from PySide6.QtWidgets import (
     QApplication,
@@ -24,7 +25,7 @@ from ..infrastructure import (
     load_legacy,
     migrate,
 )
-from ..workers import ImportOrchestrator, ProjectLoadWorker
+from ..workers import ImportOrchestrator, ProjectLoadWorker, ReadOnlyThread
 from .app_state import AppState
 from .dialogs.about_dialog import show_about_dialog
 from .dialogs.shortcuts_dialog import ShortcutsDialog
@@ -38,6 +39,8 @@ from .toasts import show_error_toast, show_info_toast, show_warning_toast
 from .ui_main_window import Ui_MainWindow
 
 _log = logging.getLogger(__name__)
+
+_CLOSE_TIMEOUT_S = 10.0  # then main() exits without Qt teardown
 
 LOG_LEVEL_NAMES = ("Debug", "Info", "Warning", "Error", "Critical")
 
@@ -57,14 +60,19 @@ class MainWindow(QMainWindow):
         self._widen_tab_selection_contrast()  # TODO: Recheck on the next Qt upgrade, this may be fixed upstream
 
         self._app_state = app_state
+        # Owned by the window so closeEvent's findChildren reaches their worker threads.
+        app_state.setParent(self)
+        import_orchestrator.setParent(self)
+        self._import_orchestrator = import_orchestrator
         self._settings = settings
         self._analysis_running = False
         self._import_running = False
 
-        self._project_load_thread: QThread | None = None
+        self._project_load_thread: ReadOnlyThread | None = None
         self._project_load_worker: ProjectLoadWorker | None = None
         self._pending_project_folder: Path | None = None
         self._shortcuts_dialog: ShortcutsDialog | None = None
+        self._close_deadline: float | None = None
 
         # Welcome page: mount WelcomePanel into the stacked widget's first page
         self._welcome_panel = WelcomePanel(self.ui.welcome_page)
@@ -331,7 +339,7 @@ class MainWindow(QMainWindow):
         at); _on_project_load_succeeded/_failed return to the right page.
         """
         self._pending_project_folder = folder
-        self._project_load_thread = QThread(self)
+        self._project_load_thread = ReadOnlyThread(self)
         self._project_load_worker = ProjectLoadWorker(folder)
         self._project_load_worker.moveToThread(self._project_load_thread)
         self._project_load_thread.started.connect(self._project_load_worker.run)
@@ -376,19 +384,6 @@ class MainWindow(QMainWindow):
             self._project_load_thread = None
         if self._project_load_worker is not None:
             self._project_load_worker.deleteLater()
-            self._project_load_worker = None
-
-    def _shutdown_project_load(self) -> None:
-        """Best-effort cancel of an in-flight project load on app close.
-
-        Mirrors panel request_shutdown(): bounded wait rather than an
-        unbounded one, since a hung network mount could otherwise block
-        the app from closing at all.
-        """
-        if self._project_load_thread is not None:
-            self._project_load_thread.quit()
-            self._project_load_thread.wait(5000)
-            self._project_load_thread = None
             self._project_load_worker = None
 
     def _migrate_legacy(self, pamproj_path: Path) -> None:
@@ -596,39 +591,71 @@ class MainWindow(QMainWindow):
         if geom is not None:
             self.restoreGeometry(geom)
 
+    def running_threads(self) -> list[QThread]:
+        """Worker threads still running. Deleting the window while any runs would abort."""
+        return [t for t in self.findChildren(QThread) if t.isRunning()]
+
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802  Qt API
-        self._birdnet_panel.request_shutdown()
-        self._campaigns_panel.request_shutdown()
-        self._app_state.request_shutdown()
-        self._shutdown_project_load()
-        self._settings.window_geometry = self.saveGeometry()
+        """Hide at once, then close once every writing worker thread has finished.
+
+        Every worker thread parented under the window is interrupted and the close
+        is retried until none runs or the deadline passes. A ReadOnlyThread is not
+        waited for, main() exits past it. The spectrogram's unparented render
+        thread stops later, when main() deletes the window.
+        """
+        if self._close_deadline is None:
+            busy = self._busy_labels()
+            if busy and not self._confirm_stop(busy, "Quit", "Quitting"):
+                event.ignore()
+                return
+            self._settings.window_geometry = self.saveGeometry()
+            self._close_deadline = time.monotonic() + _CLOSE_TIMEOUT_S
+        self._import_orchestrator.stop_watching()  # else a finishing card starts the next one
+        running = self.running_threads()
+        for thread in running:
+            thread.requestInterruption()  # stops a busy run()
+            thread.quit()  # stops an idle event loop
+        writing = [t for t in running if not isinstance(t, ReadOnlyThread)]
+        if writing and time.monotonic() < self._close_deadline:
+            event.ignore()
+            self.hide()
+            QTimer.singleShot(100, self, self.close)  # dropped if the window is deleted
+            return
+        if writing:
+            _log.warning("quitting with %d writing worker threads still running", len(writing))
+        hidden = self.isHidden()
         super().closeEvent(event)
+        if hidden:
+            QApplication.quit()  # closing a hidden window does not emit lastWindowClosed
+
+    def _busy_labels(self) -> list[str]:
+        return [label for panel in (self._birdnet_panel, self._campaigns_panel) if (label := panel.busy_label())]
 
     def _confirm_cancel_running(self) -> bool:
-        busy = [
-            label
-            for panel in (self._birdnet_panel, self._campaigns_panel)
-            if (label := panel.busy_label())
-        ]
+        busy = self._busy_labels()
         if not busy:
             return True
-        if len(busy) == 1:
-            msg = f"A {busy[0]} is running. Switching projects will stop it."
-        else:
-            joined = ", ".join(busy)
-            msg = f"Background tasks are running ({joined}). Switching projects will stop them."
-        box = QMessageBox(self)
-        box.setIcon(QMessageBox.Icon.Question)
-        box.setWindowTitle("Switch projects?")
-        box.setText(msg)
-        switch_btn = box.addButton("Switch projects", QMessageBox.ButtonRole.DestructiveRole)
-        keep_btn = box.addButton("Keep running", QMessageBox.ButtonRole.RejectRole)
-        box.setDefaultButton(keep_btn)
-        box.exec()
-        if box.clickedButton() is not switch_btn:
+        if not self._confirm_stop(busy, "Switch projects", "Switching projects"):
             return False
         self._cancel_all_workers()
         return True
+
+    def _confirm_stop(self, busy: list[str], action: str, doing: str) -> bool:
+        """Ask whether to stop the busy tasks, e.g. action "Quit" with doing "Quitting"."""
+        if len(busy) == 1:
+            msg = f"A {busy[0]} is running. {doing} will stop it."
+        else:
+            joined = ", ".join(busy)
+            msg = f"Background tasks are running ({joined}). {doing} will stop them."
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle(f"{action}?")
+        box.setText(msg)
+        action_btn = box.addButton(action, QMessageBox.ButtonRole.DestructiveRole)
+        keep_btn = box.addButton("Keep running", QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(keep_btn)
+        box.exec()
+        return box.clickedButton() is action_btn
 
     def _cancel_all_workers(self) -> None:
         self.ui.status_bar.showMessage("Cancelling background tasks…", 0)

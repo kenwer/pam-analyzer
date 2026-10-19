@@ -25,7 +25,7 @@ from pam_analyzer.ui.panels.campaigns_panel import (
 )
 from pam_analyzer.ui.settings import AppSettings
 from pam_analyzer.workers import AudioInventoryRefresher, ImportOrchestrator
-from tests.conftest import FakeScanner
+from tests.conftest import FakeScanner, stop_worker_threads
 
 
 class _NeverResolvingRefresher(AudioInventoryRefresher):
@@ -63,7 +63,7 @@ def state(project_with_campaign) -> AppState:
     yield s
     # refresh_audio_inventory now rebuilds on a worker thread. Drain any in-flight
     # rebuild so a worker cannot outlive the test and segfault during teardown.
-    s.request_shutdown()
+    stop_worker_threads(s)
 
 
 def _wait_campaign_files(qtbot, state: AppState, name: str, count: int) -> None:

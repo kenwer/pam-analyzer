@@ -109,6 +109,10 @@ class AppSettings:
         self._settings.setValue(self.KEY_WINDOW_GEOMETRY, value)
         self._settings.endGroup()
 
+    def sync(self) -> None:
+        """Write pending changes now."""
+        self._settings.sync()
+
     # diagnostics
 
     @property

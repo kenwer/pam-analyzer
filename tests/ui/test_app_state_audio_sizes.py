@@ -14,6 +14,7 @@ import pytest
 from pam_analyzer.domain import Campaign, FilterMode, Project
 from pam_analyzer.infrastructure import resolve_audio_sizes
 from pam_analyzer.ui.app_state import AppState
+from tests.conftest import stop_worker_threads
 
 
 @pytest.fixture
@@ -36,7 +37,7 @@ def state() -> AppState:
     # real background worker. Drain it so it cannot outlive the test.
     s = AppState()
     yield s
-    s.request_shutdown()
+    stop_worker_threads(s)
 
 
 def test_open_leaves_sizes_pending_then_swap_resolves_them(

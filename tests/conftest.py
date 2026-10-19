@@ -6,15 +6,18 @@ headless CI works the same as a developer laptop.
 
 import gc
 import os
+import time
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
 import pytest
 import soundfile as sf
-from PySide6.QtCore import QCoreApplication, QThread
+from PySide6.QtCore import QCoreApplication, QObject, QThread
 from PySide6.QtQuickWidgets import QQuickWidget
 
-from pam_analyzer.domain.audio_import import DetectedCard, ImportSource
+from pam_analyzer.domain.audio_import import CardImportResult, DetectedCard, ImportSource
+from pam_analyzer.infrastructure import AudioImporter
 from pam_analyzer.infrastructure.birdnet_2_4_runner import MODEL_KEY as MODEL_KEY_V2_4
 from pam_analyzer.infrastructure.birdnet_runner import MODEL_KEY as MODEL_KEY_V3_0
 
@@ -32,6 +35,16 @@ ALT_MODEL_KEY = MODEL_KEY_V3_0
 RETIRED_MODEL_KEYS = ("Perch-2.0",)
 
 
+def wait_until_cancelled(is_cancelled: Callable[[], bool]) -> bool:
+    """Block a fake worker until cancelled. Gives up after 10 s so a regression fails instead of hanging."""
+    deadline = time.monotonic() + 10
+    while not is_cancelled():
+        if time.monotonic() > deadline:
+            return False
+        time.sleep(0.01)
+    return True
+
+
 class FakeScanner:
     """Stand-in for PsutilSdCardScanner. Offers whatever cards a test sets and records ejects."""
 
@@ -46,12 +59,36 @@ class FakeScanner:
         self.ejected.append(card)
 
 
+class ImporterUntilCancelled(AudioImporter):
+    """Blocks each card's copy until cancelled and records which cards it started."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.imported: list[str] = []
+
+    def import_card(self, *, card: DetectedCard, is_cancelled, **kwargs) -> CardImportResult:
+        self.imported.append(card.name)
+        wait_until_cancelled(is_cancelled)
+        return CardImportResult(
+            card=card, files_copied=0, files_skipped=0, bytes_copied=0, elapsed=0.0,
+            error=CardImportResult.CANCELLED, dest_dir=None,
+        )
+
+
 def folder_card(root: Path, name: str) -> DetectedCard:
     """A folder-import card holding one short recording."""
     folder = root / name
     folder.mkdir()
     sf.write(folder / "20260619_073000.WAV", np.zeros(4800, dtype=np.int16), 48_000, subtype="PCM_16")
     return DetectedCard(name=name, mountpoint=folder, device="", source=ImportSource.FOLDER)
+
+
+def stop_worker_threads(owner: QObject) -> None:
+    """Stop the worker threads under owner the way MainWindow.closeEvent does."""
+    for thread in owner.findChildren(QThread):
+        thread.requestInterruption()  # stops a busy run()
+        thread.quit()  # stops an idle event loop
+        thread.wait()
 
 
 def _drain_qt_events() -> None:

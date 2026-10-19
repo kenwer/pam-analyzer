@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 ### Changed
+- Quitting asks before stopping a running analysis or import, then hides the window while background tasks stop.
+- Quitting no longer waits for a project to finish opening or for file sizes to be read.
 - [Dev] A release no longer invalidates the CI models cache.
 - [Dev] The release script skips the pre-push hook.
 - [Dev] Qt warnings no longer clutter the test output.
