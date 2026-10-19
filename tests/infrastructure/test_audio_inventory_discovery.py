@@ -2,7 +2,6 @@
 
 from datetime import datetime
 from pathlib import Path
-from threading import Event
 
 import pytest
 
@@ -161,10 +160,8 @@ def test_resolve_sizes_cancelled_returns_pending_unchanged(project_dir: Path):
     """A cancelled stat pass returns the still-pending inventory, not a half-stat'd
     one, so a caller that switched projects can safely discard it."""
     structure = discover_audio_structure(project_dir)
-    cancel = Event()
-    cancel.set()
 
-    result = resolve_audio_sizes(structure, cancel)
+    result = resolve_audio_sizes(structure, lambda: True)
 
     assert result is structure  # unchanged, still pending
     assert result.sizes_pending is True

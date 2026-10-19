@@ -48,7 +48,7 @@ def _pending_inventory() -> AudioInventory:
 
 
 def test_worker_run_emits_pending_tree_then_sized(qtbot, project_dir: Path) -> None:
-    worker = AudioRefreshWorker(project_dir)
+    worker = AudioRefreshWorker(project_dir, is_cancelled=lambda: False)
 
     received: list[tuple[str, Path, AudioInventory]] = []
     worker.structureReady.connect(lambda f, inv: received.append(("pending", f, inv)))
@@ -66,8 +66,7 @@ def test_worker_run_emits_pending_tree_then_sized(qtbot, project_dir: Path) -> N
 
 
 def test_worker_cancelled_run_emits_nothing(qtbot, project_dir: Path) -> None:
-    worker = AudioRefreshWorker(project_dir)
-    worker.cancel()
+    worker = AudioRefreshWorker(project_dir, is_cancelled=lambda: True)
 
     received: list[object] = []
     worker.structureReady.connect(lambda *a: received.append(a))
@@ -81,7 +80,7 @@ def test_worker_given_inventory_skips_structure_phase(qtbot) -> None:
     """Project open already walked the tree, so a pre-walked inventory should go
     straight to sizing: no structureReady, one succeeded."""
     folder = Path("/projects/demo")
-    worker = AudioRefreshWorker(folder, _pending_inventory())
+    worker = AudioRefreshWorker(folder, _pending_inventory(), is_cancelled=lambda: False)
 
     received: list[tuple[str, Path, AudioInventory]] = []
     worker.structureReady.connect(lambda f, inv: received.append(("pending", f, inv)))
@@ -95,8 +94,7 @@ def test_worker_given_inventory_skips_structure_phase(qtbot) -> None:
 
 
 def test_worker_given_inventory_cancelled_run_emits_nothing(qtbot) -> None:
-    worker = AudioRefreshWorker(Path("/projects/demo"), _pending_inventory())
-    worker.cancel()
+    worker = AudioRefreshWorker(Path("/projects/demo"), _pending_inventory(), is_cancelled=lambda: True)
 
     received: list[object] = []
     worker.succeeded.connect(lambda *a: received.append(a))

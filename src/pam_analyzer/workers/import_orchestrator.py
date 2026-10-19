@@ -123,8 +123,8 @@ class ImportOrchestrator(QObject):
     def stop_watching(self) -> None:
         """Cancel the current import session, SD-watching or folder batch alike."""
         self._poll_timer.stop()
-        if self._worker is not None:
-            self._worker.request_cancel()
+        if self._thread is not None:
+            self._thread.requestInterruption()
         self._state = _State.IDLE
         if self._batch_source is ImportSource.FOLDER:
             self.folder_import_stopped.emit()
@@ -164,9 +164,8 @@ class ImportOrchestrator(QObject):
         was_busy = self.is_busy()
         self._state = _State.IDLE
         self._poll_timer.stop()
-        if self._worker is not None:
-            self._worker.request_cancel()
         if self._thread is not None:
+            self._thread.requestInterruption()
             self._thread.quit()
             self._thread.wait(5000)
             QCoreApplication.processEvents()

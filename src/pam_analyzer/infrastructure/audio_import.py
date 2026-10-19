@@ -430,7 +430,7 @@ class AudioImporter:
 
         for src in to_process:
             if is_cancelled():
-                error = "Cancelled"
+                error = CardImportResult.CANCELLED
                 break
             try:
                 self._import_one(src, dest_dir)

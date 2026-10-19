@@ -1,5 +1,3 @@
-import threading
-
 from PySide6.QtCore import QObject, Signal, Slot
 
 from ..domain import (
@@ -28,7 +26,7 @@ class _SignalProgress:
         self._worker.progress.emit(snapshot)
 
     def is_cancelled(self) -> bool:
-        return self._worker._cancel_event.is_set()
+        return self._worker.thread().isInterruptionRequested()
 
 
 class AnalysisWorker(QObject):
@@ -47,7 +45,6 @@ class AnalysisWorker(QObject):
         self._project = project
         self._campaigns = campaigns
         self._settings = settings
-        self._cancel_event = threading.Event()
 
     @Slot()
     def run(self) -> None:
@@ -72,6 +69,3 @@ class AnalysisWorker(QObject):
             # and a UI stuck on the progress page.
             outcome = AnalysisRunResult(status=RunStatus.FAILED, error=str(exc))
         self.finished.emit(outcome)
-
-    def request_cancel(self) -> None:
-        self._cancel_event.set()

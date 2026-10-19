@@ -270,8 +270,8 @@ class BirdNetPanel(QWidget):
         self._thread.start()
 
     def _request_cancel(self) -> None:
-        if self._worker is not None:
-            self._worker.request_cancel()
+        if self._thread is not None:
+            self._thread.requestInterruption()
         self.ui.progress_label.setText("Cancelling… (waiting for current file)")
         self.ui.run_button.setEnabled(False)
 

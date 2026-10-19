@@ -1,6 +1,5 @@
 """Worker that copies one SD card in a background QThread."""
 
-import threading
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal, Slot
@@ -34,7 +33,6 @@ class AudioImportWorker(QObject):
         self._resolutions = resolutions
         self._identical = identical
         self._clear_after = clear_after
-        self._cancel_event = threading.Event()
 
     @Slot()
     def run(self) -> None:
@@ -46,7 +44,7 @@ class AudioImportWorker(QObject):
                 resolutions=self._resolutions,
                 identical=self._identical,
                 progress=self.progress.emit,
-                is_cancelled=self._cancel_event.is_set,
+                is_cancelled=self.thread().isInterruptionRequested,
                 clear_after=self._clear_after,
             )
         except Exception as exc:  # noqa: BLE001
@@ -61,6 +59,3 @@ class AudioImportWorker(QObject):
                 pass
 
         self.finished.emit(result)
-
-    def request_cancel(self) -> None:
-        self._cancel_event.set()

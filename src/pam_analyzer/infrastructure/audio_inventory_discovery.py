@@ -21,7 +21,6 @@ from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from threading import Event
 
 from ..domain import AudioInventory, CampaignInventory, CardInventory, WeekInventory, paths
 from ..domain.audio_import import WEEK_YEAR_ROUND, date_range_from_stems, merge_date_ranges
@@ -90,7 +89,7 @@ def discover_audio_structure(project_folder: Path) -> AudioInventory:
     return AudioInventory(campaigns=campaigns)
 
 
-def resolve_audio_sizes(inventory: AudioInventory, cancel: Event | None = None) -> AudioInventory:
+def resolve_audio_sizes(inventory: AudioInventory, is_cancelled: Callable[[], bool] = lambda: False) -> AudioInventory:
     """Return a copy of inventory with every file's byte size stat'd and summed.
 
     The second of two phases. It reads the file paths already discovered by the
@@ -98,10 +97,11 @@ def resolve_audio_sizes(inventory: AudioInventory, cancel: Event | None = None) 
     per-file round trips that carry size. On a network mount that is the slow
     part, which is why project open runs it off the load critical path.
 
-    cancel lets a caller abandon a long stat pass (e.g. the user switched
-    projects). When it is set the original, still-pending inventory is returned
-    unchanged rather than a half-stat'd one. Safe because the caller discards a
-    pending inventory the same as never having called this at all.
+    is_cancelled lets a caller abandon a long stat pass (e.g. the user switched
+    projects). Once it returns True the original, still-pending inventory is
+    returned unchanged rather than a half-stat'd one. Safe because the caller
+    discards a pending inventory the same as never having called this at all.
+    The stat pool's threads poll it too, so it must not depend on the calling thread.
 
     The inventory owns both halves of the pure work: it enumerates its own files
     (iter_files) and rebuilds itself from the resulting size map (with_sizes).
@@ -109,20 +109,20 @@ def resolve_audio_sizes(inventory: AudioInventory, cancel: Event | None = None) 
     because on a network mount that is the slow part.
     """
     all_files = list(inventory.iter_files())
-    if cancel is not None and cancel.is_set():
+    if is_cancelled():
         return inventory
 
     dbg = _log.isEnabledFor(logging.DEBUG)
     t0 = time.perf_counter() if dbg else 0.0
     if all_files:
         with ThreadPoolExecutor(max_workers=_MAX_STAT_WORKERS) as pool:
-            sizes = _resolve_sizes(all_files, pool, cancel)
+            sizes = _resolve_sizes(all_files, pool, is_cancelled)
     else:
         sizes = {}
     if dbg:
         _log.debug("audio_sizes: stat %d files %.2fs", len(all_files), time.perf_counter() - t0)
 
-    if cancel is not None and cancel.is_set():
+    if is_cancelled():
         return inventory
     return inventory.with_sizes(sizes)
 
@@ -204,17 +204,14 @@ def _classify[T](pool: ThreadPoolExecutor, fn: Callable[[T], bool], entries: Ite
 
 
 def _resolve_sizes(
-    file_paths: list[Path], pool: ThreadPoolExecutor, cancel: Event | None = None
+    file_paths: list[Path], pool: ThreadPoolExecutor, is_cancelled: Callable[[], bool]
 ) -> dict[Path, int]:
     if not file_paths:
         return {}
-    if cancel is None:
-        sizes = pool.map(_path_size, file_paths)
-    else:
-        # Once cancel is set, short-circuit the remaining files to skip their
-        # stat round trip so the pool drains fast. The caller checks cancel
-        # afterwards and discards this partial map, so the zeros never surface.
-        sizes = pool.map(lambda p: 0 if cancel.is_set() else _path_size(p), file_paths)
+    # Once cancelled, short-circuit the remaining files to skip their stat round
+    # trip so the pool drains fast. The caller checks again afterwards and
+    # discards this partial map, so the zeros never surface.
+    sizes = pool.map(lambda p: 0 if is_cancelled() else _path_size(p), file_paths)
     return dict(zip(file_paths, sizes, strict=True))
 
 

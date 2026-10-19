@@ -1,5 +1,5 @@
+from collections.abc import Callable
 from pathlib import Path
-from threading import Event
 
 from PySide6.QtCore import QObject, Qt, QThread, Signal, Slot
 
@@ -50,7 +50,7 @@ class AudioInventoryRefresher(QObject):
         """
         self._cancel_running()
         self._thread = QThread(self)
-        self._worker = AudioRefreshWorker(folder, inventory)
+        self._worker = AudioRefreshWorker(folder, inventory, is_cancelled=self._thread.isInterruptionRequested)
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
         self._worker.structureReady.connect(self._on_structure)
@@ -95,9 +95,8 @@ class AudioInventoryRefresher(QObject):
         time so a hung network mount cannot block. A stale result that still slips
         through is dropped by the sender-identity check in the slots, so this is
         best-effort by design."""
-        if self._worker is not None:
-            self._worker.cancel()
         if self._thread is not None:
+            self._thread.requestInterruption()
             self._thread.quit()
             # deleteLater only once the thread has actually stopped: deleting a
             # still-running QThread would crash. On a timeout (hung mount) skip it.
@@ -120,10 +119,8 @@ class AudioRefreshWorker(QObject):
     computed for, so the caller can drop a result once the user has switched
     projects.
 
-    Cancellable: cancel() sets a flag checked between and within the phases. A
-    cancelled run emits no succeeded (and no structureReady once the flag is set).
-    The flag is a plain threading.Event, not a Qt type, so the infrastructure
-    functions it drives stay Qt-free.
+    Cancellable: is_cancelled is checked between and within the phases. A
+    cancelled run emits nothing further.
 
     A thin shim over discover_audio_structure and resolve_audio_sizes whose only
     job is to be moveToThread'd, so it lives with its sole owner,
@@ -133,24 +130,27 @@ class AudioRefreshWorker(QObject):
     structureReady = Signal(object, object)  # (project_folder: Path, AudioInventory) sizes pending
     succeeded = Signal(object, object)       # (project_folder: Path, AudioInventory) fully sized
 
-    def __init__(self, project_folder: Path, inventory: AudioInventory | None = None) -> None:
+    def __init__(
+        self,
+        project_folder: Path,
+        inventory: AudioInventory | None = None,
+        *,
+        is_cancelled: Callable[[], bool],
+    ) -> None:
         super().__init__()
         self._folder = project_folder
         self._inventory = inventory
-        self._cancel = Event()
-
-    def cancel(self) -> None:
-        self._cancel.set()
+        self._is_cancelled = is_cancelled
 
     @Slot()
     def run(self) -> None:
         structure = self._inventory
         if structure is None:
             structure = discover_audio_structure(self._folder)
-            if self._cancel.is_set():
+            if self._is_cancelled():
                 return
             self.structureReady.emit(self._folder, structure)
-        sized = resolve_audio_sizes(structure, self._cancel)
-        if self._cancel.is_set():
+        sized = resolve_audio_sizes(structure, self._is_cancelled)
+        if self._is_cancelled():
             return
         self.succeeded.emit(self._folder, sized)

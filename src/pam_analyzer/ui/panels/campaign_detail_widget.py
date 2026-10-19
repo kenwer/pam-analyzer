@@ -720,12 +720,12 @@ def _attach_text_drop_handler(edit: QPlainTextEdit, on_drop) -> None:
 
 
 def _toast_import_result(parent: QWidget, result: CardImportResult) -> None:
-    """Report one card's import outcome. The worker marks a user cancel with error "Cancelled"."""
+    """Report one card's import outcome."""
     name = result.card.name
     copied = f"{result.files_copied:,} file{'s' if result.files_copied != 1 else ''}"
     dest = result.dest_dir
     links = [("Show in file manager", lambda: open_in_file_manager(dest))] if dest is not None else []
-    if result.error == "Cancelled":
+    if result.cancelled:
         show_warning_toast(parent, "Import cancelled", f"{name}: copied {copied} before cancelling.", links=links)
     elif result.error:
         # Sticky: in watch mode the user may be busy swapping cards.

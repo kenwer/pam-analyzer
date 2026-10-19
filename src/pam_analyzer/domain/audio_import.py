@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
+from typing import ClassVar
 
 _RECORDING_TIME_RE = re.compile(r"(\d{8}_\d{6})")
 
@@ -63,6 +64,12 @@ class CardImportResult:
     elapsed: float
     error: str
     dest_dir: Path | None
+
+    CANCELLED: ClassVar[str] = "Cancelled"
+
+    @property
+    def cancelled(self) -> bool:
+        return self.error == self.CANCELLED
 
 
 # Sentinel week for recordings outside any week_NN folder. Mirrors the
