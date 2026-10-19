@@ -344,7 +344,9 @@ def test_closing_during_a_folder_import_does_not_start_the_next_card(qtbot, tmp_
     qtbot.waitUntil(lambda: importer.imported == ["CardA"])
     w.show()
 
-    assert not w.close()
+    # The interrupted card may finish before closeEvent counts threads, so the close is accepted at once or retried.
+    with qtbot.waitSignal(w._import_orchestrator.result_ready):  # CardA's result, which would continue the queue
+        w.close()
 
     qtbot.waitUntil(lambda: w.closed)
     assert importer.imported == ["CardA"]
