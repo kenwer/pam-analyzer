@@ -6,11 +6,15 @@ headless CI works the same as a developer laptop.
 
 import gc
 import os
+from pathlib import Path
 
+import numpy as np
 import pytest
+import soundfile as sf
 from PySide6.QtCore import QCoreApplication, QThread
 from PySide6.QtQuickWidgets import QQuickWidget
 
+from pam_analyzer.domain.audio_import import DetectedCard, ImportSource
 from pam_analyzer.infrastructure.birdnet_2_4_runner import MODEL_KEY as MODEL_KEY_V2_4
 from pam_analyzer.infrastructure.birdnet_runner import MODEL_KEY as MODEL_KEY_V3_0
 
@@ -26,6 +30,28 @@ ALT_MODEL_KEY = MODEL_KEY_V3_0
 # Keys the app can still read but no longer writes. Only tests whose subject
 # is that continuity should name one of these, and they should say so.
 RETIRED_MODEL_KEYS = ("Perch-2.0",)
+
+
+class FakeScanner:
+    """Stand-in for PsutilSdCardScanner. Offers whatever cards a test sets and records ejects."""
+
+    def __init__(self, cards: list[DetectedCard] | None = None) -> None:
+        self.cards: list[DetectedCard] = list(cards or [])
+        self.ejected: list[DetectedCard] = []
+
+    def scan(self, name_pattern: str) -> list[DetectedCard]:
+        return list(self.cards)
+
+    def eject(self, card: DetectedCard) -> None:
+        self.ejected.append(card)
+
+
+def folder_card(root: Path, name: str) -> DetectedCard:
+    """A folder-import card holding one short recording."""
+    folder = root / name
+    folder.mkdir()
+    sf.write(folder / "20260619_073000.WAV", np.zeros(4800, dtype=np.int16), 48_000, subtype="PCM_16")
+    return DetectedCard(name=name, mountpoint=folder, device="", source=ImportSource.FOLDER)
 
 
 def _drain_qt_events() -> None:

@@ -29,22 +29,10 @@ from pam_analyzer.ui.panels.campaign_detail_widget import _toast_import_result
 from pam_analyzer.ui.panels.campaigns_panel import CampaignsPanel
 from pam_analyzer.ui.settings import AppSettings
 from pam_analyzer.workers import ImportOrchestrator
+from tests.conftest import FakeScanner
 
 SR = 48_000
 STAMP = "20260619_073000"  # parses to a recording time, so week bucketing is exercised
-
-
-class _FakeScanner:
-    """Minimal stand-in for PsutilSdCardScanner. Records any eject() calls."""
-
-    def __init__(self) -> None:
-        self.ejected: list[DetectedCard] = []
-
-    def scan(self, name_pattern: str) -> list[DetectedCard]:
-        return []
-
-    def eject(self, card: DetectedCard) -> None:
-        self.ejected.append(card)
 
 
 def _write_wav(path: Path) -> None:
@@ -93,12 +81,12 @@ def project_with_campaign(tmp_path: Path) -> tuple[Project, Campaign]:
 
 
 @pytest.fixture
-def scanner() -> _FakeScanner:
-    return _FakeScanner()
+def scanner() -> FakeScanner:
+    return FakeScanner()
 
 
 @pytest.fixture
-def panel(qtbot, project_with_campaign, scanner: _FakeScanner, load_project) -> CampaignsPanel:
+def panel(qtbot, project_with_campaign, scanner: FakeScanner, load_project) -> CampaignsPanel:
     proj, _ = project_with_campaign
     state = AppState()
     orchestrator = ImportOrchestrator(AudioImporter(), scanner)
@@ -123,7 +111,7 @@ def test_import_hint_mentions_drag_and_drop(qtbot, panel: CampaignsPanel):
 
 
 def test_single_card_folder_import_writes_week_folder(
-    qtbot, panel: CampaignsPanel, project_with_campaign, scanner: _FakeScanner, tmp_path, monkeypatch
+    qtbot, panel: CampaignsPanel, project_with_campaign, scanner: FakeScanner, tmp_path, monkeypatch
 ):
     _, campaign = project_with_campaign
     detail = panel._detail
@@ -148,7 +136,7 @@ def test_single_card_folder_import_writes_week_folder(
 
 
 def test_batch_subfolder_import_creates_one_card_per_subfolder(
-    qtbot, panel: CampaignsPanel, project_with_campaign, scanner: _FakeScanner, tmp_path, monkeypatch
+    qtbot, panel: CampaignsPanel, project_with_campaign, scanner: FakeScanner, tmp_path, monkeypatch
 ):
     """Dropping a folder with no audio at its root but two subfolders that each
     hold audio should import each subfolder as its own card (discover_folder_cards'
@@ -185,7 +173,7 @@ def test_batch_subfolder_import_creates_one_card_per_subfolder(
 
 
 def test_dropping_multiple_folders_imports_each_as_its_own_card(
-    qtbot, panel: CampaignsPanel, project_with_campaign, scanner: _FakeScanner, tmp_path, monkeypatch
+    qtbot, panel: CampaignsPanel, project_with_campaign, scanner: FakeScanner, tmp_path, monkeypatch
 ):
     """Dropping two separate top-level folders at once (as opposed to one
     folder containing subfolders) must import each as its own card too --
@@ -218,7 +206,7 @@ def test_dropping_multiple_folders_imports_each_as_its_own_card(
 
 
 def test_folder_import_deletes_source_when_clear_after_checked(
-    qtbot, panel: CampaignsPanel, project_with_campaign, scanner: _FakeScanner, tmp_path, monkeypatch
+    qtbot, panel: CampaignsPanel, project_with_campaign, scanner: FakeScanner, tmp_path, monkeypatch
 ):
     """clear_after is a checkbox inside FolderImportDialog itself (scoped to
     the batch being confirmed), not the SD-only clear_check next to

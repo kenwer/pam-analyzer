@@ -14,9 +14,9 @@ State machine:
 start_watching() arms the SD poll timer; start_folder_import() shares the same
 queue-draining machinery but never starts the timer, so a folder batch cannot
 be re-offered cards by the SD scanner. self._batch_source tracks which entry
-point started the current run so the queue-drained tail (_on_worker_finished /
-_on_worker_failed) knows whether to keep watching for a card (SD) or drop back
-to IDLE (folder, a one-shot batch), and so busy_label() reports correctly.
+point started the current run so the queue-drained tail (_continue_queue) knows
+whether to keep watching for a card (SD) or drop back to IDLE (folder, a
+one-shot batch), and so busy_label() reports correctly.
 """
 
 from __future__ import annotations
@@ -102,7 +102,7 @@ class ImportOrchestrator(QObject):
         Reuses the same queue/conflict/worker pipeline as SD watching, but
         never starts the poll timer, so the SD scanner cannot add cards to
         this batch. The queue drains once and the state returns to IDLE
-        (see _on_worker_finished/_on_worker_failed), unlike SD watching,
+        (see _continue_queue), unlike SD watching,
         which stays armed for the next card indefinitely.
         """
         self._campaign = campaign
@@ -156,14 +156,7 @@ class ImportOrchestrator(QObject):
         self._pending_campaign_dir = None
         self._pending_identical = ()
         self._state = _State.WATCHING
-        if self._queue.pending:
-            self._start_next()
-        elif self._batch_source is ImportSource.FOLDER:
-            self._state = _State.IDLE
-            self.queue_changed.emit([])
-            self.folder_import_stopped.emit()
-        else:
-            self.queue_changed.emit([])
+        self._continue_queue()
 
     def request_shutdown(self) -> None:
         """Cancel any running import and wait for the worker thread to finish.
@@ -232,8 +225,7 @@ class ImportOrchestrator(QObject):
                     dest_dir=None,
                 )
             )
-            if self._state == _State.WATCHING and self._queue.pending:
-                self._start_next()
+            self._continue_queue()
             return
 
         campaign_dir = self._campaign.folder / card.name
@@ -291,13 +283,7 @@ class ImportOrchestrator(QObject):
     def _on_worker_finished(self, result: CardImportResult) -> None:
         self._teardown_worker()
         self.result_ready.emit(result)
-        if self._state == _State.COPYING:
-            self._state = _State.WATCHING
-        if self._state == _State.WATCHING and self._queue.pending:
-            self._start_next()
-        elif self._state == _State.WATCHING and self._batch_source is ImportSource.FOLDER:
-            self._state = _State.IDLE
-            self.folder_import_stopped.emit()
+        self._continue_queue()
 
     def _on_worker_failed(self, message: str) -> None:
         current_card = self._current_card
@@ -314,11 +300,17 @@ class ImportOrchestrator(QObject):
                     dest_dir=None,
                 )
             )
+        self._continue_queue()
+
+    def _continue_queue(self) -> None:
+        """Start the next card, or end a folder batch whose queue is done."""
         if self._state == _State.COPYING:
             self._state = _State.WATCHING
-        if self._state == _State.WATCHING and self._queue.pending:
+        if self._state != _State.WATCHING:
+            return
+        if self._queue.pending:
             self._start_next()
-        elif self._state == _State.WATCHING and self._batch_source is ImportSource.FOLDER:
+        elif self._batch_source is ImportSource.FOLDER:
             self._state = _State.IDLE
             self.folder_import_stopped.emit()
 

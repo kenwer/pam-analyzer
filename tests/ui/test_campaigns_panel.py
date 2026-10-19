@@ -25,22 +25,7 @@ from pam_analyzer.ui.panels.campaigns_panel import (
 )
 from pam_analyzer.ui.settings import AppSettings
 from pam_analyzer.workers import AudioInventoryRefresher, ImportOrchestrator
-
-
-class _FakeScanner:
-    """Minimal stand-in for PsutilSdCardScanner used by CampaignDetailWidget."""
-
-    def __init__(self) -> None:
-        self._cards: list[DetectedCard] = []
-
-    def set_cards(self, cards: list[DetectedCard]) -> None:
-        self._cards = list(cards)
-
-    def scan(self, name_pattern: str) -> list[DetectedCard]:
-        return list(self._cards)
-
-    def eject(self, card: DetectedCard) -> None:  # pragma: no cover - test helper
-        pass
+from tests.conftest import FakeScanner
 
 
 class _NeverResolvingRefresher(AudioInventoryRefresher):
@@ -96,13 +81,13 @@ def _wait_campaign_files(qtbot, state: AppState, name: str, count: int) -> None:
 
 
 @pytest.fixture
-def scanner() -> _FakeScanner:
-    return _FakeScanner()
+def scanner() -> FakeScanner:
+    return FakeScanner()
 
 
 @pytest.fixture
 def panel(
-    qtbot, state: AppState, project_with_campaign, scanner: _FakeScanner, load_project
+    qtbot, state: AppState, project_with_campaign, scanner: FakeScanner, load_project
 ) -> CampaignsPanel:
     proj, _ = project_with_campaign
     orchestrator = ImportOrchestrator(AudioImporter(), scanner)
@@ -114,7 +99,7 @@ def panel(
 
 def test_panel_shows_empty_on_no_project(qtbot):
     state = AppState()
-    orchestrator = ImportOrchestrator(AudioImporter(), _FakeScanner())
+    orchestrator = ImportOrchestrator(AudioImporter(), FakeScanner())
     p = CampaignsPanel(state, orchestrator, AppSettings())
     qtbot.addWidget(p)
     assert p._detail.ui.stack.currentWidget() is p._detail.ui.empty_page
@@ -139,7 +124,7 @@ def test_selecting_campaign_opens_view_page(qtbot, panel: CampaignsPanel):
 
 
 def test_selecting_campaign_with_pending_sizes_does_not_crash(
-    qtbot, project_with_campaign, scanner: _FakeScanner, load_project
+    qtbot, project_with_campaign, scanner: FakeScanner, load_project
 ):
     """Opening a project applies a size-less inventory (total_bytes None) until
     the AudioInventoryRefresher's size pass finishes. Selecting a campaign with
@@ -269,7 +254,7 @@ def test_starting_watch_emits_importStarted(qtbot, panel: CampaignsPanel, state:
 
 
 def test_queue_label_shows_pending_cards(
-    qtbot, panel: CampaignsPanel, scanner: _FakeScanner, project_with_campaign, tmp_path: Path
+    qtbot, panel: CampaignsPanel, scanner: FakeScanner, project_with_campaign, tmp_path: Path
 ):
     """A multi-slot reader (cards inserted at once) should surface the queue."""
 
@@ -280,7 +265,7 @@ def test_queue_label_shows_pending_cards(
         card_dir.mkdir()
         (card_dir / "20240101_120000.WAV").write_bytes(b"\x00" * 16)
         cards.append(DetectedCard(name=name, mountpoint=card_dir, device=f"/dev/{name}"))
-    scanner.set_cards(cards)
+    scanner.cards = cards
 
     # Land on the view page for 'alpha' and start watching.
     index = panel._model.index(0, 0)
@@ -788,7 +773,7 @@ def test_overview_includes_campaign_without_audio(panel: CampaignsPanel):
 def test_overview_empty_without_project(qtbot):
     """No project loaded means empty overview text and the fallback state."""
     state = AppState()
-    orchestrator = ImportOrchestrator(AudioImporter(), _FakeScanner())
+    orchestrator = ImportOrchestrator(AudioImporter(), FakeScanner())
     p = CampaignsPanel(state, orchestrator, AppSettings())
     qtbot.addWidget(p)
     assert p._detail.ui.overview_label.text() == ""

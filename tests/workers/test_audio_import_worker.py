@@ -4,6 +4,7 @@ from pathlib import Path
 
 from pam_analyzer.domain.audio_import import CardImportResult, DetectedCard, ImportSource
 from pam_analyzer.workers.audio_import_worker import AudioImportWorker
+from tests.conftest import FakeScanner
 
 
 class FakeImporter:
@@ -12,14 +13,6 @@ class FakeImporter:
 
     def import_card(self, **_kwargs) -> CardImportResult:
         return self._result
-
-
-class FakeScanner:
-    def __init__(self) -> None:
-        self.ejected: list[DetectedCard] = []
-
-    def eject(self, card: DetectedCard) -> None:
-        self.ejected.append(card)
 
 
 def _run(card: DetectedCard, *, error: str = "") -> FakeScanner:
