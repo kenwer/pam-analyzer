@@ -33,6 +33,10 @@ def _configure_frozen_model_paths() -> None:
 
 _configure_frozen_model_paths()
 
+# Disable onnxruntime telemetry on macOS and Linux
+# Windows is covered by the loader in birdnet_onnx_threads
+os.environ.setdefault("ORT_DISABLE_TELEMETRY", "1")
+
 
 import shiboken6  # noqa: E402
 from PySide6.QtGui import QIcon  # noqa: E402

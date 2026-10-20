@@ -1,8 +1,8 @@
 """Sizes the thread pool of birdnet's onnxruntime sessions.
 
-This module is a workaround for a library default and nothing else. Delete it,
-along with the `pin_session_threads()` call at each of the four load sites,
-once birdnet builds its InferenceSession with SessionOptions of its own.
+This module is a workaround for a library default. Delete it, along with the
+`pin_session_threads()` call at each of the four load sites, once birdnet
+builds its InferenceSession with SessionOptions of its own.
 Nothing else in the app encodes the workaround: the runners load their models
 through ordinary birdnet calls.
 
@@ -66,6 +66,10 @@ def _load_onnx_model_pinned(model_path: Path, device: str) -> Any:
     difference from the session birdnet would have built.
     """
     import onnxruntime as ort
+
+    # Disable onnxruntime telemetry on Windows
+    # Linux is covered by os.environ.setdefault("ORT_DISABLE_TELEMETRY", "1")
+    ort.disable_telemetry_events()
 
     providers, provider_options = _get_onnx_session_providers(device)
 

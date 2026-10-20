@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 ### Changed
+- Disable onnxruntime telemetry.
 - [Dev] Upgrade dependencies, including onnxruntime 1.31.0.
 
 ## [0.7.5] - 2026-10-20
