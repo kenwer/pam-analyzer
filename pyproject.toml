@@ -34,7 +34,7 @@ dev = [
 
 # Only scripts/build.py needs these, so they stay out of the default groups a plain `uv sync` installs.
 build = [
-    "nuitka>=4.2", # need at least 4.2 for Python 3.14
+    "nuitka>=4.3",
 ]
 
 [tool.uv]

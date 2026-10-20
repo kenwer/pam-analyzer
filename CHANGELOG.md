@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+### Changed
+- [Dev] Upgrade dependencies, including onnxruntime 1.31.0.
+
 ## [0.7.5] - 2026-10-20
 ### Changed
 - Quitting asks before stopping a running analysis or import, then hides the window while background tasks stop.
