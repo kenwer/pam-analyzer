@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.7.5] - 2026-10-20
 ### Changed
 - Quitting asks before stopping a running analysis or import, then hides the window while background tasks stop.
 - Quitting no longer waits for a project to finish opening or for file sizes to be read.
