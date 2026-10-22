@@ -4,6 +4,7 @@
 ### Changed
 - Disable onnxruntime telemetry.
 - [Dev] Upgrade dependencies, including onnxruntime 1.31.0.
+- [Dev] Dev builds take their version and archive name from git, like `0.7.6.dev2`.
 
 ## [0.7.5] - 2026-10-20
 ### Changed

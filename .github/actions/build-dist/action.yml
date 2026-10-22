@@ -1,5 +1,5 @@
 name: Build distributable
-description: Build the app and package it into a release archive. Expects VERSION and ARCHIVE_NAME to already be set in the environment.
+description: Build the app and package it into a release archive. Expects ARCHIVE_NAME to already be set in the environment.
 
 inputs:
   os_name:
@@ -19,8 +19,9 @@ runs:
     - name: Package archive
       shell: bash
       run: |
+        version=$(uv run python -c 'import pam_analyzer; print(pam_analyzer.__version__)')
         cd dist
-        versioned="pam-analyzer-${VERSION}-${{ inputs.os_name }}-${{ inputs.arch }}"
+        versioned="pam-analyzer-v${version}-${{ inputs.os_name }}-${{ inputs.arch }}"
         case "${{ inputs.os_name }}" in
           macos)
             mv pam-analyzer.app "${versioned}.app"

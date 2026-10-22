@@ -1,6 +1,7 @@
 [project]
 name = "pam-analyzer"
-version = "0.7.5"
+# From the git tag, see [tool.hatch.version]
+dynamic = ["version"]
 description = "Automated bird species detection from acoustic recordings."
 readme = "README.md"
 requires-python = ">=3.14,<3.15"
@@ -41,6 +42,9 @@ build = [
 # .python-version pins the exact patch. Without this, uv takes a system Python
 # (e.g. Homebrew on the macOS runner) whenever one happens to match the pin.
 python-preference = "only-managed"
+# The version comes from git, so rebuild the editable install when HEAD or the
+# tags move. Otherwise __version__ keeps the version of the last `uv sync`.
+cache-keys = [{ file = "pyproject.toml" }, { git = { commit = true, tags = true } }]
 
 # birdnet depends on ai-edge-litert to run TFLite weights but this app runs all 
 # models on ONNX Runtime, so nothing in this app reaches that interpreter.
@@ -60,8 +64,18 @@ override-dependencies = [
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+# A tagged commit is its release, like 0.7.5 for v0.7.5. The commits after it
+# count toward the next patch release, like 0.7.6.dev2 two commits later.
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.version.raw-options]
+# Drops the "+g<hash>.d<date>" suffix, which plain version numbers like the
+# bundle and exe versions in scripts/build.py cannot hold anyway
+local_scheme = "no-local-version"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pam_analyzer"]

@@ -7,3 +7,7 @@
 # See infrastructure/perch_onnx.py. The reader strips each line, so the endings
 # do not matter to parsing, only to keeping the file byte-identical upstream.
 src/pam_analyzer/infrastructure/data/perch_v2_labels.csv -text
+
+# git archive fills in the placeholders, so hatch-vcs finds the version in
+# source archives that have no .git, like GitHub's "Source code" downloads.
+.git_archival.txt export-subst

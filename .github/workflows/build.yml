@@ -70,17 +70,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          # Rebuilding an old release checks out its tag, since the tag sets
+          # the app version. Empty on every other event, which keeps the default.
+          ref: ${{ inputs.upload_release_assets }}
+          # The app version comes from the git tags, which a shallow clone lacks
+          fetch-depth: 0
 
-      - name: Set VERSION and ARCHIVE_NAME
+      - name: Set ARCHIVE_NAME
         shell: bash
         run: |
-          if [[ "${{ github.event_name }}" == "release" ]]; then
-            echo "VERSION=${{ github.ref_name }}" >> $GITHUB_ENV
-          elif [[ -n "${{ inputs.upload_release_assets }}" ]]; then
-            echo "VERSION=${{ inputs.upload_release_assets }}" >> $GITHUB_ENV
-          else
-            echo "VERSION=dev" >> $GITHUB_ENV
-          fi
           echo "ARCHIVE_NAME=PAM-Analyzer-${{ matrix.os_name }}-${{ matrix.arch }}.${{ matrix.archive_ext }}" >> $GITHUB_ENV
 
       - name: Setup environment
@@ -111,6 +110,7 @@ jobs:
         if: github.event_name == 'release' || inputs.upload_release_assets != ''
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228  # v3.0.2
         with:
-          tag_name: ${{ env.VERSION }}
+          # Empty on a release event, where the action takes the tag from github.ref
+          tag_name: ${{ inputs.upload_release_assets }}
           files: dist/${{ env.ARCHIVE_NAME }}
           fail_on_unmatched_files: true

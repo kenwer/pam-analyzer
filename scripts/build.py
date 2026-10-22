@@ -30,12 +30,12 @@ Usage:
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import textwrap
-import tomllib
 from pathlib import Path
 
 PACKAGING_DIR = Path(__file__).parent
@@ -95,11 +95,26 @@ DATA: tuple[tuple[Path, str], ...] = (
 )
 
 
-def _app_version() -> str:
-    """Read the project version from pyproject.toml, for the bundle metadata."""
-    with open(ROOT_DIR / "pyproject.toml", "rb") as f:
-        data = tomllib.load(f)
-    return data["project"]["version"]
+def _app_version(python: Path) -> str:
+    """The version installed into the build venv, which hatch-vcs takes from git, like 0.7.6.dev2."""
+    result = subprocess.run(
+        [str(python), '-c', 'from importlib.metadata import version; print(version("pam-analyzer"))'],
+        check=True, capture_output=True, text=True,
+    )
+    return result.stdout.strip()
+
+
+def _numeric_versions(version: str) -> tuple[str, str]:
+    """
+    The app version as the plain numbers bundle metadata takes: 0.7.6 for the
+    macOS bundle, and 0.7.6.2 for --product-version, where the dev number
+    keeps the onefile cache folders of dev builds apart.
+    """
+    match = re.fullmatch(r'(\d+\.\d+\.\d+)(?:\.dev(\d+))?', version)
+    if match is None:
+        raise SystemExit(f'Unexpected app version {version!r}. Is the checkout missing its git tags?')
+    release, dev = match.groups()
+    return release, f'{release}.{dev}' if dev else release
 
 
 # Single prewarm script: load every model the app reaches for, so the
@@ -346,9 +361,11 @@ def main() -> None:
     run(['uv', 'venv', '--clear', VENV_DIR])
 
     print('  Syncing build venv (runtime deps + nuitka)')
-    # The app is never installed. Nuitka compiles it straight from src/, which
-    # is also the only way the gitignored ui_*.py and *_rc.py modules reach the
-    # build: a wheel would omit them, since hatchling selects files via git.
+    # The app is installed editable, so Nuitka finds its metadata and compiles
+    # the version into importlib.metadata.version("pam-analyzer"). Uninstalled,
+    # the app would report "unknown". Nuitka still compiles straight from src/,
+    # which is also the only way the gitignored ui_*.py and *_rc.py modules
+    # reach the build: a wheel would omit them, since hatchling selects files via git.
     # nuitka comes from the build group so uv.lock pins it.
     # --no-default-groups drops dev, which the build does not use: the compile
     # scripts call pyside6-uic and pyside6-rcc, both shipped with PySide6.
@@ -356,12 +373,14 @@ def main() -> None:
         [
             'uv', 'sync',
             '--python', str(python),
-            '--no-install-project',
             '--no-default-groups',
             '--group', 'build',
         ],
         env=build_env,
     )
+    app_version = _app_version(python)
+    bundle_version, product_version = _numeric_versions(app_version)
+    print(f'  Version  : {app_version}')
 
     print('  Compiling Qt resources and UI files')
     # .ui -> ui_*.py and .qrc -> *_rc.py must exist in src/ before Nuitka reads
@@ -469,7 +488,7 @@ def main() -> None:
             '--macos-create-app-bundle',
             f'--macos-app-icon={icon}',
             f'--macos-app-name={APP_NAME}',
-            f'--macos-app-version={_app_version()}',
+            f'--macos-app-version={bundle_version}',
             f'--macos-signed-app-name={COMPANY_NAME}.{APP_NAME}',
         ]
     else:
@@ -486,7 +505,7 @@ def main() -> None:
             '--onefile-cache-mode=cached',
             f'--company-name={COMPANY_NAME}',
             f'--product-name={APP_NAME}',
-            f'--product-version={_app_version()}',
+            f'--product-version={product_version}',
         ]
         if is_win:
             cmd += [
