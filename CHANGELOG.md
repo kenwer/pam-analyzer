@@ -9,6 +9,7 @@
 
 ### Fixed
 - Prefixed recordings without GUANO are no longer sorted into a week by file time.
+- Empty recordings no longer fail the import. They are left out and reported.
 
 ## [0.7.7] - 2026-11-03
 ### Fixed

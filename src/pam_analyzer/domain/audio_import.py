@@ -66,8 +66,8 @@ class CardImportResult:
     elapsed: float
     error: str
     dest_dir: Path | None
-    # Files imported despite a GUANO/filename mismatch, one message each.
-    warnings: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()  # Files imported despite a GUANO/filename mismatch, one message each
+    files_empty: int = 0  # Header-only recordings left out of the import
 
     CANCELLED: ClassVar[str] = "Cancelled"
 

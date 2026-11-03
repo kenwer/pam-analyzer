@@ -261,7 +261,13 @@ def test_watch_button_becomes_cancel_during_folder_import(
 
 
 def _card_result(
-    tmp_path: Path, *, copied: int, skipped: int = 0, error: str = "", warnings: tuple[str, ...] = ()
+    tmp_path: Path,
+    *,
+    copied: int,
+    skipped: int = 0,
+    error: str = "",
+    warnings: tuple[str, ...] = (),
+    empty: int = 0,
 ) -> CardImportResult:
     return CardImportResult(
         card=DetectedCard(name="MSD-1", mountpoint=tmp_path, device=""),
@@ -272,6 +278,7 @@ def _card_result(
         error=error,
         dest_dir=tmp_path if copied or skipped else None,
         warnings=warnings,
+        files_empty=empty,
     )
 
 
@@ -300,6 +307,17 @@ def test_import_with_warnings_toasts_a_sticky_warning(qtbot, tmp_path: Path, toa
     assert text == "MSD-1: copied 3 files (6.0 MB). a.WAV: GUANO time differs (and 2 more, see the log)."
     assert kwargs["duration"] == 0
     assert "Show in file manager" in dict(kwargs["links"])
+
+
+def test_import_with_empty_recordings_toasts_a_sticky_warning(qtbot, tmp_path: Path, toasts) -> None:
+    parent = QWidget()
+    qtbot.addWidget(parent)
+    _toast_import_result(parent, _card_result(tmp_path, copied=3, empty=2))
+
+    [(kind, title, text, kwargs)] = toasts
+    assert (kind, title) == ("warning", "Import finished with warnings")
+    assert text == "MSD-1: copied 3 files (6.0 MB), left out 2 empty recordings without audio."
+    assert kwargs["duration"] == 0
 
 
 def test_import_cancel_toasts_a_warning(qtbot, tmp_path: Path, toasts) -> None:

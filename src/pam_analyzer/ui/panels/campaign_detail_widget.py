@@ -735,9 +735,13 @@ def _toast_import_result(parent: QWidget, result: CardImportResult) -> None:
         text = f"{name}: copied {copied} ({format_bytes(result.bytes_copied)})"
         if result.files_skipped:
             text += f", skipped {result.files_skipped:,} already imported"
+        if result.files_empty:
+            unit = "recording" if result.files_empty == 1 else "recordings"
+            text += f", left out {result.files_empty:,} empty {unit} without audio"
         if result.warnings:
             more = len(result.warnings) - 1
             text += f". {result.warnings[0]}" + (f" (and {more:,} more, see the log)" if more else "")
+        if result.warnings or result.files_empty:
             # Sticky like the error toast, so a warning is not missed while swapping cards.
             show_warning_toast(parent, "Import finished with warnings", text + ".", links=links, duration=0)
         else:

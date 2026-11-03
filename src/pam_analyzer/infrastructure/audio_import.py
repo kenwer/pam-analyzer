@@ -153,6 +153,15 @@ class NotLosslessError(Exception):
         self.subtype = subtype
 
 
+class EmptyRecordingError(Exception):
+    """Raised for a WAV with a header but no audio samples.
+
+    AudioMoth leaves these when an SD card write fails, often at low battery.
+    libsndfile cannot write a readable zero-frame FLAC, and there is nothing
+    to analyse, so the importer leaves them out instead of failing the card.
+    """
+
+
 class VerifyError(Exception):
     """Raised when a freshly written FLAC does not decode back to its source.
 
@@ -188,11 +197,14 @@ def transcode_to_flac(src: Path, dst: Path, resolved: ResolvedTime | None = None
     raised, since the audio is already saved. *resolved* is the time written
     into the FLAC when the source carries no GUANO Timestamp.
 
-    Returns the number of frames written. Raises NotLosslessError if the
-    source is not PCM_16, or VerifyError if the round-trip is not bit-exact;
-    in both cases *dst* is left absent.
+    Returns the number of frames written. Raises EmptyRecordingError if the
+    source has no samples, NotLosslessError if it is not PCM_16, or
+    VerifyError if the round-trip is not bit-exact. In all three cases *dst*
+    is left absent.
     """
     info = sf.info(src)
+    if info.frames == 0:
+        raise EmptyRecordingError(src.name)
     if info.subtype != "PCM_16":
         raise NotLosslessError(info.subtype)
 
@@ -439,6 +451,7 @@ class AudioImporter:
         files_skipped = len(files) - len(to_process)
 
         files_copied = 0
+        files_empty = 0
         bytes_copied = 0
         copied_sources: list[Path] = []
         warnings: list[str] = []
@@ -448,7 +461,7 @@ class AudioImporter:
             progress(
                 ImportProgress(
                     card=card,
-                    files_done=files_copied + files_skipped,
+                    files_done=files_copied + files_skipped + files_empty,
                     files_total=len(files),
                     bytes_done=bytes_copied,
                     elapsed=time.monotonic() - start,
@@ -463,6 +476,11 @@ class AudioImporter:
                 break
             try:
                 file_warnings = self._import_one(src, dest_dir)
+            except EmptyRecordingError:
+                _log.warning("%s: left out, the recording has no audio", src.name)
+                files_empty += 1
+                # Nothing to keep, so clearing the card may delete it.
+                copied_sources.append(src)
             except Exception as exc:  # noqa: BLE001  one bad file must not strand the rest
                 error = error or f"{src.name}: {exc}"  # report the first failure, keep going
             else:
@@ -477,8 +495,9 @@ class AudioImporter:
         elapsed = time.monotonic() - start
 
         # Clear the card only on a fully clean run. copied_sources holds only
-        # verified imports, but leaving the whole card intact when anything
-        # failed or was cancelled is the safer policy for a field tool.
+        # verified imports and empty recordings, but leaving the whole card
+        # intact when anything failed or was cancelled is the safer policy for
+        # a field tool.
         if clear_after and not error:
             for src in copied_sources:
                 try:
@@ -504,6 +523,7 @@ class AudioImporter:
             error=error,
             dest_dir=dest_dir if (files_copied > 0 or files_skipped > 0) else None,
             warnings=tuple(warnings),
+            files_empty=files_empty,
         )
 
     def _import_one(self, src: Path, dest_dir: Path) -> list[str]:
@@ -522,16 +542,16 @@ class AudioImporter:
         resolved, warnings = _resolve_source_time(src)
         week = birdnet_week(resolved.time) if resolved is not None else 1  # undated: park in week 1
         week_dir = dest_dir / f"week_{week:02d}"
-        week_dir.mkdir(parents=True, exist_ok=True)
 
         if src.name.upper().endswith(".WAV"):
             try:
                 transcode_to_flac(src, week_dir / _flac_target_name(src), resolved)
+                return warnings
             except NotLosslessError:
-                # Not 16-bit PCM: keep the original rather than degrade it.
-                shutil.copy2(src, week_dir / src.name)
-        else:
-            shutil.copy2(src, week_dir / src.name)
+                pass  # not 16-bit PCM: keep the original rather than degrade it
+        # Created only here, so an empty recording leaves no empty week folder behind.
+        week_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, week_dir / src.name)
         return warnings
 
 

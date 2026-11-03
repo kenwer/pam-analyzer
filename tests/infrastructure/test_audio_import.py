@@ -26,6 +26,7 @@ from pam_analyzer.domain.audio_import import (
 from pam_analyzer.infrastructure import audio_import
 from pam_analyzer.infrastructure.audio_import import (
     AudioImporter,
+    EmptyRecordingError,
     NotLosslessError,
     VerifyError,
     _flac_target_name,
@@ -130,6 +131,17 @@ def test_verify_failure_leaves_no_output(tmp_path: Path, monkeypatch):
 
     assert not dst.exists()
     assert not (tmp_path / "rec.flac.part").exists()
+
+
+def test_header_only_wav_raises_empty_recording_and_writes_nothing(tmp_path: Path):
+    src = tmp_path / "rec.wav"
+    dst = tmp_path / "week_25" / "rec.flac"
+    _write_wav(src, np.zeros(0, dtype=np.int16))  # an AudioMoth stopped by an SD write error
+
+    with pytest.raises(EmptyRecordingError):
+        transcode_to_flac(src, dst)
+
+    assert not dst.parent.exists()
 
 
 # GUANO metadata preservation
@@ -817,3 +829,36 @@ def test_import_adds_a_timestamp_to_recorder_guano_that_lacks_one(tmp_path: Path
     assert gf.get("Make") == "Open Acoustic Devices"
     assert gf.get("Timestamp") == datetime(2025, 5, 8, 22, 29, 46)
     assert gf.get("PAM|Timestamp Source") == "filename"
+
+
+# Header-only recordings
+
+def test_import_leaves_out_header_only_wavs_without_failing_the_card(tmp_path: Path):
+    card, dest = tmp_path / "card", tmp_path / "dest"
+    card.mkdir()
+    good = card / f"{STAMP}.WAV"
+    _write_wav(good, _pcm16(SR // 10))
+    empty = card / "20260619_074000.WAV"
+    _write_wav(empty, np.zeros(0, dtype=np.int16))
+    progress: list = []
+
+    result = _run(AudioImporter(), _card(card), [good, empty], dest, progress=progress.append)
+
+    assert result.error == ""
+    assert (result.files_copied, result.files_empty) == (1, 1)
+    assert [p.name for p in dest.rglob("*") if p.is_file()] == [f"{STAMP}.flac"]
+    assert progress[-1].files_done == 2
+
+
+def test_import_clear_after_also_removes_header_only_wavs(tmp_path: Path):
+    card, dest = tmp_path / "card", tmp_path / "dest"
+    card.mkdir()
+    good = card / f"{STAMP}.WAV"
+    _write_wav(good, _pcm16(SR // 10))
+    empty = card / "20260619_074000.WAV"
+    _write_wav(empty, np.zeros(0, dtype=np.int16))
+
+    _run(AudioImporter(), _card(card), [good, empty], dest, clear_after=True)
+
+    assert not good.exists()
+    assert not empty.exists()
