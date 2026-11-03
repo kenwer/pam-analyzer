@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.7.7] - 2026-11-03
 ### Fixed
 - Recording_Time is no longer blank for files whose recorder serial ends in digits, like `248D9B0164876836_20260520_075600.flac`.
 - [Dev] `scripts/backfill_recording_time.py` fills the blank times in existing detection CSVs.
