@@ -45,6 +45,11 @@ def test_parse_recording_time_extracts_stamp():
     assert parse_recording_time("ARU1_20240501_063000") == datetime(2024, 5, 1, 6, 30, 0)
 
 
+def test_parse_recording_time_skips_digits_of_a_serial_prefix():
+    # The serial's trailing digits plus the date also look like YYYYMMDD_HHMMSS.
+    assert parse_recording_time("248D9B0164876836_20260520_075600") == datetime(2026, 5, 20, 7, 56, 0)
+
+
 def test_parse_recording_time_returns_none_without_stamp():
     assert parse_recording_time("no_timestamp_here") is None
     assert parse_recording_time("20241345_990000") is None  # invalid month/time

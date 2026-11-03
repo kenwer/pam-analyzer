@@ -9,7 +9,9 @@ from enum import Enum
 from pathlib import Path
 from typing import ClassVar
 
-_RECORDING_TIME_RE = re.compile(r"(\d{8}_\d{6})")
+# Digit boundaries, so a recorder serial ending in digits can't donate the
+# first half of a false match like "64876836_202605".
+_RECORDING_TIME_RE = re.compile(r"(?<!\d)(\d{8}_\d{6})(?!\d)")
 
 
 class ImportSource(Enum):
