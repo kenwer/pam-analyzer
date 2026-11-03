@@ -6,7 +6,9 @@ disk space; FLAC sources from the card and CONFIG.TXT are copied unchanged.
 GUANO metadata, which lives in a WAV 'guan' RIFF chunk, is carried across the
 transcode by re-embedding it in the FLAC as a 'GUANO' Vorbis comment
 (see _embed_guano). Without this the timestamp, location, and device fields
-would be lost on every transcoded recording.
+would be lost on every transcoded recording. A source without a GUANO
+timestamp gets one synthesized from the resolved recording time, so every
+transcoded FLAC carries its time whatever its name.
 """
 
 import logging
@@ -16,7 +18,7 @@ import tempfile
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import guano
@@ -31,7 +33,11 @@ from ..domain.audio_import import (
     DetectedCard,
     FileConflict,
     ImportProgress,
+    ResolvedTime,
     birdnet_week,
+    parse_recording_time,
+    resolve_recording_time,
+    same_original_name,
 )
 
 _log = logging.getLogger(__name__)
@@ -50,6 +56,9 @@ _log = logging.getLogger(__name__)
 # and typed values (Timestamp, Length) would need byte-identical re-assembly. A
 # new vendor namespace or field then round-trips with no code change here.
 _GUANO_VORBIS_KEY = "GUANO"
+
+# Marks a GUANO Timestamp written by this importer, not by the recorder.
+_TIMESTAMP_SOURCE_KEY = "PAM|Timestamp Source"
 
 
 def read_guano(path: Path) -> guano.GuanoFile | None:
@@ -73,29 +82,40 @@ def read_guano(path: Path) -> guano.GuanoFile | None:
         return None
 
 
-def extract_recording_time(path: Path) -> datetime:
-    """Return a recording timestamp for a WAV or FLAC file.
+def _guano_timestamp(gf: guano.GuanoFile | None) -> datetime | None:
+    """The block's Timestamp, or None when absent or left unparsed by the guano library."""
+    ts = gf.get("Timestamp") if gf is not None else None
+    return ts if isinstance(ts, datetime) else None
 
-    Priority: GUANO metadata, filename YYYYMMDD_HHMMSS, file mtime.
+
+def recording_time_of(path: Path) -> datetime | None:
+    """Recording start of an analysed file: its GUANO wall clock, else the filename stamp.
+
+    mtime is not consulted, because a transcoded FLAC's mtime is its import time.
     """
-    gf = read_guano(path)
-    if gf is not None:
-        ts = gf.get("Timestamp")
-        if ts is not None:
-            return ts
+    resolved = resolve_recording_time(_guano_timestamp(read_guano(path)), path.stem)
+    return resolved.time if resolved is not None else None
+
+
+def _start_from_mtime(path: Path) -> datetime | None:
+    """mtime minus the audio duration, since recorders set mtime when a file closes."""
     try:
-        return datetime.strptime(path.stem, "%Y%m%d_%H%M%S")
-    except ValueError:
-        pass
-    return datetime.fromtimestamp(path.stat().st_mtime)
+        end = datetime.fromtimestamp(path.stat().st_mtime)
+    except OSError:
+        return None
+    try:
+        return end - timedelta(seconds=sf.info(path).duration)
+    except Exception:
+        return end
 
 
-def _embed_guano(src: Path, flac_path: Path) -> None:
+def _embed_guano(src: Path, flac_path: Path, resolved: ResolvedTime | None) -> None:
     """Best-effort copy of GUANO metadata from *src* into *flac_path*.
 
-    A no-op when the source carries no GUANO. The block is stored verbatim
-    (UTF-8 text) under the 'GUANO' Vorbis comment key so the transcode does not
-    discard the recording's timestamp, location, and device fields.
+    A recorder's block is stored verbatim (UTF-8 text) under the 'GUANO' Vorbis
+    comment key. When it lacks a usable Timestamp, or *src* has no block at
+    all, the resolved time is added together with a marker naming its source.
+    Without either a block or a resolved time this is a no-op.
 
     Runs after the FLAC is already in place, so a write failure (e.g. a transient
     Windows file lock) is logged and swallowed rather than raised: the verified
@@ -103,7 +123,14 @@ def _embed_guano(src: Path, flac_path: Path) -> None:
     and keep the card. The warning keeps a systematic failure observable.
     """
     gf = read_guano(src)
-    if not gf:
+    if _guano_timestamp(gf) is None and resolved is not None:
+        if gf is None:
+            gf = guano.GuanoFile()
+            gf["GUANO|Version"] = 1.0
+            gf["Original Filename"] = src.name
+        gf["Timestamp"] = resolved.time
+        gf[_TIMESTAMP_SOURCE_KEY] = resolved.source.value
+    if gf is None:
         return
     try:
         tags = FLAC(str(flac_path))
@@ -140,7 +167,7 @@ def _flac_target_name(src: Path) -> str:
     return src.stem + ".flac"
 
 
-def transcode_to_flac(src: Path, dst: Path) -> int:
+def transcode_to_flac(src: Path, dst: Path, resolved: ResolvedTime | None = None) -> int:
     """Losslessly transcode a 16-bit PCM WAV at *src* to FLAC at *dst*.
 
     Encodes to a local temp file, decodes it back, asserts the samples match
@@ -158,7 +185,8 @@ def transcode_to_flac(src: Path, dst: Path) -> int:
     filesystem so the swap is atomic.
 
     GUANO embedding is best-effort: a metadata write failure is logged, not
-    raised, since the audio is already saved.
+    raised, since the audio is already saved. *resolved* is the time written
+    into the FLAC when the source carries no GUANO Timestamp.
 
     Returns the number of frames written. Raises NotLosslessError if the
     source is not PCM_16, or VerifyError if the round-trip is not bit-exact;
@@ -181,7 +209,7 @@ def transcode_to_flac(src: Path, dst: Path) -> int:
             decoded, _ = sf.read(local_tmp, dtype="int16")
             if not np.array_equal(decoded, audio):
                 raise VerifyError(f"FLAC verify mismatch for {dst.name}")
-            _embed_guano(src, local_tmp)
+            _embed_guano(src, local_tmp, resolved)
             shutil.copyfile(local_tmp, dst_part)
             os.replace(dst_part, dst)
         finally:
@@ -413,6 +441,7 @@ class AudioImporter:
         files_copied = 0
         bytes_copied = 0
         copied_sources: list[Path] = []
+        warnings: list[str] = []
         error = ""
 
         def _emit() -> None:
@@ -433,13 +462,16 @@ class AudioImporter:
                 error = CardImportResult.CANCELLED
                 break
             try:
-                self._import_one(src, dest_dir)
+                file_warnings = self._import_one(src, dest_dir)
             except Exception as exc:  # noqa: BLE001  one bad file must not strand the rest
                 error = error or f"{src.name}: {exc}"  # report the first failure, keep going
             else:
                 files_copied += 1
                 bytes_copied += src.stat().st_size
                 copied_sources.append(src)
+                for warning in file_warnings:
+                    _log.warning("%s", warning)
+                warnings.extend(file_warnings)
             _emit()
 
         elapsed = time.monotonic() - start
@@ -471,32 +503,50 @@ class AudioImporter:
             elapsed=elapsed,
             error=error,
             dest_dir=dest_dir if (files_copied > 0 or files_skipped > 0) else None,
+            warnings=tuple(warnings),
         )
 
-    def _import_one(self, src: Path, dest_dir: Path) -> None:
-        """Copy or transcode one source into dest_dir; raise on failure.
+    def _import_one(self, src: Path, dest_dir: Path) -> list[str]:
+        """Copy or transcode one source into dest_dir and return its warnings.
 
         WAV becomes FLAC (or a byte-copy if it is not 16-bit PCM and so has no
         lossless FLAC form); FLAC from the card and the device sidecar
-        (CONFIG.TXT or <serial>_Summary.txt) are copied as-is. The caller
-        catches per file, so a raised error fails only this file.
+        (CONFIG.TXT or <serial>_Summary.txt) are copied as-is, so their bytes
+        still match for the 'already imported' check. The caller catches per
+        file, so a raised error fails only this file.
         """
         if _is_sidecar(src.name):
             shutil.copy2(src, dest_dir / src.name)
-            return
+            return []
 
-        try:
-            week = birdnet_week(extract_recording_time(src))
-        except Exception:  # undated or unreadable timestamp: park it in week 1
-            week = 1
+        resolved, warnings = _resolve_source_time(src)
+        week = birdnet_week(resolved.time) if resolved is not None else 1  # undated: park in week 1
         week_dir = dest_dir / f"week_{week:02d}"
         week_dir.mkdir(parents=True, exist_ok=True)
 
         if src.name.upper().endswith(".WAV"):
             try:
-                transcode_to_flac(src, week_dir / _flac_target_name(src))
+                transcode_to_flac(src, week_dir / _flac_target_name(src), resolved)
             except NotLosslessError:
                 # Not 16-bit PCM: keep the original rather than degrade it.
                 shutil.copy2(src, week_dir / src.name)
         else:
             shutil.copy2(src, week_dir / src.name)
+        return warnings
+
+
+def _resolve_source_time(src: Path) -> tuple[ResolvedTime | None, list[str]]:
+    """Resolve a card file's recording time and check its GUANO against its name."""
+    gf = read_guano(src)
+    guano_time = _guano_timestamp(gf)
+    # mtime costs a header read, so only when neither GUANO nor the name has a time.
+    needs_mtime = guano_time is None and parse_recording_time(src.stem) is None
+    resolved = resolve_recording_time(guano_time, src.stem, _start_from_mtime(src) if needs_mtime else None)
+
+    warnings: list[str] = []
+    if resolved is not None and resolved.filename_conflict:
+        warnings.append(f"{src.name}: GUANO time {resolved.time} differs from the filename, used the GUANO time")
+    original = gf.get("Original Filename") if gf is not None else None
+    if original and not same_original_name(str(original), src.name):
+        warnings.append(f"{src.name}: GUANO names the original file {original}")
+    return resolved, warnings

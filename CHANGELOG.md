@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+### Changed
+- Improved Recording_Time handling:
+  - The time is read from the recorder's metadata (GUANO) first, then from the filename
+  - Imported recordings keep their time even if the file is renamed later
+  - The import warns when a recording's metadata and filename disagree
+
+### Fixed
+- Prefixed recordings without GUANO are no longer sorted into a week by file time.
+
 ## [0.7.7] - 2026-11-03
 ### Fixed
 - Recording_Time is no longer blank for files whose recorder serial ends in digits, like `248D9B0164876836_20260520_075600.flac`.

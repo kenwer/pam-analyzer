@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import ClassVar
 
 # Digit boundaries, so a recorder serial ending in digits can't donate the
@@ -66,6 +66,8 @@ class CardImportResult:
     elapsed: float
     error: str
     dest_dir: Path | None
+    # Files imported despite a GUANO/filename mismatch, one message each.
+    warnings: tuple[str, ...] = ()
 
     CANCELLED: ClassVar[str] = "Cancelled"
 
@@ -106,6 +108,58 @@ def parse_recording_time(stem: str) -> datetime | None:
         except ValueError:
             pass
     return None
+
+
+class TimeSource(Enum):
+    GUANO = "guano"
+    FILENAME = "filename"
+    MTIME = "mtime"
+
+
+@dataclass(frozen=True)
+class ResolvedTime:
+    """A recording's start as recorder wall-clock time, without UTC offset.
+
+    filename_conflict is True when GUANO and the filename both carry a time
+    and the two wall-clock values differ.
+    """
+
+    time: datetime
+    source: TimeSource
+    filename_conflict: bool = False
+
+
+def resolve_recording_time(
+    guano_time: datetime | None, stem: str, mtime_start: datetime | None = None
+) -> ResolvedTime | None:
+    """Pick a recording's start time from GUANO, the filename, or mtime, in that order.
+
+    The GUANO offset is dropped, not converted, so the result matches the
+    filename stamp, which recorders write in the same wall clock.
+    """
+    from_name = parse_recording_time(stem)
+    if guano_time is not None:
+        wall = guano_time.replace(tzinfo=None)
+        return ResolvedTime(wall, TimeSource.GUANO, from_name is not None and from_name != wall)
+    if from_name is not None:
+        return ResolvedTime(from_name, TimeSource.FILENAME)
+    if mtime_start is not None:
+        return ResolvedTime(mtime_start, TimeSource.MTIME)
+    return None
+
+
+def format_recording_time(time: datetime | None) -> str:
+    """The Recording_Time CSV cell, or "" when the time is unknown."""
+    return time.strftime("%Y-%m-%d %H:%M:%S") if time is not None else ""
+
+
+def same_original_name(original: str, name: str) -> bool:
+    """True if a GUANO 'Original Filename' names the file called *name*.
+
+    Compares stems case-insensitively, so a FLAC transcoded from the named WAV
+    still matches. Windows separators are handled whatever the host OS.
+    """
+    return PureWindowsPath(original).stem.lower() == PureWindowsPath(name).stem.lower()
 
 
 def date_range_from_stems(stems: Iterable[str]) -> tuple[datetime, datetime] | None:

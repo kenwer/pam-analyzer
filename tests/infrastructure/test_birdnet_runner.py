@@ -23,6 +23,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import soundfile as sf
+from mutagen.flac import FLAC
 
 from pam_analyzer.domain import (
     AnalysisProgressSnapshot,
@@ -180,6 +181,29 @@ def test_writes_detections_csv(campaign_with_minute_wav: Path) -> None:
 
     phases = {s.phase for s in progress.snapshots}
     assert {"preparing", "analyzing", "done"}.issubset(phases)
+
+
+@pytest.mark.slow
+def test_recording_time_comes_from_the_flac_guano(tmp_path: Path) -> None:
+    """A FLAC whose name carries no stamp still gets the time its GUANO holds."""
+    aru_dir = tmp_path / "project" / "c1" / "ARU-1"
+    aru_dir.mkdir(parents=True)
+    flac = aru_dir / "renamed.flac"
+    samples = (np.random.default_rng(0).standard_normal(9 * 48000) * 0.05 * 32767).astype("int16")
+    sf.write(str(flac), samples, 48000, subtype="PCM_16", format="FLAC")
+    tags = FLAC(str(flac))
+    tags["GUANO"] = "GUANO|Version: 1.0\nTimestamp: 2025-05-08T22:29:46+02:00"
+    tags.save()
+    settings = AnalysisSettings(min_conf=0.001, overlap=0.0, locales=("en_us",))
+    campaign = Campaign(name="c1", folder=aru_dir.parent, species_filter_mode=FilterMode.LIST)
+
+    result = BirdnetRunner().run(
+        campaigns=[campaign], settings=settings, preferred_lang="en_us", progress=_RecordingProgress()
+    )
+
+    with result.campaigns[0].detections_csv.open(encoding="utf-8", newline="") as f:
+        times = {row["Recording_Time"] for row in _csv.DictReader(f)}
+    assert times == {"2025-05-08 22:29:46"}
 
 
 @pytest.mark.slow

@@ -260,7 +260,9 @@ def test_watch_button_becomes_cancel_during_folder_import(
     assert detail.ui.watch_button.text() == "Start SD import"
 
 
-def _card_result(tmp_path: Path, *, copied: int, skipped: int = 0, error: str = "") -> CardImportResult:
+def _card_result(
+    tmp_path: Path, *, copied: int, skipped: int = 0, error: str = "", warnings: tuple[str, ...] = ()
+) -> CardImportResult:
     return CardImportResult(
         card=DetectedCard(name="MSD-1", mountpoint=tmp_path, device=""),
         files_copied=copied,
@@ -269,6 +271,7 @@ def _card_result(tmp_path: Path, *, copied: int, skipped: int = 0, error: str = 
         elapsed=1.0,
         error=error,
         dest_dir=tmp_path if copied or skipped else None,
+        warnings=warnings,
     )
 
 
@@ -284,6 +287,19 @@ def test_import_success_toast_links_to_the_destination(qtbot, tmp_path: Path, mo
     assert text == "MSD-1: copied 3 files (6.0 MB), skipped 2 already imported."
     dict(kwargs["links"])["Show in file manager"]()
     assert opened == [tmp_path]
+
+
+def test_import_with_warnings_toasts_a_sticky_warning(qtbot, tmp_path: Path, toasts) -> None:
+    parent = QWidget()
+    qtbot.addWidget(parent)
+    warnings = ("a.WAV: GUANO time differs", "b.WAV: GUANO time differs", "c.WAV: GUANO time differs")
+    _toast_import_result(parent, _card_result(tmp_path, copied=3, warnings=warnings))
+
+    [(kind, title, text, kwargs)] = toasts
+    assert (kind, title) == ("warning", "Import finished with warnings")
+    assert text == "MSD-1: copied 3 files (6.0 MB). a.WAV: GUANO time differs (and 2 more, see the log)."
+    assert kwargs["duration"] == 0
+    assert "Show in file manager" in dict(kwargs["links"])
 
 
 def test_import_cancel_toasts_a_warning(qtbot, tmp_path: Path, toasts) -> None:

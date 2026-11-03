@@ -51,7 +51,7 @@ from ..domain import (
 )
 from ..domain import detection_schema as schema
 from ..domain.analysis_run_result import AnalysisRunResult, CampaignRunResult, RunStatus
-from ..domain.audio_import import WEEK_YEAR_ROUND, parse_recording_time
+from ..domain.audio_import import WEEK_YEAR_ROUND, format_recording_time
 from ..domain.detection_store import write_detections_csv
 from ._analysis_helpers import (
     RunGlobalProgress,
@@ -61,6 +61,7 @@ from ._analysis_helpers import (
     list_audio_files,
     write_species_list_files,
 )
+from .audio_import import recording_time_of
 from .birdnet_lib import TaxonomyServices, normalize_lang_code
 from .species_names import canonical_set
 
@@ -388,6 +389,7 @@ class BaseAnalysisRunner(ABC):
         # the per-week allow-list, and a species already ranked in the
         # segment is merged away. See _SegmentRanker.
         ranker = _SegmentRanker()
+        recording_times: dict[Path, str] = {}
         for raw_row in arr:
             parsed = self._parse_row(
                 raw_row,
@@ -432,7 +434,10 @@ class BaseAnalysisRunner(ABC):
             except ValueError:
                 file_rel = parsed.file_path.as_posix()
 
-            recording_time = parse_recording_time(parsed.file_path.stem)
+            recording_time = recording_times.get(parsed.file_path)
+            if recording_time is None:
+                recording_time = format_recording_time(recording_time_of(parsed.file_path))
+                recording_times[parsed.file_path] = recording_time
             file_week = week_from_path(parsed.file_path)
 
             rank = ranker.rank_for(
@@ -458,7 +463,7 @@ class BaseAnalysisRunner(ABC):
                 end_time=round(float(parsed.end_time), 1),
                 rank=rank,
                 file=file_rel,
-                recording_time=str(recording_time) if recording_time else "",
+                recording_time=recording_time,
                 lat=lat,
                 lon=lon,
                 min_conf=settings.min_conf,

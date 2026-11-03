@@ -5,8 +5,9 @@ that a failed verify leaves no output behind, and that GUANO metadata survives
 the WAV-to-FLAC transcode (re-embedded as a 'GUANO' Vorbis comment).
 """
 
+import os
 import shutil
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import guano
@@ -28,8 +29,8 @@ from pam_analyzer.infrastructure.audio_import import (
     NotLosslessError,
     VerifyError,
     _flac_target_name,
-    extract_recording_time,
     read_guano,
+    recording_time_of,
     transcode_to_flac,
 )
 
@@ -170,14 +171,22 @@ def test_read_guano_returns_none_for_plain_files(tmp_path: Path):
     assert read_guano(flac) is None
 
 
-def test_extract_recording_time_reads_guano_from_flac(tmp_path: Path):
+def test_recording_time_of_reads_guano_wall_clock_from_flac(tmp_path: Path):
     src = tmp_path / "rec.wav"
     flac = tmp_path / "rec.flac"
-    ts = datetime(2026, 3, 1, 21, 5, 0)  # not derivable from this filename
+    ts = datetime(2026, 3, 1, 21, 5, 0, tzinfo=timezone(timedelta(hours=1)))  # not in this filename
     _write_wav_with_guano(src, _pcm16(SR // 10), Timestamp=ts)
     transcode_to_flac(src, flac)
 
-    assert extract_recording_time(flac) == ts
+    assert recording_time_of(flac) == datetime(2026, 3, 1, 21, 5, 0)
+
+
+def test_recording_time_of_falls_back_to_the_filename(tmp_path: Path):
+    flac = tmp_path / "242A26056487DFA3_20250508_222946.flac"
+    sf.write(flac, _pcm16(SR // 10), SR, subtype="PCM_16", format="FLAC")
+
+    assert recording_time_of(flac) == datetime(2025, 5, 8, 22, 29, 46)
+    assert recording_time_of(tmp_path / "missing_no_stamp.flac") is None
 
 
 def test_transcode_survives_guano_embed_failure(tmp_path: Path, monkeypatch):
@@ -702,3 +711,109 @@ def test_import_songmeter_clear_after_removes_emptied_data_dir(tmp_path: Path):
     assert not wav.exists()              # audio cleared
     assert not summary.exists()          # sidecar cleared
     assert not (card / "Data").exists()  # emptied Data/ removed
+
+
+# Recording time resolution at import
+
+_SERIAL_STAMP = "242A26056487DFA3_20250508_222946"
+
+
+def test_import_buckets_a_prefixed_name_without_guano_by_its_filename(tmp_path: Path):
+    card, dest = tmp_path / "card", tmp_path / "dest"
+    card.mkdir()
+    src = card / f"{_SERIAL_STAMP}.WAV"
+    _write_wav(src, _pcm16(SR // 10))
+    os.utime(src, (0, datetime(2026, 12, 24).timestamp()))  # an mtime in another week
+
+    result = _run(AudioImporter(), _card(card), [src], dest)
+
+    assert result.error == ""
+    [flac] = _flacs(dest)
+    assert flac.parent.name == f"week_{birdnet_week(datetime(2025, 5, 8)):02d}"
+
+
+def test_import_synthesizes_guano_from_the_filename(tmp_path: Path):
+    card, dest = tmp_path / "card", tmp_path / "dest"
+    card.mkdir()
+    src = card / f"{_SERIAL_STAMP}.WAV"
+    _write_wav(src, _pcm16(SR // 10))
+
+    _run(AudioImporter(), _card(card), [src], dest)
+
+    gf = read_guano(_flacs(dest)[0])
+    assert gf.get("Timestamp") == datetime(2025, 5, 8, 22, 29, 46)
+    assert gf.get("Original Filename") == src.name
+    assert gf.get("PAM|Timestamp Source") == "filename"
+
+
+def test_import_without_guano_or_stamp_uses_mtime_minus_duration(tmp_path: Path):
+    card, dest = tmp_path / "card", tmp_path / "dest"
+    card.mkdir()
+    src = card / "no_stamp.WAV"
+    _write_wav(src, _pcm16(SR))  # 1 s, so the recording started before midnight of Jan 7
+    os.utime(src, (0, datetime(2026, 1, 8, 0, 0, 0, 500_000).timestamp()))
+
+    _run(AudioImporter(), _card(card), [src], dest)
+
+    [flac] = _flacs(dest)
+    assert flac.parent.name == "week_01"  # Jan 8 would be week 2
+    gf = read_guano(flac)
+    assert gf.get("Timestamp") == datetime(2026, 1, 7, 23, 59, 59, 500_000)
+    assert gf.get("PAM|Timestamp Source") == "mtime"
+
+
+def test_import_warns_when_guano_and_filename_disagree(tmp_path: Path):
+    card, dest = tmp_path / "card", tmp_path / "dest"
+    card.mkdir()
+    src = card / f"{_SERIAL_STAMP}.WAV"
+    guano_ts = datetime(2025, 6, 20, 5, 0, 0)
+    _write_wav_with_guano(src, _pcm16(SR // 10), Timestamp=guano_ts, Original_Filename=src.name)
+
+    result = _run(AudioImporter(), _card(card), [src], dest)
+
+    assert result.error == ""
+    [flac] = _flacs(dest)
+    assert flac.parent.name == f"week_{birdnet_week(guano_ts):02d}"  # GUANO wins
+    [warning] = result.warnings
+    assert src.name in warning
+
+
+def test_import_ignores_a_utc_offset_present_only_in_guano(tmp_path: Path):
+    card, dest = tmp_path / "card", tmp_path / "dest"
+    card.mkdir()
+    src = card / f"{_SERIAL_STAMP}.WAV"
+    ts = datetime(2025, 5, 8, 22, 29, 46, tzinfo=timezone(timedelta(hours=2)))
+    _write_wav_with_guano(src, _pcm16(SR // 10), Timestamp=ts, Original_Filename=src.name)
+
+    result = _run(AudioImporter(), _card(card), [src], dest)
+
+    assert result.warnings == ()
+    assert read_guano(_flacs(dest)[0]).get("Timestamp") == ts  # recorder block kept verbatim
+
+
+def test_import_warns_when_guano_names_another_original_file(tmp_path: Path):
+    card, dest = tmp_path / "card", tmp_path / "dest"
+    card.mkdir()
+    src = card / "renamed.WAV"
+    _write_wav_with_guano(
+        src, _pcm16(SR // 10), Timestamp=datetime(2025, 5, 8, 22, 29, 46), Original_Filename=f"{_SERIAL_STAMP}.WAV"
+    )
+
+    result = _run(AudioImporter(), _card(card), [src], dest)
+
+    [warning] = result.warnings
+    assert "renamed.WAV" in warning
+
+
+def test_import_adds_a_timestamp_to_recorder_guano_that_lacks_one(tmp_path: Path):
+    card, dest = tmp_path / "card", tmp_path / "dest"
+    card.mkdir()
+    src = card / f"{_SERIAL_STAMP}.WAV"
+    _write_wav_with_guano(src, _pcm16(SR // 10), Make="Open Acoustic Devices")
+
+    _run(AudioImporter(), _card(card), [src], dest)
+
+    gf = read_guano(_flacs(dest)[0])
+    assert gf.get("Make") == "Open Acoustic Devices"
+    assert gf.get("Timestamp") == datetime(2025, 5, 8, 22, 29, 46)
+    assert gf.get("PAM|Timestamp Source") == "filename"

@@ -1,6 +1,6 @@
 """Tests for domain/audio_import.py: birdnet_week boundaries and CardQueue behaviour."""
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -9,10 +9,14 @@ from pam_analyzer.domain.audio_import import (
     CardQueue,
     DetectedCard,
     ImportSource,
+    TimeSource,
     birdnet_week,
     date_range_from_stems,
     discover_folder_cards,
+    format_recording_time,
     parse_recording_time,
+    resolve_recording_time,
+    same_original_name,
 )
 
 # birdnet_week
@@ -53,6 +57,60 @@ def test_parse_recording_time_skips_digits_of_a_serial_prefix():
 def test_parse_recording_time_returns_none_without_stamp():
     assert parse_recording_time("no_timestamp_here") is None
     assert parse_recording_time("20241345_990000") is None  # invalid month/time
+
+
+# resolve_recording_time
+
+_CEST = timezone(timedelta(hours=2))
+_STEM = "242A26056487DFA3_20250508_222946"
+
+
+def test_resolve_prefers_guano_and_drops_its_offset_without_converting():
+    resolved = resolve_recording_time(datetime(2025, 5, 8, 22, 29, 46, tzinfo=_CEST), _STEM)
+
+    assert resolved.time == datetime(2025, 5, 8, 22, 29, 46)
+    assert resolved.time.tzinfo is None
+    assert resolved.source is TimeSource.GUANO
+    assert not resolved.filename_conflict
+
+
+def test_resolve_flags_guano_and_filename_wall_clocks_that_differ():
+    resolved = resolve_recording_time(datetime(2025, 5, 8, 23, 29, 46, tzinfo=_CEST), _STEM)
+
+    assert resolved.time == datetime(2025, 5, 8, 23, 29, 46)  # GUANO still wins
+    assert resolved.filename_conflict
+
+
+def test_resolve_falls_back_to_filename_then_mtime():
+    start = datetime(2025, 5, 8, 22, 0, 0)
+
+    from_name = resolve_recording_time(None, _STEM, start)
+    from_mtime = resolve_recording_time(None, "no_stamp", start)
+
+    assert (from_name.time, from_name.source) == (datetime(2025, 5, 8, 22, 29, 46), TimeSource.FILENAME)
+    assert (from_mtime.time, from_mtime.source) == (start, TimeSource.MTIME)
+
+
+def test_resolve_returns_none_without_any_source():
+    assert resolve_recording_time(None, "no_stamp") is None
+
+
+def test_format_recording_time_keeps_the_csv_format():
+    assert format_recording_time(datetime(2025, 5, 8, 22, 29, 46, 500_000)) == "2025-05-08 22:29:46"
+    assert format_recording_time(None) == ""
+
+
+@pytest.mark.parametrize(
+    "original, name, same",
+    [
+        ("242A_20250508_222946.WAV", "242A_20250508_222946.WAV", True),
+        ("242A_20250508_222946.WAV", "242A_20250508_222946.flac", True),  # imported earlier
+        (r"D:\card\242A_20250508_222946.WAV", "242a_20250508_222946.wav", True),
+        ("242A_20250508_222946.WAV", "renamed.WAV", False),
+    ],
+)
+def test_same_original_name_compares_stems_case_insensitively(original, name, same):
+    assert same_original_name(original, name) is same
 
 
 def test_date_range_from_stems_returns_min_max():
