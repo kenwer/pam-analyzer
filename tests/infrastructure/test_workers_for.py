@@ -19,22 +19,38 @@ RUNNER_SPLITS = pytest.mark.parametrize(
     ids=["v2.4", "perch"],
 )
 
+# Odd counts matter: CI runners have shipped with 3 physical cores.
+CORE_COUNTS = pytest.mark.parametrize("cores", [1, 2, 3, 4, 7, 8, 14], indirect=True)
 
-def _cores() -> int:
-    return psutil.cpu_count(logical=False) or 1
+
+@pytest.fixture
+def cores(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> int:
+    count: int = request.param
+    monkeypatch.setattr(psutil, "cpu_count", lambda logical=True: count)
+    return count
 
 
 @RUNNER_SPLITS
-def test_split_fills_the_machine_without_oversubscribing(threads: int) -> None:
+@CORE_COUNTS
+def test_split_fills_the_machine_without_oversubscribing(threads: int, cores: int) -> None:
     """Workers times threads stays within the physical cores, and no whole worker is left out."""
     workers = workers_for(threads)
 
     assert workers >= 1
-    assert workers * threads <= max(_cores(), threads)
-    assert (workers + 1) * threads > _cores()
+    assert workers * threads <= max(cores, threads)
+    assert (workers + 1) * threads > cores
 
 
 @RUNNER_SPLITS
-def test_the_lib_gives_each_worker_the_chosen_threads(threads: int) -> None:
-    """birdnet derives each session's threads from n_workers, and has to land on the runner's choice."""
-    assert cpu_threads_per_worker(workers_for(threads)) == min(threads, _cores())
+@CORE_COUNTS
+def test_the_lib_gives_each_worker_at_least_the_chosen_threads(threads: int, cores: int) -> None:
+    """birdnet derives each session's threads from n_workers.
+
+    Each worker gets at least the runner's choice. Leftover cores go to the
+    workers, so on 3 cores a single worker runs 3 threads, never oversubscribing.
+    """
+    workers = workers_for(threads)
+    lib_threads = cpu_threads_per_worker(workers)
+
+    assert lib_threads >= min(threads, cores)
+    assert workers * lib_threads <= cores
