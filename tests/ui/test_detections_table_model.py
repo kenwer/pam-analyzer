@@ -61,3 +61,10 @@ def test_cap_ranks_after_column_filters(model: DetectionsTableModel) -> None:
     model.set_column_filter(model.index_of("Confidence"), "0.9", FilterOp.LESS_THAN)
     model.set_max_per(1)
     assert _column(model, "Confidence") == [0.61, 0.5, 0.8]
+
+
+def test_filtered_row_count_is_taken_before_the_cap(model: DetectionsTableModel) -> None:
+    model.set_column_filter(model.index_of("Confidence"), "0.9", FilterOp.LESS_THAN)
+    model.set_max_per(1)
+    assert model.filtered_row_count() == 4
+    assert model.rowCount() == 3

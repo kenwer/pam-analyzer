@@ -127,11 +127,14 @@ def test_panel_loads_detections_for_first_campaign(panel: ExaminePanel) -> None:
     # "All campaigns" is selected by default, so 3 rows * 2 campaigns = 6.
     assert panel._model.rowCount() == 6
     assert panel.ui.campaign_combo.count() == 3  # All + alpha + beta
-    # Unfiltered, so the count collapses to a single number (no "of").
-    assert "6 detections" in panel.ui.info_label.text()
-    assert " of " not in panel.ui.info_label.text()
-    # A single model run carries no breakdown suffix (it would just repeat the count).
-    assert "[" not in panel.ui.info_label.text()
+    assert panel.ui.info_label.text() == "6 detections"
+    # Nothing narrows the rows, so the count line shows no later steps.
+    assert panel.ui.filters_step_label.isHidden()
+    assert panel.ui.clear_filters_button.isHidden()
+    assert panel.ui.best_step_label.isHidden()
+    assert panel.ui.clear_best_button.isHidden()
+    # A single model run carries no breakdown (it would just repeat the count).
+    assert panel.ui.breakdown_label.text() == ""
 
 
 def test_info_label_breaks_down_counts_by_model(
@@ -160,27 +163,70 @@ def test_info_label_breaks_down_counts_by_model(
     # model-less rows so the breakdown is a clean two-model split.
     panel.ui.campaign_combo.setCurrentIndex(panel.ui.campaign_combo.findData("alpha"))
 
-    text = panel.ui.info_label.text()
     # alpha only: 3 current + 2 Perch = 5. Unfiltered, so every cell collapses
     # to a single number.
-    assert "5 detections" in text
-    assert f"[{DEFAULT_MODEL_KEY}: 3]   [Perch-2.0: 2]" in text
+    assert panel.ui.info_label.text() == "5 detections"
+    assert f"[{DEFAULT_MODEL_KEY}: 3]   [Perch-2.0: 2]" in panel.ui.breakdown_label.text()
 
     # Two models bring up the model choice, ranking each model on its own,
     # so a cap of 1 keeps each model's best row.
     assert not panel.ui.spread_model_combo.isHidden()
     _cap(panel, 1)
-    text = panel.ui.info_label.text()
-    assert "2 of 5 detections" in text
-    assert f"[{DEFAULT_MODEL_KEY}: 1 of 3]   [Perch-2.0: 1 of 2]" in text
+    assert panel.ui.best_step_label.text() == ">  2 shown (best 1)"
+    assert f"[{DEFAULT_MODEL_KEY}: 1 of 3]   [Perch-2.0: 1 of 2]" in panel.ui.breakdown_label.text()
 
     # All models ranks them together. The best row is a current-model one
     # (conf 0.7 > any Perch row), so Perch drops to 0 of 2 but stays listed
     # (order and membership come from the totals).
     _spread_to(panel.ui.spread_model_combo, None)
-    text = panel.ui.info_label.text()
-    assert "1 of 5 detections" in text
-    assert f"[{DEFAULT_MODEL_KEY}: 1 of 3]   [Perch-2.0: 0 of 2]" in text
+    assert panel.ui.best_step_label.text() == ">  1 shown (best 1)"
+    assert f"[{DEFAULT_MODEL_KEY}: 1 of 3]   [Perch-2.0: 0 of 2]" in panel.ui.breakdown_label.text()
+
+
+def test_count_line_shows_each_narrowing_step_in_order(panel: ExaminePanel) -> None:
+    panel._model.set_column_filter(COLUMNS_BY_NAME["ARU"], "MSD-1", FilterOp.EQUALS)
+    _cap(panel, 1)
+    ui = panel.ui
+    assert ui.info_label.text() == "6 detections"
+    assert ui.filters_step_label.text() == ">  3 match filters"
+    assert ui.best_step_label.text() == ">  1 shown (best 1)"
+    assert not ui.clear_filters_button.isHidden()
+    assert not ui.clear_best_button.isHidden()
+
+
+def test_count_line_skips_the_filter_step_without_filters(panel: ExaminePanel) -> None:
+    _cap(panel, 1)
+    assert panel.ui.filters_step_label.isHidden()
+    assert panel.ui.best_step_label.text() == ">  2 shown (best 1)"
+
+
+def test_count_line_skips_the_best_step_while_best_detections_is_off(panel: ExaminePanel) -> None:
+    panel._model.set_column_filter(COLUMNS_BY_NAME["ARU"], "MSD-1", FilterOp.EQUALS)
+    assert panel.ui.filters_step_label.text() == ">  3 match filters"
+    assert panel.ui.best_step_label.isHidden()
+
+
+def test_clear_filters_button_drops_every_column_filter(panel: ExaminePanel) -> None:
+    panel._model.set_column_filter(COLUMNS_BY_NAME["ARU"], "MSD-1", FilterOp.EQUALS)
+    _cap(panel, 1)
+
+    panel.ui.clear_filters_button.click()
+
+    assert not panel._model.has_filters()
+    assert panel.ui.filters_step_label.isHidden()
+    assert panel.ui.top_box.isChecked()
+
+
+def test_clear_best_button_turns_off_best_detections_and_keeps_the_number(panel: ExaminePanel) -> None:
+    panel._model.set_column_filter(COLUMNS_BY_NAME["ARU"], "MSD-1", FilterOp.EQUALS)
+    _cap(panel, 1)
+
+    panel.ui.clear_best_button.click()
+
+    assert not panel.ui.top_box.isChecked()
+    assert panel.ui.max_per_spin.value() == 1
+    assert panel.ui.best_step_label.isHidden()
+    assert panel._model.has_filters()
 
 
 def _write_model_csv(path: Path, campaign: str, aru: str, model: str, rows: int) -> None:

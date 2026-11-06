@@ -107,6 +107,7 @@ class DetectionsTableModel(QAbstractTableModel):
         # ranks the rows that survive them.
         self._max_per: int = 0
         self._spread: frozenset[SpreadKey] = frozenset({SpreadKey.ARU})
+        self._filtered_count: int = 0
         # Active sort priority. Re-applied after filter changes.
         self._sort_priority: list[tuple[int, Qt.SortOrder]] = []
 
@@ -277,6 +278,10 @@ class DetectionsTableModel(QAbstractTableModel):
     def has_filters(self) -> bool:
         return bool(self._col_filters)
 
+    def filtered_row_count(self) -> int:
+        """Rows that pass the column filters, before the max-per cap."""
+        return self._filtered_count
+
     def clear_filters(self) -> None:
         if not self._col_filters:
             return
@@ -412,6 +417,7 @@ class DetectionsTableModel(QAbstractTableModel):
             if cf.column in frame.columns:
                 mask = mask & cf.to_polars()
         frame = frame.filter(mask)
+        self._filtered_count = frame.height
         if self._max_per:
             frame = frame.filter(group_rank_expr(self._spread) <= self._max_per)
         self._visible = frame["__row"].to_list()

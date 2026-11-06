@@ -112,9 +112,9 @@ class ExaminePanel(QWidget):
         # reads and edits it, and autosave writes its dirty files back.
         self._detections = DetectionStore.empty()
         # Full detection count per model for the loaded campaign, cached at
-        # load time so the info label can show a per-model breakdown without
+        # load time so the count line can show a per-model breakdown without
         # recounting the raw list on every filter keystroke. See
-        # _model_breakdown_suffix.
+        # _model_breakdown.
         self._model_totals: Counter[str] = Counter()
         # Guards a pending debounced reload of the current campaign (see _schedule_reload).
         self._reload_pending = False
@@ -179,6 +179,8 @@ class ExaminePanel(QWidget):
 
         self.ui.campaign_combo.currentIndexChanged.connect(self._on_campaign_selected)
         self.ui.top_box.toggled.connect(self._apply_best_detections)
+        self.ui.clear_filters_button.clicked.connect(self.ui.detections_table.clearFilters)
+        self.ui.clear_best_button.clicked.connect(lambda: self.ui.top_box.setChecked(False))
         self.ui.max_per_spin.valueChanged.connect(self._apply_best_detections)
         for combo in (self.ui.spread_where_combo, self.ui.spread_when_combo, self.ui.spread_model_combo):
             combo.currentIndexChanged.connect(self._apply_best_detections)
@@ -367,20 +369,36 @@ class ExaminePanel(QWidget):
     def _on_detection_count_changed(self, shown: int) -> None:
         for action in self._export_actions:
             action.setEnabled(shown > 0)
-        total = self._detections.row_count
-        self.ui.info_label.setText(f"{_fmt_count(shown, total)} detections{self._model_breakdown_suffix()}")
+        self._update_count_line(shown)
 
-    def _model_breakdown_suffix(self) -> str:
-        """Per-model split appended to the count label when the loaded rows span
+    def _update_count_line(self, shown: int) -> None:
+        """Show the row count after each step, in the order the steps apply.
+
+        Campaign, then column filters, then Best detections. Steps that are
+        off drop out, so an untouched table shows just the total.
+        """
+        ui = self.ui
+        ui.info_label.setText(f"{self._detections.row_count:,} detections")
+        filtered = self._model.has_filters()
+        ui.filters_step_label.setText(f">  {self._model.filtered_row_count():,} match filters")
+        ui.filters_step_label.setVisible(filtered)
+        ui.clear_filters_button.setVisible(filtered)
+        max_per = self._max_per()
+        ui.best_step_label.setText(f">  {shown:,} shown (best {max_per})")
+        ui.best_step_label.setVisible(max_per > 0)
+        ui.clear_best_button.setVisible(max_per > 0)
+        ui.breakdown_label.setText(self._model_breakdown())
+
+    def _model_breakdown(self) -> str:
+        """Per-model split shown after the count line when the loaded rows span
         more than one model run (BirdNET and Perch in one campaign, or any mix
         across all campaigns). Suppressed for a single model, where the
         breakdown would just repeat the headline.
 
-        Each cell shows that model's shown-of-total in the same notation as the
-        leading count, collapsing to a single number when nothing is filtered
-        out of it (see _fmt_count). The shown halves sum to the leading shown
-        count and track the filters, while the totals stay fixed at the
-        full-campaign figures."""
+        Each cell shows that model's shown-of-total, collapsing to a single
+        number when nothing is filtered out of it (see _fmt_count). The shown
+        halves sum to the shown rows and track the filters, while the totals
+        stay fixed at the full-campaign figures."""
         if len(self._model_totals) < 2:
             return ""
         shown_by_model = Counter(dict(self._model.visible_column("Model").value_counts().iter_rows()))
@@ -389,7 +407,7 @@ class ExaminePanel(QWidget):
             f"{m or 'unknown'}: {_fmt_count(shown_by_model.get(m, 0), self._model_totals[m])}"
             for m in order
         )
-        return f"        [{breakdown}]"
+        return f"[{breakdown}]"
 
     def _on_padding_changed(self) -> None:
         before = float(self.pad_before_spin.value())

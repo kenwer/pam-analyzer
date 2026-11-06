@@ -3,6 +3,7 @@
 ## [Unreleased]
 ### Added
 - A "Best detections" box in the Examine panel shows the top N by confidence per species, in all ARUs or each ARU, for all time, each week or each day, and from each model when there are several.
+- Info line above the Examine table shows the detection count after each filtering step: Campaign -> Column Filters -> Best Detections.
 
 ### Changed
 - Improved Recording_Time handling:
