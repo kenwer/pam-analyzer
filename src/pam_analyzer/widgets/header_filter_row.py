@@ -1,7 +1,7 @@
 """Per-column filter row embedded in a :class:`MultiColumnSortTable` header.
 
 Provides :class:`HeaderFilterRow`, a QObject controller that places one
-filter slot (text input + funnel/operator menu) per model
+filter slot (text input, clear button and funnel/operator menu) per model
 column inside the header area, with debounced text-change signals.
 The set of operators per column depends on the ColumnKind passed for it
 at :meth:`rebuild` time.
@@ -10,10 +10,10 @@ at :meth:`rebuild` time.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QObject, QPoint, QPointF, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, Qt, QTimer, Signal
 from PySide6.QtGui import QActionGroup, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import QLineEdit, QMenu, QToolButton, QWidget
 
@@ -36,6 +36,42 @@ if TYPE_CHECKING:
 # logical pixel since Qt high-DPI scaling already handles the device pixel
 # ratio.
 _BUTTON_PAD = 1
+
+# Matches the clear buttons of the Examine count line. The style sheet also
+# drops the bezel macOS draws around tool buttons outside a toolbar. The base
+# background lets it cover the end of the text while it is shown on hover.
+_CLEAR_STYLE = (
+    "QToolButton { border: none; background: palette(base); color: palette(placeholder-text);"
+    " padding: 0px; font-size: 15px; }"
+    " QToolButton:hover { color: palette(text); }"
+)
+
+_HOVER_EVENTS = (QEvent.Type.Enter, QEvent.Type.Leave)
+_FOCUS_EVENTS = (QEvent.Type.FocusIn, QEvent.Type.FocusOut)
+
+
+class _FilterEdit(QLineEdit):
+    """Filter input that reports Esc, which clears the column's filter."""
+
+    escapePressed = Signal()
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        if event.key() == Qt.Key.Key_Escape:
+            self.escapePressed.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+
+def _make_clear_button(parent: QWidget) -> QToolButton:
+    button = QToolButton(parent)
+    button.setText("ⓧ")
+    button.setToolTip("Clear filter (Esc)")
+    button.setStyleSheet(_CLEAR_STYLE)
+    button.setCursor(Qt.CursorShape.PointingHandCursor)
+    button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+    button.hide()
+    return button
 
 
 class _FunnelButton(QToolButton):
@@ -105,10 +141,16 @@ class _FunnelButton(QToolButton):
 class _Slot:
     edit: QLineEdit
     button: _FunnelButton
+    clear: QToolButton
     timer: QTimer
     kind: ColumnKind
     op: FilterOp
     pending_text: str = ""
+    active: bool = False
+    # Slot widgets under the pointer. A set because Qt sends the input its
+    # Leave before the overlaid sibling gets its Enter.
+    hovered: set[QWidget] = field(default_factory=set)
+    focused: bool = False
 
 
 class HeaderFilterRow(QObject):
@@ -126,6 +168,8 @@ class HeaderFilterRow(QObject):
         self._table = table
         self._header = table.horizontalHeader()
         self._slots: list[_Slot] = []
+        # Slot widget to its column, for the hover and focus event filter.
+        self._col_of: dict[QWidget, int] = {}
         self._suppressed: set[int] = set()
         # Distinct-values source for the "is one of" popup, injected by the
         # owning table so this controller stays decoupled from the model.
@@ -167,7 +211,9 @@ class HeaderFilterRow(QObject):
             s.timer.stop()
             s.edit.deleteLater()
             s.button.deleteLater()
+            s.clear.deleteLater()
         self._slots = []
+        self._col_of = {}
 
         for col in range(col_count):
             self._slots.append(self._build_slot(col, kinds.get(col, ColumnKind.TEXT)))
@@ -191,7 +237,7 @@ class HeaderFilterRow(QObject):
         slot.op = default_op(slot.kind)
         slot.button.setToolTip(label_for(slot.op))
         slot.edit.setEnabled(True)
-        slot.button.setActive(False)
+        self._set_active(col, False)
 
     def set_filter(self, col: int, text: str, op: FilterOp) -> None:
         """Set and apply the filter of *col*, as if the user had picked *op* and typed *text*."""
@@ -231,9 +277,10 @@ class HeaderFilterRow(QObject):
 
     # slot construction
     def _build_slot(self, col: int, kind: ColumnKind) -> _Slot:
-        edit = QLineEdit(self._header)
+        edit = _FilterEdit(self._header)
         edit.setPlaceholderText("…")
-        # Reserve room on the right for the funnel button.
+        # Reserve room on the right for the funnel button. The clear button
+        # takes none, it overlays the text while shown.
         edit.setTextMargins(0, 0, self._button_size + _BUTTON_PAD * 2, 0)
         # Geometry only. Naming a colour here would override the palette and
         # keep the cell white under a dark theme.
@@ -244,12 +291,15 @@ class HeaderFilterRow(QObject):
         button = _FunnelButton(self._header)
         op = default_op(kind)
         button.setToolTip(label_for(op))
+        # A sibling for the same reason as the funnel: it must clear BLANK and
+        # NOT_BLANK, which disable the input.
+        clear = _make_clear_button(self._header)
 
         timer = QTimer(self)
         timer.setSingleShot(True)
         timer.setInterval(300)
 
-        slot = _Slot(edit=edit, button=button, timer=timer, kind=kind, op=op)
+        slot = _Slot(edit=edit, button=button, clear=clear, timer=timer, kind=kind, op=op)
 
         def _on_text(text: str, c: int = col) -> None:
             self._slots[c].pending_text = text
@@ -273,8 +323,34 @@ class HeaderFilterRow(QObject):
         timer.timeout.connect(_on_timer)
         edit.textChanged.connect(_on_text)
         edit.returnPressed.connect(_on_return)
+        edit.escapePressed.connect(lambda c=col: self._clear_and_emit(c))
         button.clicked.connect(_on_button)
+        clear.clicked.connect(lambda _checked=False, c=col: self._clear_and_emit(c))
+        for widget in (edit, button, clear):
+            self._col_of[widget] = col
+            widget.installEventFilter(self)
         return slot
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802 (Qt API)
+        """Track hover and focus per slot to show its clear button."""
+        kind = event.type()
+        col = self._col_of.get(obj) if kind in _HOVER_EVENTS or kind in _FOCUS_EVENTS else None
+        if col is not None:
+            slot = self._slots[col]
+            if kind == QEvent.Type.Enter:
+                slot.hovered.add(obj)
+            elif kind == QEvent.Type.Leave:
+                slot.hovered.discard(obj)
+            elif obj is slot.edit:
+                slot.focused = kind == QEvent.Type.FocusIn
+            # Deferred so a Leave and the Enter that follows it settle first.
+            QTimer.singleShot(0, self, lambda c=col: self._show_clear_if_wanted(c))
+        return super().eventFilter(obj, event)
+
+    def _show_clear_if_wanted(self, col: int) -> None:
+        if col < len(self._slots) and self._column_shown(col):
+            slot = self._slots[col]
+            slot.clear.setVisible(slot.active and (bool(slot.hovered) or slot.focused))
 
     # operator menu
     def _show_op_menu(self, col: int) -> None:
@@ -357,27 +433,52 @@ class HeaderFilterRow(QObject):
         slot = self._slots[col]
         text = slot.pending_text if needs_value(slot.op) else ""
         active = (needs_value(slot.op) and bool(text.strip())) or not needs_value(slot.op)
-        slot.button.setActive(active)
+        self._set_active(col, active)
         self.filterChanged.emit(col, text, slot.op)
+
+    def _clear_and_emit(self, col: int) -> None:
+        """Reset the column's filter and apply that without the debounce."""
+        self.clear_column(col)
+        self._emit(col)
+
+    def _set_active(self, col: int, active: bool) -> None:
+        slot = self._slots[col]
+        slot.active = active
+        slot.button.setActive(active)
+        self._place(col)
 
     # layout
     def _sync(self, *_: object) -> None:
         """Reposition all slots to match the current header geometry."""
+        for col in range(len(self._slots)):
+            self._place(col)
+
+    def _column_shown(self, col: int) -> bool:
+        return col not in self._suppressed and not self._table.isColumnHidden(col)
+
+    def _place(self, col: int) -> None:
+        slot = self._slots[col]
+        if not self._column_shown(col):
+            slot.edit.hide()
+            slot.button.hide()
+            slot.clear.hide()
+            # Hidden widgets get no Leave, so drop the state they would have reset.
+            slot.hovered.clear()
+            slot.focused = False
+            return
         header = self._header
         y = header.height() - self._height
         size = self._button_size
-        for col, slot in enumerate(self._slots):
-            if col in self._suppressed or self._table.isColumnHidden(col):
-                slot.edit.hide()
-                slot.button.hide()
-                continue
-            x = header.sectionViewportPosition(col)
-            w = header.sectionSize(col)
-            slot.edit.setGeometry(x, y, w, self._height)
-            slot.edit.show()
-            # Position the funnel over the QLineEdit, hugging the right edge.
-            btn_x = x + max(0, w - size - _BUTTON_PAD)
-            btn_y = y + (self._height - size) // 2
-            slot.button.setGeometry(btn_x, btn_y, size, size)
-            slot.button.show()
-            slot.button.raise_()
+        x = header.sectionViewportPosition(col)
+        w = header.sectionSize(col)
+        slot.edit.setGeometry(x, y, w, self._height)
+        slot.edit.show()
+        # Position the funnel over the QLineEdit, hugging the right edge.
+        btn_x = x + max(0, w - size - _BUTTON_PAD)
+        btn_y = y + (self._height - size) // 2
+        slot.button.setGeometry(btn_x, btn_y, size, size)
+        slot.button.show()
+        slot.button.raise_()
+        slot.clear.setGeometry(btn_x - size, btn_y, size, size)
+        slot.clear.raise_()
+        self._show_clear_if_wanted(col)

@@ -1323,6 +1323,19 @@ def test_context_menu_clears_all_filters(panel: ExaminePanel, monkeypatch) -> No
     QCoreApplication.processEvents()
 
 
+def test_filter_row_clear_button_shows_every_row_again(panel: ExaminePanel, monkeypatch) -> None:
+    _quiet(panel, monkeypatch)
+    aru_col = panel._model.index_of("ARU")
+    filter_row = panel.ui.detections_table._filter_row
+    filter_row.set_filter(aru_col, "MSD-1", FilterOp.EQUALS)
+    assert panel._model.rowCount() == 3
+
+    filter_row._slots[aru_col].clear.click()
+
+    assert panel._model.rowCount() == 6
+    assert not panel._model.has_filters()
+
+
 def test_context_menu_offers_no_cell_actions_on_the_play_column(panel: ExaminePanel, monkeypatch) -> None:
     _quiet(panel, monkeypatch)
     _select_rows(panel, [0])
