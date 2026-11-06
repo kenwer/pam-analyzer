@@ -11,7 +11,7 @@
   - The time is read from the recorder's metadata (GUANO) first, then from the filename
   - Imported recordings keep their time even if the file is renamed later
   - The import warns when a recording's metadata and filename disagree
-- [Dev] Upgrade birdnet to 1.4.
+- [Dev] Upgrade dependencies, including birdnet to 1.4.
 
 ### Fixed
 - Prefixed recordings without GUANO are no longer sorted into a week by file time.
