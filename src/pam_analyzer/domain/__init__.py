@@ -23,7 +23,7 @@ from .audio_import import (
 from .campaign import Campaign, campaign_name_error
 from .detection import Detection
 from .detection_store import DetectionStore
-from .detections import top_per_aru_species
+from .detections import SpreadKey
 from .enums import FilterMode, VerifiedState
 from .inventory import (
     AnalysisInventory,
@@ -73,7 +73,7 @@ __all__ = [
     "DEFAULT_SPECIES_LANG",
     "MAX_OVERLAP_S",
     "LatLon",
-    "top_per_aru_species",
+    "SpreadKey",
     "Project",
     "ResolvedSpeciesFilter",
     "AnalysisRunResult",

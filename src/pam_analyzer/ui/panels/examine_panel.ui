@@ -26,43 +26,102 @@
    <item>
     <layout class="QHBoxLayout" name="filter_bar">
      <item>
-      <widget class="QLabel" name="campaign_label">
-       <property name="text">
-        <string>Campaign:</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QComboBox" name="campaign_combo">
-       <property name="minimumWidth">
-        <number>220</number>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QLabel" name="max_per_label">
-       <property name="text">
-        <string>Max per ARU/Species:</string>
+      <widget class="QGroupBox" name="campaign_box">
+       <property name="title">
+        <string>Campaign</string>
        </property>
        <property name="toolTip">
-        <string>Keep only the N highest-confidence detections for each ARU and species pair. Applied after the column filters.</string>
+        <string>Which campaign's detections the table shows.</string>
        </property>
+       <layout class="QHBoxLayout" name="campaign_box_layout">
+        <item>
+         <widget class="QComboBox" name="campaign_combo">
+          <property name="minimumWidth">
+           <number>220</number>
+          </property>
+         </widget>
+        </item>
+       </layout>
       </widget>
      </item>
      <item>
-      <widget class="QSpinBox" name="max_per_spin">
-       <property name="minimum">
-        <number>0</number>
+      <widget class="QGroupBox" name="top_box">
+       <property name="title">
+        <string>Best detections</string>
        </property>
-       <property name="maximum">
-        <number>10000</number>
+       <property name="toolTip">
+        <string>Show only the highest-confidence detections of each species, per ARU, time period and model as chosen. Applied after the column filters.</string>
        </property>
-       <property name="value">
-        <number>0</number>
+       <property name="checkable">
+        <bool>true</bool>
        </property>
-       <property name="specialValueText">
-        <string>All</string>
+       <property name="checked">
+        <bool>false</bool>
        </property>
+       <layout class="QHBoxLayout" name="top_box_layout">
+        <item>
+         <widget class="QLabel" name="max_per_label">
+          <property name="text">
+           <string>Top</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QSpinBox" name="max_per_spin">
+          <property name="minimum">
+           <number>1</number>
+          </property>
+          <property name="maximum">
+           <number>10000</number>
+          </property>
+          <property name="value">
+           <number>3</number>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="spread_where_label">
+          <property name="text">
+           <string>by confidence per species in</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QComboBox" name="spread_where_combo">
+          <property name="sizeAdjustPolicy">
+           <enum>QComboBox::AdjustToContents</enum>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="spread_when_label">
+          <property name="text">
+           <string>for</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QComboBox" name="spread_when_combo">
+          <property name="sizeAdjustPolicy">
+           <enum>QComboBox::AdjustToContents</enum>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="spread_model_label">
+          <property name="text">
+           <string>from</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QComboBox" name="spread_model_combo">
+          <property name="sizeAdjustPolicy">
+           <enum>QComboBox::AdjustToContents</enum>
+          </property>
+         </widget>
+        </item>
+       </layout>
       </widget>
      </item>
      <item>

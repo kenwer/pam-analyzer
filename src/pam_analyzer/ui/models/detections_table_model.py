@@ -20,9 +20,10 @@ from typing import Any
 import polars as pl
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 
-from ...domain import Detection, DetectionStore, top_per_aru_species
+from ...domain import Detection, DetectionStore, SpreadKey
 from ...domain.detection_schema import COLUMNS as _SCHEMA_COLUMNS
 from ...domain.detection_schema import ColumnSpec, is_locale_column
+from ...domain.detections import detected_day_expr, group_rank_expr
 from ...domain.filter_ops import (
     ColumnFilter,
     ColumnKind,
@@ -101,10 +102,11 @@ class DetectionsTableModel(QAbstractTableModel):
         # when the column has an active filter (text ops with non-empty input,
         # or BLANK and NOT_BLANK regardless).
         self._col_filters: dict[int, ColumnFilter] = {}
-        # Cap on rows kept per (ARU, Species), highest confidence first. 0
-        # disables the cap. Applied after the column filters (filter first,
-        # then cap) so the cap ranks only the rows that survive the filters.
+        # Rows kept per Species plus spread keys, highest confidence first. 0
+        # disables the cap. Ranking runs after the column filters, so it only
+        # ranks the rows that survive them.
         self._max_per: int = 0
+        self._spread: frozenset[SpreadKey] = frozenset({SpreadKey.ARU})
         # Active sort priority. Re-applied after filter changes.
         self._sort_priority: list[tuple[int, Qt.SortOrder]] = []
 
@@ -140,6 +142,7 @@ class DetectionsTableModel(QAbstractTableModel):
                 if c.kind is ColumnKind.DATETIME
                 for e in datetime_helper_exprs(c.name)
             ]
+            + [detected_day_expr()]
         )
         # Filters were just cleared, so this only applies any active max-per cap
         # (a persistent user preference) to the fresh rows.
@@ -269,10 +272,7 @@ class DetectionsTableModel(QAbstractTableModel):
             self._col_filters[col] = ColumnFilter(spec.name, op, text, spec.kind)
         else:
             self._col_filters.pop(col, None)
-        self.beginResetModel()
-        self._rebuild_visible()
-        self._apply_sort()
-        self.endResetModel()
+        self._refresh()
 
     def has_filters(self) -> bool:
         return bool(self._col_filters)
@@ -281,13 +281,19 @@ class DetectionsTableModel(QAbstractTableModel):
         if not self._col_filters:
             return
         self._col_filters.clear()
-        self.beginResetModel()
-        self._rebuild_visible()
-        self._apply_sort()
-        self.endResetModel()
+        self._refresh()
+
+    def set_spread(self, keys: set[SpreadKey] | frozenset[SpreadKey]) -> None:
+        """Set the keys that the max-per cap ranks within, on top of Species."""
+        spread = frozenset(keys)
+        if spread == self._spread:
+            return
+        self._spread = spread
+        if self._max_per:
+            self._refresh()
 
     def set_max_per(self, n: int) -> None:
-        """Cap the visible rows to the top *n* per (ARU, Species) by confidence.
+        """Cap the visible rows to a group rank of at most *n*.
 
         A value of 0 (or less) disables the cap. The cap composes with the
         per-column filters: filters run first, then the cap keeps the highest
@@ -299,10 +305,7 @@ class DetectionsTableModel(QAbstractTableModel):
         if n == self._max_per:
             return
         self._max_per = n
-        self.beginResetModel()
-        self._rebuild_visible()
-        self._apply_sort()
-        self.endResetModel()
+        self._refresh()
 
     # QAbstractTableModel overrides
 
@@ -381,6 +384,13 @@ class DetectionsTableModel(QAbstractTableModel):
         self._apply_sort()
         self.endResetModel()
 
+    def _refresh(self) -> None:
+        """Re-filter and re-sort after a filter, cap or spread change."""
+        self.beginResetModel()
+        self._rebuild_visible()
+        self._apply_sort()
+        self.endResetModel()
+
     def _filter_frame(self) -> pl.DataFrame:
         """Store frame plus the date/time helper columns the filters read."""
         if not self._helpers.width:
@@ -388,23 +398,22 @@ class DetectionsTableModel(QAbstractTableModel):
         return self._store.frame.hstack(self._helpers)
 
     def _rebuild_visible(self) -> None:
-        """Recompute _visible from the store, the column filters, and the max-per cap.
+        """Recompute _visible from the store, the column filters and the cap.
 
         Column filters run first (their masks are ANDed over the frame), then
-        the cap keeps the top rows per (ARU, Species) among the survivors.
+        the cap ranks the survivors within Species plus the spread keys.
         Called inside a model reset.
         """
         frame = self._filter_frame().with_row_index("__row")
-        if self._col_filters:
-            mask = pl.lit(True)
-            for col_idx, cf in self._col_filters.items():
-                if col_idx == PLAY_COLUMN_INDEX or col_idx >= len(self._columns):
-                    continue
-                if cf.column not in frame.columns:
-                    continue
+        mask = pl.lit(True)
+        for col_idx, cf in self._col_filters.items():
+            if col_idx == PLAY_COLUMN_INDEX or col_idx >= len(self._columns):
+                continue
+            if cf.column in frame.columns:
                 mask = mask & cf.to_polars()
-            frame = frame.filter(mask)
-        frame = top_per_aru_species(frame, self._max_per)
+        frame = frame.filter(mask)
+        if self._max_per:
+            frame = frame.filter(group_rank_expr(self._spread) <= self._max_per)
         self._visible = frame["__row"].to_list()
         self._visible_mask = pl.repeat(False, self._store.row_count, eager=True).scatter(self._visible, True)
 
@@ -424,8 +433,8 @@ class DetectionsTableModel(QAbstractTableModel):
         if not col_names:
             return
 
-        keys = self._store.frame.select([pl.col(n).gather(self._visible) for n in col_names])
-        keys = keys.with_columns(pl.Series("__idx", self._visible))
+        columns = [self._store.frame.get_column(n).gather(self._visible) for n in col_names]
+        keys = pl.DataFrame(columns).with_columns(pl.Series("__idx", self._visible))
         self._visible = keys.sort(col_names, descending=descending, nulls_last=True)["__idx"].to_list()
 
 

@@ -10,6 +10,7 @@ import polars as pl
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QShowEvent
 from PySide6.QtWidgets import (
+    QComboBox,
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
@@ -21,7 +22,7 @@ from PySide6.QtWidgets import (
     QWidgetAction,
 )
 
-from ...domain import Campaign, Detection, DetectionStore, VerifiedState
+from ...domain import Campaign, Detection, DetectionStore, SpreadKey, VerifiedState
 from ...infrastructure import extract_snippet
 from ..app_state import AppState
 from ..models.detections_table_model import DetectionsTableModel
@@ -47,6 +48,50 @@ _DEFAULT_SORT_PRIORITY: list[tuple[str, Qt.SortOrder]] = [
     ("Species", Qt.AscendingOrder),
     ("Confidence", Qt.DescendingOrder),
 ]
+
+# Spread choices as (label, key, tooltip). The None key ranks the whole group together.
+_SpreadOption = tuple[str, SpreadKey | None, str]
+_WHERE_OPTIONS: list[_SpreadOption] = [
+    ("all ARUs", None, "Rank all ARUs together, e.g. to confirm the species list of the whole study."),
+    ("each ARU", SpreadKey.ARU, "Rank each ARU separately, e.g. to confirm presence at every site."),
+]
+_WHEN_OPTIONS: list[_SpreadOption] = [
+    ("all time", None, "Rank across the whole deployment."),
+    (
+        "each week",
+        SpreadKey.WEEK,
+        "Rank each week separately, by the Week column (the BirdNET week the file was analyzed for). "
+        "For weekly survey periods or arrival and departure.",
+    ),
+    (
+        "each day",
+        SpreadKey.DAY,
+        "Rank each day separately, by the detection's own date. "
+        "For daily survey periods, or to keep one noisy day from filling the list.",
+    ),
+]
+_MODEL_OPTIONS: list[_SpreadOption] = [
+    (
+        "all models",
+        None,
+        "Rank all models together. Their confidences are not on the same scale, so one model can fill the list.",
+    ),
+    ("each model", SpreadKey.MODEL, "Rank each model separately, e.g. to compare what each model found."),
+]
+
+
+def _fill_spread_combo(combo: QComboBox, options: list[_SpreadOption], default: SpreadKey | None) -> None:
+    for i, (label, key, tooltip) in enumerate(options):
+        combo.addItem(label, key)
+        combo.setItemData(i, tooltip, Qt.ItemDataRole.ToolTipRole)
+    combo.setCurrentIndex([key for _, key, _ in options].index(default))
+
+    # Item tooltips only show in the open popup, so mirror the current one on the closed combo.
+    def sync_tooltip() -> None:
+        combo.setToolTip(combo.currentData(Qt.ItemDataRole.ToolTipRole))
+
+    sync_tooltip()
+    combo.currentIndexChanged.connect(sync_tooltip)
 
 
 class ExaminePanel(QWidget):
@@ -92,6 +137,11 @@ class ExaminePanel(QWidget):
         ):
             btn.setMinimumWidth(28)
 
+        _fill_spread_combo(self.ui.spread_where_combo, _WHERE_OPTIONS, SpreadKey.ARU)
+        _fill_spread_combo(self.ui.spread_when_combo, _WHEN_OPTIONS, None)
+        _fill_spread_combo(self.ui.spread_model_combo, _MODEL_OPTIONS, SpreadKey.MODEL)
+        # The model choice only appears once the loaded data holds two or more models.
+        self._set_model_choice_visible(False)
         self._build_padding_menu()
         self._build_columns_menu()
         self._build_export_menu()
@@ -105,6 +155,9 @@ class ExaminePanel(QWidget):
 
         self._set_controls_enabled(False)
         self._wire_signals()
+        # The signals keep the model in step from here on. The settings persist
+        # across set_store, so loads only re-apply the spread (see _reload_detections).
+        self._apply_best_detections()
 
     def showEvent(self, event: QShowEvent) -> None:  # noqa: N802, Qt API
         """Arm the table shortcuts when the user navigates to this panel.
@@ -125,7 +178,10 @@ class ExaminePanel(QWidget):
         self._app_state.analysisInventoryChanged.connect(self._schedule_reload)
 
         self.ui.campaign_combo.currentIndexChanged.connect(self._on_campaign_selected)
-        self.ui.max_per_spin.valueChanged.connect(self._on_max_per_changed)
+        self.ui.top_box.toggled.connect(self._apply_best_detections)
+        self.ui.max_per_spin.valueChanged.connect(self._apply_best_detections)
+        for combo in (self.ui.spread_where_combo, self.ui.spread_when_combo, self.ui.spread_model_combo):
+            combo.currentIndexChanged.connect(self._apply_best_detections)
         self.pad_before_spin.valueChanged.connect(self._on_padding_changed)
         self.pad_after_spin.valueChanged.connect(self._on_padding_changed)
         self.ui.detections_table.columnVisibilityChanged.connect(self._on_column_visibility_changed)
@@ -264,8 +320,7 @@ class ExaminePanel(QWidget):
 
         Hands the full detection list to the model and lets it own both the
         max-per cap and the per-column filters. A fresh dataset clears any
-        prior column filters, but the max-per spin value persists across
-        campaigns, so it is re-applied here.
+        prior column filters, while the cap and spread keys persist.
         """
         # Snapshot the current sort by column NAME so it survives the model
         # reset shifting indices below. Falls back to the panel default when
@@ -275,7 +330,9 @@ class ExaminePanel(QWidget):
         # emits statusChanged into _on_detection_count_changed, which reads this.
         self._model_totals = Counter(dict(self._detections.frame["Model"].value_counts().iter_rows()))
         self._model.set_store(self._detections)
-        self._model.set_max_per(self.ui.max_per_spin.value())
+        # The model choice counts toward the spread only while visible.
+        self._set_model_choice_visible(len(self._model_totals) > 1)
+        self._model.set_spread(self._spread())
         # New columns from set_store (Species_<locale> extras) default
         # to visible in Qt. Re-apply the persisted hidden set so anything
         # the user previously hid stays hidden even after the model rebuild.
@@ -286,9 +343,25 @@ class ExaminePanel(QWidget):
         self.ui.detections_table.setSpeciesChoices(sorted(s for s in species if s))
         self.ui.detections_table.fitColumnsToContents()
 
-    def _on_max_per_changed(self) -> None:
-        """Re-cap the visible rows without disturbing the active column filters."""
-        self._model.set_max_per(self.ui.max_per_spin.value())
+    def _max_per(self) -> int:
+        """The cap for the model, 0 while the Best detections box is off."""
+        return self.ui.max_per_spin.value() if self.ui.top_box.isChecked() else 0
+
+    def _set_model_choice_visible(self, visible: bool) -> None:
+        self.ui.spread_model_label.setVisible(visible)
+        self.ui.spread_model_combo.setVisible(visible)
+
+    def _spread(self) -> set[SpreadKey]:
+        combos = [self.ui.spread_where_combo, self.ui.spread_when_combo]
+        # isHidden() is the explicit flag, valid before the panel is first shown.
+        if not self.ui.spread_model_combo.isHidden():
+            combos.append(self.ui.spread_model_combo)
+        return {key for combo in combos if (key := combo.currentData()) is not None}
+
+    def _apply_best_detections(self) -> None:
+        """Push the Best detections box to the model. Filters and sort stay as they are."""
+        self._model.set_max_per(self._max_per())
+        self._model.set_spread(self._spread())
         self.ui.detections_table.fitColumnsToContents()
 
     def _on_detection_count_changed(self, shown: int) -> None:
@@ -466,7 +539,7 @@ class ExaminePanel(QWidget):
     def _set_controls_enabled(self, enabled: bool) -> None:
         for w in (
             self.ui.campaign_combo,
-            self.ui.max_per_spin,
+            self.ui.top_box,
             self.ui.padding_button,
             self.ui.columns_button,
             self.ui.export_button,

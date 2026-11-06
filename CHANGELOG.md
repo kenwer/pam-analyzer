@@ -1,6 +1,9 @@
 # Changelog
 
 ## [Unreleased]
+### Added
+- A "Best detections" box in the Examine panel shows the top N by confidence per species, in all ARUs or each ARU, for all time, each week or each day, and from each model when there are several.
+
 ### Changed
 - Improved Recording_Time handling:
   - The time is read from the recorder's metadata (GUANO) first, then from the filename

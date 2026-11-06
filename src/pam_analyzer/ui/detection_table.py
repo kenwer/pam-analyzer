@@ -136,13 +136,9 @@ class DetectionTable(QWidget):
     columnVisibilityChanged = Signal(int, bool)
     statusChanged = Signal(int)
 
-    def __init__(
-        self,
-        audio_root: Path | None = None,
-        parent: QWidget | None = None,
-    ) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._audio_root = audio_root
+        self._audio_root: Path | None = None
         self._model: DetectionsTableModel | None = None
         # Snapshot of the column signature last seen by _refresh_layout_for_model,
         # used to skip the filter-row rebuild when a model reset (e.g. from

@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from pam_analyzer.domain import Campaign, Detection, FilterMode, LatLon, Project, VerifiedState, paths
+from pam_analyzer.domain import Campaign, Detection, FilterMode, LatLon, Project, SpreadKey, VerifiedState, paths
 from pam_analyzer.domain.filter_ops import FilterOp, default_op, label_for
 from pam_analyzer.ui.app_state import AppState
 from pam_analyzer.ui.detection_table import DetectionTable
@@ -111,6 +111,18 @@ def panel(qtbot, project: Project, load_project) -> ExaminePanel:
     return panel
 
 
+def _spread_to(combo: QComboBox, key: SpreadKey | None) -> None:
+    """Pick the combo item for a spread key, as a user would from the list."""
+    combo.setCurrentIndex(next(i for i in range(combo.count()) if combo.itemData(i) == key))
+
+
+def _cap(panel: ExaminePanel, n: int) -> None:
+    """Set the Top N cap through the UI, 0 turning it off."""
+    if n:
+        panel.ui.max_per_spin.setValue(n)
+    panel.ui.top_box.setChecked(bool(n))
+
+
 def test_panel_loads_detections_for_first_campaign(panel: ExaminePanel) -> None:
     # "All campaigns" is selected by default, so 3 rows * 2 campaigns = 6.
     assert panel._model.rowCount() == 6
@@ -154,11 +166,18 @@ def test_info_label_breaks_down_counts_by_model(
     assert "5 detections" in text
     assert f"[{DEFAULT_MODEL_KEY}: 3]   [Perch-2.0: 2]" in text
 
-    # A cap narrows the view to the single highest-confidence row per
-    # (ARU, Species). That row is a current-model one (conf 0.7 > any Perch
-    # row), so its cell shows the shown-of-total split while Perch drops to
-    # 0 of 2. Perch stays listed (order and membership come from the totals).
-    panel.ui.max_per_spin.setValue(1)
+    # Two models bring up the model choice, ranking each model on its own,
+    # so a cap of 1 keeps each model's best row.
+    assert not panel.ui.spread_model_combo.isHidden()
+    _cap(panel, 1)
+    text = panel.ui.info_label.text()
+    assert "2 of 5 detections" in text
+    assert f"[{DEFAULT_MODEL_KEY}: 1 of 3]   [Perch-2.0: 1 of 2]" in text
+
+    # All models ranks them together. The best row is a current-model one
+    # (conf 0.7 > any Perch row), so Perch drops to 0 of 2 but stays listed
+    # (order and membership come from the totals).
+    _spread_to(panel.ui.spread_model_combo, None)
     text = panel.ui.info_label.text()
     assert "1 of 5 detections" in text
     assert f"[{DEFAULT_MODEL_KEY}: 1 of 3]   [Perch-2.0: 0 of 2]" in text
@@ -192,9 +211,22 @@ def _write_model_csv(path: Path, campaign: str, aru: str, model: str, rows: int)
 
 
 def test_max_per_filter_truncates_displayed_rows(panel: ExaminePanel) -> None:
-    panel.ui.max_per_spin.setValue(1)
+    _cap(panel, 1)
     # 1 per (ARU, Species) per campaign, so 1 * 2 campaigns = 2 rows
     assert panel._model.rowCount() == 2
+
+
+def test_best_detections_box_gates_the_cap_and_keeps_the_number(panel: ExaminePanel) -> None:
+    ui = panel.ui
+    assert panel._model.rowCount() == 6
+
+    ui.top_box.setChecked(True)
+    ui.max_per_spin.setValue(1)
+    assert panel._model.rowCount() == 2
+
+    ui.top_box.setChecked(False)
+    assert panel._model.rowCount() == 6
+    assert ui.max_per_spin.value() == 1
 
 
 def test_column_filter_survives_max_per_change(panel: ExaminePanel) -> None:
@@ -203,7 +235,7 @@ def test_column_filter_survives_max_per_change(panel: ExaminePanel) -> None:
     panel._model.set_column_filter(aru_col, "MSD-1", FilterOp.EQUALS)
     assert panel._model.rowCount() == 3  # only the alpha/MSD-1 rows
 
-    panel.ui.max_per_spin.setValue(1)
+    _cap(panel, 1)
     # Filter first (3 MSD-1 Robin rows), then cap to the single best by confidence.
     assert panel._model.rowCount() == 1
     conf_col = panel._model.index_of("Confidence")
@@ -211,7 +243,7 @@ def test_column_filter_survives_max_per_change(panel: ExaminePanel) -> None:
 
     # Turning the cap back off must reveal all three MSD-1 rows again, proving
     # the ARU filter stayed active throughout rather than being cleared.
-    panel.ui.max_per_spin.setValue(0)
+    _cap(panel, 0)
     assert panel._model.rowCount() == 3
 
 
@@ -222,10 +254,60 @@ def test_max_per_caps_after_column_filter(panel: ExaminePanel) -> None:
     panel._model.set_column_filter(aru_col, "MSD-1", FilterOp.EQUALS)
     # Exclude the overall-best 0.7 row, leaving 0.5 and 0.6.
     panel._model.set_column_filter(conf_col, "0.7", FilterOp.LESS_THAN)
-    panel.ui.max_per_spin.setValue(1)
+    _cap(panel, 1)
     # Cap-first would rank 0.7 top then drop it (0 rows). Filter-first keeps 0.6.
     assert panel._model.rowCount() == 1
     assert float(panel._model.data(panel._model.index(0, conf_col))) == pytest.approx(0.6)
+
+
+def test_best_detections_box_is_off_by_default_and_disables_its_controls(panel: ExaminePanel) -> None:
+    ui = panel.ui
+    controls = (ui.max_per_spin, ui.spread_where_combo, ui.spread_when_combo)
+    assert not ui.top_box.isChecked()
+    assert not any(w.isEnabled() for w in controls)
+
+    ui.top_box.setChecked(True)
+    assert all(w.isEnabled() for w in controls)
+
+
+def test_model_choice_hidden_for_a_single_model(panel: ExaminePanel) -> None:
+    # The base fixture has one (unnamed) model, where a Model grouping is a no-op.
+    assert panel.ui.spread_model_combo.isHidden()
+    assert panel.ui.spread_model_label.isHidden()
+    assert SpreadKey.MODEL not in panel._spread()
+
+
+def test_spread_defaults_to_each_aru_for_all_time(panel: ExaminePanel) -> None:
+    assert panel.ui.spread_where_combo.currentData() == SpreadKey.ARU
+    assert panel.ui.spread_when_combo.currentData() is None
+    assert panel._spread() == {SpreadKey.ARU}
+
+
+def test_spread_when_choice_caps_per_period(panel: ExaminePanel) -> None:
+    _cap(panel, 1)
+    assert panel._model.rowCount() == 2
+    # Each fixture row of a campaign sits on its own day.
+    _spread_to(panel.ui.spread_when_combo, SpreadKey.DAY)
+    assert panel._model.rowCount() == 6
+    # All fixture rows share Week 24, so each week caps like all time.
+    _spread_to(panel.ui.spread_when_combo, SpreadKey.WEEK)
+    assert panel._model.rowCount() == 2
+    _spread_to(panel.ui.spread_when_combo, None)
+    assert panel._model.rowCount() == 2
+
+
+def test_spread_all_arus_caps_study_wide(panel: ExaminePanel) -> None:
+    _cap(panel, 1)
+    _spread_to(panel.ui.spread_where_combo, None)
+    # One Robin row across both ARUs.
+    assert panel._model.rowCount() == 1
+
+
+def test_spread_choice_leaves_sort_alone(panel: ExaminePanel) -> None:
+    panel.ui.top_box.setChecked(True)
+    before = panel.ui.detections_table.sortPriority()
+    _spread_to(panel.ui.spread_when_combo, SpreadKey.DAY)
+    assert panel.ui.detections_table.sortPriority() == before
 
 
 def test_edit_verified_marks_row_dirty(panel: ExaminePanel) -> None:
@@ -1338,3 +1420,18 @@ def test_right_click_position_opens_the_menu_for_the_cell_under_it(qtbot, panel:
     assert "Export Selected as Audio Snippets…" in seen
     assert _clipboard() == "MSD-1"
     QCoreApplication.processEvents()
+
+
+def test_detection_table_takes_its_parent_as_first_argument(qtbot) -> None:
+    """Designer-generated code passes the parent positionally."""
+    host = QWidget()
+    qtbot.addWidget(host)
+    table = DetectionTable(host)
+    assert table.parent() is host
+
+
+def test_spread_combo_tooltip_follows_the_current_item(panel: ExaminePanel) -> None:
+    combo = panel.ui.spread_when_combo
+    _spread_to(combo, SpreadKey.DAY)
+    assert combo.toolTip() == combo.itemData(combo.currentIndex(), Qt.ItemDataRole.ToolTipRole)
+    assert combo.toolTip().startswith("Rank each day")

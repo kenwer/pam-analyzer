@@ -139,12 +139,21 @@ class HeaderFilterRow(QObject):
         self._button_size = max(12, self._height - 2 * (_BUTTON_PAD + 1))
         self._header.setFilterHeight(self._height)
 
+        # A bulk resize (resizeColumnsToContents) emits sectionResized while
+        # later sections still have stale positions, and nothing once it is
+        # done. A deferred sync catches the final layout.
+        self._deferred_sync = QTimer(self)
+        self._deferred_sync.setSingleShot(True)
+        self._deferred_sync.setInterval(0)
+        self._deferred_sync.timeout.connect(self._sync)
+
         self._header.sectionResized.connect(self._sync)
+        self._header.sectionResized.connect(self._deferred_sync.start)
         self._header.sectionMoved.connect(self._sync)
         self._header.geometriesChanged.connect(self._sync)
         table.horizontalScrollBar().valueChanged.connect(self._sync)
         table.verticalScrollBar().valueChanged.connect(self._sync)
-        self._header.shown.connect(lambda: QTimer.singleShot(0, self, self._sync))
+        self._header.shown.connect(self._deferred_sync.start)
 
     # public API
     def rebuild(self, col_count: int, kinds: Mapping[int, ColumnKind] | None = None) -> None:

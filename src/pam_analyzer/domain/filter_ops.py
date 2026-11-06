@@ -82,19 +82,27 @@ def time_helper_col(col: str) -> str:
     return f"__{col}__time"
 
 
+def parse_datetime_expr(col: str) -> pl.Expr:
+    """Parse an ISO datetime string column, null where unparsable.
+
+    Formats are coalesced explicitly because to_datetime() inference locks onto
+    the first non-null cell's format, and cells mix "T"/space separators and
+    with/without-seconds forms.
+    """
+    normalized = pl.col(col).cast(pl.String).str.replace("T", " ", literal=True)
+    return pl.coalesce(
+        normalized.str.to_datetime("%Y-%m-%d %H:%M:%S", strict=False),
+        normalized.str.to_datetime("%Y-%m-%d %H:%M", strict=False),
+    )
+
+
 def datetime_helper_exprs(col: str) -> list[pl.Expr]:
     """Expressions adding parsed date/time helper columns for a DATETIME column.
 
     Parsed once when the table model builds its sort frame so per-keystroke
-    filtering never re-parses the strings. Formats are coalesced explicitly
-    because to_datetime() inference locks onto the first non-null cell's format,
-    and cells mix "T"/space separators and with/without-seconds forms.
+    filtering never re-parses the strings.
     """
-    normalized = pl.col(col).cast(pl.String).str.replace("T", " ", literal=True)
-    parsed = pl.coalesce(
-        normalized.str.to_datetime("%Y-%m-%d %H:%M:%S", strict=False),
-        normalized.str.to_datetime("%Y-%m-%d %H:%M", strict=False),
-    )
+    parsed = parse_datetime_expr(col)
     return [
         parsed.dt.date().alias(date_helper_col(col)),
         parsed.dt.time().alias(time_helper_col(col)),
