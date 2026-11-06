@@ -10,10 +10,9 @@ at :meth:`rebuild` time.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, Qt, QTimer, Signal
+from PySide6.QtCore import QObject, QPoint, QPointF, QSignalBlocker, Qt, QTimer, Signal
 from PySide6.QtGui import QActionGroup, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import QLineEdit, QMenu, QToolButton, QWidget
 
@@ -46,14 +45,12 @@ _CLEAR_STYLE = (
     " QToolButton:hover { color: palette(text); }"
 )
 
-_HOVER_EVENTS = (QEvent.Type.Enter, QEvent.Type.Leave)
-_FOCUS_EVENTS = (QEvent.Type.FocusIn, QEvent.Type.FocusOut)
-
 
 class _FilterEdit(QLineEdit):
-    """Filter input that reports Esc, which clears the column's filter."""
+    """Filter input that reports Esc, which clears the column's filter, and focus changes."""
 
     escapePressed = Signal()
+    focusChanged = Signal()
 
     def keyPressEvent(self, event) -> None:  # noqa: N802 (Qt API)
         if event.key() == Qt.Key.Key_Escape:
@@ -61,6 +58,14 @@ class _FilterEdit(QLineEdit):
             event.accept()
             return
         super().keyPressEvent(event)
+
+    def focusInEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        super().focusInEvent(event)
+        self.focusChanged.emit()
+
+    def focusOutEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        super().focusOutEvent(event)
+        self.focusChanged.emit()
 
 
 def _make_clear_button(parent: QWidget) -> QToolButton:
@@ -137,20 +142,79 @@ class _FunnelButton(QToolButton):
         painter.drawPolygon(funnel)
 
 
-@dataclass
-class _Slot:
-    edit: QLineEdit
-    button: _FunnelButton
-    clear: QToolButton
-    timer: QTimer
-    kind: ColumnKind
-    op: FilterOp
-    pending_text: str = ""
-    active: bool = False
-    # Slot widgets under the pointer. A set because Qt sends the input its
-    # Leave before the overlaid sibling gets its Enter.
-    hovered: set[QWidget] = field(default_factory=set)
-    focused: bool = False
+class _FilterCell(QWidget):
+    """One column's filter input with its clear and funnel buttons overlaid.
+
+    The buttons are siblings of the input, not children, so they stay usable
+    while BLANK or NOT_BLANK disable the input. The clear button shows while
+    the filter is active and the cell is hovered or its input has focus.
+    """
+
+    def __init__(self, parent: QWidget, kind: ColumnKind, button_size: int) -> None:
+        super().__init__(parent)
+        self.kind = kind
+        self.op = default_op(kind)
+        self.pending_text = ""
+        self.active = False
+        self._button_size = button_size
+
+        self.edit = _FilterEdit(self)
+        self.edit.setPlaceholderText("…")
+        # Room for the funnel only. The clear button overlays the text.
+        self.edit.setTextMargins(0, 0, button_size + _BUTTON_PAD * 2, 0)
+        # Geometry only. Naming a colour here would override the palette and
+        # keep the cell white under a dark theme.
+        self.edit.setStyleSheet("QLineEdit { padding: 1px 3px; }")
+        self.edit.focusChanged.connect(self._refresh_clear)
+
+        self.clear = _make_clear_button(self)
+        self.button = _FunnelButton(self)
+        self.button.setToolTip(label_for(self.op))
+
+        self.timer = QTimer(self)
+        self.timer.setSingleShot(True)
+        self.timer.setInterval(300)
+
+    def set_text(self, text: str) -> None:
+        """Replace the text and drop any pending debounce, without emitting textChanged."""
+        self.timer.stop()
+        with QSignalBlocker(self.edit):
+            self.edit.setText(text)
+        self.pending_text = text
+
+    def set_op(self, op: FilterOp) -> None:
+        self.op = op
+        self.button.setToolTip(label_for(op))
+        # BLANK and NOT_BLANK ignore the typed value, so the input is disabled
+        # and emptied while the operator alone keeps the filter active.
+        self.edit.setEnabled(needs_value(op))
+        if not needs_value(op):
+            self.set_text("")
+
+    def set_active(self, active: bool) -> None:
+        self.active = active
+        self.button.setActive(active)
+        self._refresh_clear()
+
+    def _refresh_clear(self) -> None:
+        self.clear.setVisible(self.active and (self.underMouse() or self.edit.hasFocus()))
+
+    def enterEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        super().enterEvent(event)
+        self._refresh_clear()
+
+    def leaveEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        super().leaveEvent(event)
+        self._refresh_clear()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        super().resizeEvent(event)
+        w, h, size = self.width(), self.height(), self._button_size
+        self.edit.setGeometry(0, 0, w, h)
+        btn_x = max(0, w - size - _BUTTON_PAD)
+        btn_y = (h - size) // 2
+        self.button.setGeometry(btn_x, btn_y, size, size)
+        self.clear.setGeometry(max(0, btn_x - size), btn_y, size, size)
 
 
 class HeaderFilterRow(QObject):
@@ -167,9 +231,7 @@ class HeaderFilterRow(QObject):
         super().__init__(table)
         self._table = table
         self._header = table.horizontalHeader()
-        self._slots: list[_Slot] = []
-        # Slot widget to its column, for the hover and focus event filter.
-        self._col_of: dict[QWidget, int] = {}
+        self._slots: list[_FilterCell] = []
         self._suppressed: set[int] = set()
         # Distinct-values source for the "is one of" popup, injected by the
         # owning table so this controller stays decoupled from the model.
@@ -209,11 +271,8 @@ class HeaderFilterRow(QObject):
         kinds = kinds or {}
         for s in self._slots:
             s.timer.stop()
-            s.edit.deleteLater()
-            s.button.deleteLater()
-            s.clear.deleteLater()
+            s.deleteLater()
         self._slots = []
-        self._col_of = {}
 
         for col in range(col_count):
             self._slots.append(self._build_slot(col, kinds.get(col, ColumnKind.TEXT)))
@@ -227,31 +286,20 @@ class HeaderFilterRow(QObject):
         if not (0 <= col < len(self._slots)):
             return
         slot = self._slots[col]
-        slot.edit.blockSignals(True)
-        slot.edit.clear()
-        slot.edit.blockSignals(False)
-        slot.pending_text = ""
+        slot.set_text("")
         # Back to the default op too. A leftover BLANK or NOT_BLANK would
         # keep the input disabled with no filter behind it.
-        slot.timer.stop()
-        slot.op = default_op(slot.kind)
-        slot.button.setToolTip(label_for(slot.op))
-        slot.edit.setEnabled(True)
-        self._set_active(col, False)
+        slot.set_op(default_op(slot.kind))
+        slot.set_active(False)
 
     def set_filter(self, col: int, text: str, op: FilterOp) -> None:
         """Set and apply the filter of *col*, as if the user had picked *op* and typed *text*."""
         if not (0 <= col < len(self._slots)):
             return
         slot = self._slots[col]
-        slot.timer.stop()
-        slot.op = op
-        slot.button.setToolTip(label_for(op))
-        slot.edit.setEnabled(needs_value(op))
-        slot.pending_text = text if needs_value(op) else ""
-        slot.edit.blockSignals(True)
-        slot.edit.setText(slot.pending_text)
-        slot.edit.blockSignals(False)
+        slot.set_op(op)
+        if needs_value(op):
+            slot.set_text(text)
         self._emit(col)
 
     def set_column_visible(self, col: int, visible: bool) -> None:
@@ -276,30 +324,8 @@ class HeaderFilterRow(QObject):
         return None
 
     # slot construction
-    def _build_slot(self, col: int, kind: ColumnKind) -> _Slot:
-        edit = _FilterEdit(self._header)
-        edit.setPlaceholderText("…")
-        # Reserve room on the right for the funnel button. The clear button
-        # takes none, it overlays the text while shown.
-        edit.setTextMargins(0, 0, self._button_size + _BUTTON_PAD * 2, 0)
-        # Geometry only. Naming a colour here would override the palette and
-        # keep the cell white under a dark theme.
-        edit.setStyleSheet("QLineEdit { padding: 1px 3px; }")
-
-        # A sibling of the input, not a child. Value-less ops disable the
-        # input, and a child funnel would go dead with it.
-        button = _FunnelButton(self._header)
-        op = default_op(kind)
-        button.setToolTip(label_for(op))
-        # A sibling for the same reason as the funnel: it must clear BLANK and
-        # NOT_BLANK, which disable the input.
-        clear = _make_clear_button(self._header)
-
-        timer = QTimer(self)
-        timer.setSingleShot(True)
-        timer.setInterval(300)
-
-        slot = _Slot(edit=edit, button=button, clear=clear, timer=timer, kind=kind, op=op)
+    def _build_slot(self, col: int, kind: ColumnKind) -> _FilterCell:
+        slot = _FilterCell(self._header, kind, self._button_size)
 
         def _on_text(text: str, c: int = col) -> None:
             self._slots[c].pending_text = text
@@ -320,37 +346,13 @@ class HeaderFilterRow(QObject):
                 self._emit(c)
             self._table.setFocus()
 
-        timer.timeout.connect(_on_timer)
-        edit.textChanged.connect(_on_text)
-        edit.returnPressed.connect(_on_return)
-        edit.escapePressed.connect(lambda c=col: self._clear_and_emit(c))
-        button.clicked.connect(_on_button)
-        clear.clicked.connect(lambda _checked=False, c=col: self._clear_and_emit(c))
-        for widget in (edit, button, clear):
-            self._col_of[widget] = col
-            widget.installEventFilter(self)
+        slot.timer.timeout.connect(_on_timer)
+        slot.edit.textChanged.connect(_on_text)
+        slot.edit.returnPressed.connect(_on_return)
+        slot.edit.escapePressed.connect(lambda c=col: self._clear_and_emit(c))
+        slot.button.clicked.connect(_on_button)
+        slot.clear.clicked.connect(lambda _checked=False, c=col: self._clear_and_emit(c))
         return slot
-
-    def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802 (Qt API)
-        """Track hover and focus per slot to show its clear button."""
-        kind = event.type()
-        col = self._col_of.get(obj) if kind in _HOVER_EVENTS or kind in _FOCUS_EVENTS else None
-        if col is not None:
-            slot = self._slots[col]
-            if kind == QEvent.Type.Enter:
-                slot.hovered.add(obj)
-            elif kind == QEvent.Type.Leave:
-                slot.hovered.discard(obj)
-            elif obj is slot.edit:
-                slot.focused = kind == QEvent.Type.FocusIn
-            # Deferred so a Leave and the Enter that follows it settle first.
-            QTimer.singleShot(0, self, lambda c=col: self._show_clear_if_wanted(c))
-        return super().eventFilter(obj, event)
-
-    def _show_clear_if_wanted(self, col: int) -> None:
-        if col < len(self._slots) and self._column_shown(col):
-            slot = self._slots[col]
-            slot.clear.setVisible(slot.active and (bool(slot.hovered) or slot.focused))
 
     # operator menu
     def _show_op_menu(self, col: int) -> None:
@@ -379,21 +381,7 @@ class HeaderFilterRow(QObject):
         if op is slot.op and not needs_value(op):
             # Picking the checked BLANK or NOT_BLANK again turns it off.
             op = default_op(slot.kind)
-        self._set_op(col, op)
-
-    def _set_op(self, col: int, op: FilterOp) -> None:
-        slot = self._slots[col]
-        slot.op = op
-        slot.button.setToolTip(label_for(op))
-        # BLANK and NOT_BLANK ignore the typed value. Visually disable the input.
-        value_required = needs_value(op)
-        slot.edit.setEnabled(value_required)
-        if not value_required:
-            # Clear text but keep the operator-driven filter active.
-            slot.edit.blockSignals(True)
-            slot.edit.clear()
-            slot.edit.blockSignals(False)
-            slot.pending_text = ""
+        slot.set_op(op)
         # Re-apply immediately rather than waiting for the next keystroke.
         self._emit(col)
         if op in POPUP_OPS:
@@ -418,12 +406,7 @@ class HeaderFilterRow(QObject):
             return
 
         def _apply(text: str, c: int = col) -> None:
-            s = self._slots[c]
-            s.timer.stop()
-            s.edit.blockSignals(True)
-            s.edit.setText(text)
-            s.edit.blockSignals(False)
-            s.pending_text = text
+            self._slots[c].set_text(text)
             self._emit(c)
 
         show_filter_popup(widget, slot.button, _apply)
@@ -432,8 +415,7 @@ class HeaderFilterRow(QObject):
     def _emit(self, col: int) -> None:
         slot = self._slots[col]
         text = slot.pending_text if needs_value(slot.op) else ""
-        active = (needs_value(slot.op) and bool(text.strip())) or not needs_value(slot.op)
-        self._set_active(col, active)
+        slot.set_active(not needs_value(slot.op) or bool(text.strip()))
         self.filterChanged.emit(col, text, slot.op)
 
     def _clear_and_emit(self, col: int) -> None:
@@ -441,44 +423,14 @@ class HeaderFilterRow(QObject):
         self.clear_column(col)
         self._emit(col)
 
-    def _set_active(self, col: int, active: bool) -> None:
-        slot = self._slots[col]
-        slot.active = active
-        slot.button.setActive(active)
-        self._place(col)
-
     # layout
     def _sync(self, *_: object) -> None:
         """Reposition all slots to match the current header geometry."""
-        for col in range(len(self._slots)):
-            self._place(col)
-
-    def _column_shown(self, col: int) -> bool:
-        return col not in self._suppressed and not self._table.isColumnHidden(col)
-
-    def _place(self, col: int) -> None:
-        slot = self._slots[col]
-        if not self._column_shown(col):
-            slot.edit.hide()
-            slot.button.hide()
-            slot.clear.hide()
-            # Hidden widgets get no Leave, so drop the state they would have reset.
-            slot.hovered.clear()
-            slot.focused = False
-            return
-        header = self._header
-        y = header.height() - self._height
-        size = self._button_size
-        x = header.sectionViewportPosition(col)
-        w = header.sectionSize(col)
-        slot.edit.setGeometry(x, y, w, self._height)
-        slot.edit.show()
-        # Position the funnel over the QLineEdit, hugging the right edge.
-        btn_x = x + max(0, w - size - _BUTTON_PAD)
-        btn_y = y + (self._height - size) // 2
-        slot.button.setGeometry(btn_x, btn_y, size, size)
-        slot.button.show()
-        slot.button.raise_()
-        slot.clear.setGeometry(btn_x - size, btn_y, size, size)
-        slot.clear.raise_()
-        self._show_clear_if_wanted(col)
+        y = self._header.height() - self._height
+        for col, slot in enumerate(self._slots):
+            if col in self._suppressed or self._table.isColumnHidden(col):
+                slot.hide()
+                continue
+            x = self._header.sectionViewportPosition(col)
+            slot.setGeometry(x, y, self._header.sectionSize(col), self._height)
+            slot.show()

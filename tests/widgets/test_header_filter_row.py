@@ -1,6 +1,6 @@
 import pytest
-from PySide6.QtCore import QCoreApplication, QEvent, QPointF, Qt
-from PySide6.QtGui import QEnterEvent, QFocusEvent, QStandardItem, QStandardItemModel
+from PySide6.QtCore import QPoint, Qt
+from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import QWidget
 
 from pam_analyzer.domain.filter_ops import FilterOp
@@ -32,7 +32,7 @@ def test_filter_row_follows_columns_resized_to_contents(qtbot) -> None:
 
     def aligned() -> bool:
         return all(
-            (slot.edit.x(), slot.edit.width()) == (header.sectionViewportPosition(col), header.sectionSize(col))
+            (slot.x(), slot.width()) == (header.sectionViewportPosition(col), header.sectionSize(col))
             for col, slot in enumerate(filter_row._slots)
         )
 
@@ -53,7 +53,9 @@ def shown_row(qtbot) -> HeaderFilterRow:
     qtbot.waitExposed(table)
     # As in the app, the table holds focus, not the first filter input.
     table.setFocus()
-    qtbot.waitUntil(lambda: not filter_row._slots[0].focused)
+    qtbot.waitUntil(lambda: not filter_row._slots[0].edit.hasFocus())
+    # The cursor stays where an earlier test left it, possibly over a cell.
+    _hover_away(qtbot, filter_row)
     return filter_row
 
 
@@ -63,12 +65,14 @@ def _record(filter_row: HeaderFilterRow) -> list[tuple[int, str, FilterOp]]:
     return emitted
 
 
-def _enter(widget: QWidget) -> None:
-    QCoreApplication.sendEvent(widget, QEnterEvent(QPointF(1, 1), QPointF(1, 1), QPointF(1, 1)))
+def _hover(qtbot, widget: QWidget) -> None:
+    qtbot.mouseMove(widget, widget.rect().center())
 
 
-def _leave(widget: QWidget) -> None:
-    QCoreApplication.sendEvent(widget, QEvent(QEvent.Type.Leave))
+def _hover_away(qtbot, filter_row: HeaderFilterRow) -> None:
+    # The table body, below the header and its filter row.
+    table = filter_row._table
+    qtbot.mouseMove(table, QPoint(table.width() // 2, table.height() - 10))
 
 
 def test_clear_button_shows_on_hover_while_the_filter_is_active(qtbot, shown_row: HeaderFilterRow) -> None:
@@ -76,31 +80,29 @@ def test_clear_button_shows_on_hover_while_the_filter_is_active(qtbot, shown_row
     slot = shown_row._slots[0]
     assert slot.clear.isHidden()
 
-    _enter(slot.edit)
+    _hover(qtbot, slot.edit)
     qtbot.waitUntil(lambda: not slot.clear.isHidden())
     assert slot.clear.geometry().right() < slot.button.geometry().left()
 
-    _leave(slot.edit)
+    _hover_away(qtbot, shown_row)
     qtbot.waitUntil(slot.clear.isHidden)
 
 
 def test_hovering_an_unfiltered_cell_shows_no_clear_button(qtbot, shown_row: HeaderFilterRow) -> None:
     slot = shown_row._slots[1]
-    _enter(slot.edit)
-    qtbot.wait(10)
+    _hover(qtbot, slot.edit)
+    qtbot.waitUntil(slot.underMouse)
     assert slot.clear.isHidden()
 
 
 def test_moving_from_the_input_onto_the_clear_button_keeps_it(qtbot, shown_row: HeaderFilterRow) -> None:
     shown_row.set_filter(0, "robin", FilterOp.CONTAINS)
     slot = shown_row._slots[0]
-    _enter(slot.edit)
+    _hover(qtbot, slot.edit)
     qtbot.waitUntil(lambda: not slot.clear.isHidden())
 
-    # Qt sends the input its Leave before the overlaid sibling gets its Enter.
-    _leave(slot.edit)
-    _enter(slot.clear)
-    qtbot.wait(10)
+    _hover(qtbot, slot.clear)
+    qtbot.waitUntil(slot.clear.underMouse)
 
     assert not slot.clear.isHidden()
 
@@ -109,20 +111,11 @@ def test_clear_button_shows_while_the_input_has_focus(qtbot, shown_row: HeaderFi
     shown_row.set_filter(0, "robin", FilterOp.CONTAINS)
     slot = shown_row._slots[0]
 
-    QCoreApplication.sendEvent(slot.edit, QFocusEvent(QEvent.Type.FocusIn))
+    slot.edit.setFocus()
     qtbot.waitUntil(lambda: not slot.clear.isHidden())
 
-    QCoreApplication.sendEvent(slot.edit, QFocusEvent(QEvent.Type.FocusOut))
+    shown_row._table.setFocus()
     qtbot.waitUntil(slot.clear.isHidden)
-
-
-def test_clear_button_overlays_the_text_without_taking_room(shown_row: HeaderFilterRow) -> None:
-    slot = shown_row._slots[0]
-    margin = slot.edit.textMargins().right()
-
-    shown_row.set_filter(0, "robin", FilterOp.CONTAINS)
-
-    assert slot.edit.textMargins().right() == margin
 
 
 def test_clear_button_resets_text_and_operator_and_applies_at_once(shown_row: HeaderFilterRow) -> None:

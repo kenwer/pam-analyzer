@@ -837,7 +837,7 @@ def test_not_blank_filter_can_be_switched_back_from_the_funnel(qtbot, panel: Exa
     slot = filter_row._slots[col]
     original_op = default_op(slot.kind)
 
-    filter_row._set_op(col, FilterOp.NOT_BLANK)
+    filter_row.set_filter(col, "", FilterOp.NOT_BLANK)
     assert panel._model.rowCount() == 0
     assert not slot.edit.isEnabled()
 
@@ -866,7 +866,7 @@ def test_hiding_a_column_resets_its_blank_filter(panel: ExaminePanel) -> None:
     slot = filter_row._slots[col]
     original_op = filter_row.column_op(col)
 
-    filter_row._set_op(col, FilterOp.NOT_BLANK)
+    filter_row.set_filter(col, "", FilterOp.NOT_BLANK)
     assert panel._model.rowCount() == 0
 
     detection_table._toggle_column(col, False)
