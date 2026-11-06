@@ -121,6 +121,24 @@ def _known_species(version: str) -> frozenset[str]:
     return frozenset(_locale_label_map(version, "en_us"))
 
 
+def v3_0_labels(lang: str):  # noqa: ANN201
+    """BirdNET v3.0's 'Scientific_Common' entries for one locale, in output order.
+
+    Label files only: the lib generates them from its label and taxonomy
+    downloads on first use, and the model weights are never touched.
+    """
+    import birdnet
+    from birdnet.acoustic.models.v3_0.onnx import AcousticOnnxDownloaderV3_0
+    from birdnet.utils.species_lists import read_official_labels
+
+    AcousticOnnxDownloaderV3_0.ensure_labels_available()
+    return read_official_labels(
+        AcousticOnnxDownloaderV3_0.get_lang_file(lang),
+        birdnet.AcousticModelV3_0.get_n_classes(),
+        "acoustic model v3.0",
+    )
+
+
 @lru_cache(maxsize=16)
 def _locale_label_map(version: str, lang: str) -> dict[str, str]:
     lang = normalize_lang_code(lang)
@@ -135,11 +153,7 @@ def _locale_label_map(version: str, lang: str) -> dict[str, str]:
 
         species = birdnet_2_4_onnx.labels("acoustic", lang)
     else:
-        from birdnet.acoustic.models.v3_0.onnx import AcousticOnnxDownloaderV3_0
-
-        # Triggers the model download on first call if absent. Subsequent
-        # calls just read the label file.
-        _, species = AcousticOnnxDownloaderV3_0.get_model_path_and_labels(lang, MODEL_PRECISION)
+        species = v3_0_labels(lang)
 
     mapping: dict[str, str] = {}
     for entry in species:

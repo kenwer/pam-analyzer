@@ -56,12 +56,51 @@ def test_v3_still_carries_exactly_27_shadowed_classes() -> None:
     """Read from the raw label file, because the label map has already merged
     them by the time TaxonomyServices hands it over.
     """
-    from birdnet.acoustic.models.v3_0.onnx import AcousticOnnxDownloaderV3_0
+    from pam_analyzer.infrastructure.birdnet_lib import v3_0_labels
 
-    _, entries = AcousticOnnxDownloaderV3_0.get_model_path_and_labels("en_us", "fp32")
-    raw = {e.partition("_")[0] for e in entries}
+    raw = {e.partition("_")[0] for e in v3_0_labels("en_us")}
 
     assert len(_classes_shadowed_by_a_sibling(raw)) == 27
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("kind", ["acoustic", "geo"])
+def test_v2_4_polish_labels_keep_every_class(kind: str) -> None:
+    """Upstream's v2.4 pl.txt repeats one line, at the position of Lichmera limbata.
+
+    Labels pair with model outputs by position, so a reader that dropped the
+    repeat would leave 6521 names for 6522 outputs.
+    """
+    labels = birdnet_2_4_onnx.labels(kind, "pl")
+
+    assert len(labels) == 6522
+    assert "Lichmera limbata_Indonesian Honeyeater" in labels
+
+
+@pytest.mark.slow
+def test_v2_4_polish_map_falls_back_to_english_for_the_repeated_line() -> None:
+    from pam_analyzer.infrastructure.birdnet_lib import TAXONOMY_V2_4
+
+    assert TAXONOMY_V2_4.locale_label_map("pl")["Lichmera limbata"] == "Indonesian Honeyeater"
+
+
+@pytest.mark.slow
+def test_v3_label_lookup_does_not_need_the_model(monkeypatch) -> None:
+    """A locale lookup reads label files only, so it never downloads the 3.0 weights."""
+    from birdnet.acoustic.models.v3_0.onnx import AcousticOnnxDownloaderV3_0
+
+    from pam_analyzer.infrastructure import birdnet_lib
+
+    def _no_download(*args, **kwargs):
+        raise AssertionError("a label lookup reached the model download")
+
+    monkeypatch.setattr(AcousticOnnxDownloaderV3_0, "_check_acoustic_model_available", classmethod(lambda cls, p: False))
+    monkeypatch.setattr(AcousticOnnxDownloaderV3_0, "_download_model", classmethod(_no_download))
+    birdnet_lib._locale_label_map.cache_clear()
+    try:
+        assert birdnet_lib._locale_label_map("3.0", "de")
+    finally:
+        birdnet_lib._locale_label_map.cache_clear()
 
 
 @pytest.mark.slow

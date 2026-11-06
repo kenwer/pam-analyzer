@@ -52,8 +52,8 @@ from birdnet.core.backends import (
     VersionedAcousticBackendProtocol,
     VersionedGeoBackendProtocol,
 )
-from birdnet.utils.helper import get_species_from_file
 from birdnet.utils.local_data import get_lang_dir, get_model_path
+from birdnet.utils.species_lists import read_official_labels
 
 from .birdnet_lib import MODEL_PRECISION
 from .onnx_telemetry import disable_in_workers
@@ -147,11 +147,18 @@ def model_path(kind: str) -> Path:
 
 
 def labels(kind: str, lang: str):  # noqa: ANN201
-    """The species list for one model and locale, as the lib's OrderedSet."""
+    """The species list for one model and locale, as the lib's OrderedSet.
+
+    Read the way the lib reads its official labels: one entry per model
+    output, or an error. Upstream's pl.txt repeats a line, and dropping it
+    would shift every later name off its output, so the lib's reader puts the
+    English label at the repeated position instead.
+    """
     lang_file = get_lang_dir(kind, "2.4", "onnx") / f"{lang}.txt"
     if not lang_file.is_file():
         raise ValueError(f"Language does not exist for BirdNET v2.4: {lang}")
-    return get_species_from_file(lang_file, encoding="utf8")
+    model = AcousticModelV2_4 if kind == "acoustic" else GeoModelV2_4
+    return read_official_labels(lang_file, model.get_n_classes(), f"{kind} model v2.4")
 
 
 def _require(path: Path) -> Path:
