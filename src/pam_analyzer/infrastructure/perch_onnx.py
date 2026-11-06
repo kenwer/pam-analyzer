@@ -45,7 +45,7 @@ from birdnet.core.backends import OnnxBackend, VersionedAcousticBackendProtocol
 from birdnet.globals import MODEL_PRECISION_FP32
 from birdnet.utils.local_data import APP_DIR
 
-from .birdnet_onnx_threads import DEFAULT_SESSION_THREADS, pin_session_threads
+from .onnx_telemetry import disable_in_workers
 
 # Output positions in the converted graph. The export declares, in order:
 # embedding [batch, 1536], spatial_embedding [batch, 16, 4, 1536],
@@ -147,7 +147,7 @@ def require_weights(path: Path) -> Path:
     return path
 
 
-def load_acoustic(threads: int = DEFAULT_SESSION_THREADS):  # noqa: ANN201
+def load_acoustic():  # noqa: ANN201
     """Load Perch v2 on onnxruntime, paired with the lib's own model class.
 
     `AcousticModelPerchV2` supplies the preprocessing contract (32 kHz, 5 s,
@@ -157,18 +157,14 @@ def load_acoustic(threads: int = DEFAULT_SESSION_THREADS):  # noqa: ANN201
     `load()` rather than `load_custom()` because it takes `backend_type`
     directly and skips the '.onnx' suffix check and the `check_validity`
     subprocess spawn that would load the 413 MB model a second time.
-
-    `threads` sizes each inference worker's session and belongs with the
-    n_workers the caller opens its session with, so the runner passes it.
     """
     from birdnet.acoustic.models.perch_v2.model import AcousticModelPerchV2
 
-    return pin_session_threads(
+    return disable_in_workers(
         AcousticModelPerchV2.load(
             require_weights(model_path()),
             labels(),
             backend_type=AcousticOnnxBackendFP32PerchV2,
             backend_kwargs={},
-        ),
-        threads=threads,
+        )
     )

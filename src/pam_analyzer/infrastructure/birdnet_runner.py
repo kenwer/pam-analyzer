@@ -1,7 +1,7 @@
 """BirdNET v3.0 infrastructure adapter.
 
 BirdnetRunner is the AnalysisRunner implementation, backed by BirdNET v3.0
-on the ONNX backend via the birdnet>=1.1 library. Audio I/O, 3 s window
+on the ONNX backend via the birdnet>=1.4 library. Audio I/O, 3 s window
 framing, batched inference, sigmoid scoring, and the confidence threshold
 all live inside the lib's predict_session pipeline. Per-campaign
 sequencing, progress reporting, species filtering, and CSV writing come
@@ -56,16 +56,12 @@ class BirdnetRunner(BaseAnalysisRunner):
         Loaded with en_us so result rows carry English common names in the
         'Sci_Common' species_name string. Other locales come from
         locale_label_map() lookups inside _parse_row.
-
-        pin_session_threads() is a workaround for a birdnet default, described in
-        birdnet_onnx_threads. It changes how each worker's session is built and
-        nothing about what the model computes.
         """
         import birdnet
 
-        from .birdnet_onnx_threads import pin_session_threads
+        from .onnx_telemetry import disable_in_workers
 
-        return pin_session_threads(
+        return disable_in_workers(
             birdnet.load("acoustic", "3.0", "onnx", lang="en_us", precision=MODEL_PRECISION)
         )
 
@@ -87,9 +83,10 @@ class BirdnetRunner(BaseAnalysisRunner):
 
         v3.0 bakes the sigmoid into the ONNX graph, so apply_sigmoid=True is
         the lib's documented way of saying 'return those probabilities
-        unchanged' rather than a request for a second squashing. For the same
-        reason sigmoid_sensitivity must stay 1.0 and apply_softmax is rejected
-        outright. The raw logits a softmax would need are not exported.
+        unchanged' rather than a request for a second squashing.
+        sigmoid_sensitivity stays at 1.0, which leaves those probabilities
+        as the model emits them. apply_softmax is rejected outright, because
+        the raw logits a softmax would need are not exported.
 
         top_k caps per-segment emissions. The cap exists for memory, not row
         count: the lib's result tensor is dense over top_k, shaped
@@ -117,8 +114,9 @@ class BirdnetRunner(BaseAnalysisRunner):
         segment at 0.01. Perch alone would hold at 25. The three agree from
         0.05 up.
 
-        n_workers stays at the lib's default of one worker per physical core,
-        each on a single-threaded session. v3.0 measured fastest that way,
+        n_workers stays at the lib's default of one worker per physical core
+        (fewer if memory runs short), and the lib gives each session
+        cores // n_workers threads, so one each. v3.0 measured fastest that way,
         losing about 20% on a cold machine when the same threads were regrouped
         into fewer, wider workers. v2.4 prefers the opposite split and sets its
         own, which is why the two runners differ here.

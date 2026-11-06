@@ -39,10 +39,6 @@ function cannot be pickled.
 This module depends on birdnet internals that are not public API. The
 equivalence test in tests/infrastructure/test_birdnet_2_4_onnx.py is what
 catches a lib upgrade moving them.
-
-Both loaders below pass their model through birdnet_onnx_threads, which is a
-workaround for how the lib sizes onnxruntime's thread pools and is documented
-there. It changes how each worker's session is built, not what it computes.
 """
 
 from __future__ import annotations
@@ -60,7 +56,7 @@ from birdnet.utils.helper import get_species_from_file
 from birdnet.utils.local_data import get_lang_dir, get_model_path
 
 from .birdnet_lib import MODEL_PRECISION
-from .birdnet_onnx_threads import DEFAULT_SESSION_THREADS, pin_session_threads
+from .onnx_telemetry import disable_in_workers
 
 # v2.4 analyses 3 s at 48 kHz. Only consulted when a model's declared output
 # shape is not static, which it is here, so this is a fallback.
@@ -164,22 +160,17 @@ def _require(path: Path) -> Path:
     return path
 
 
-def load_acoustic(lang: str = "en_us", threads: int = DEFAULT_SESSION_THREADS) -> Any:
-    """Load the v2.4 acoustic model on onnxruntime.
-
-    `threads` sizes each inference worker's session and belongs with the
-    n_workers the caller opens its session with, so the runner passes it.
-    """
+def load_acoustic(lang: str = "en_us") -> Any:
+    """Load the v2.4 acoustic model on onnxruntime."""
     from birdnet.acoustic.models.v2_4.model import AcousticModelV2_4
 
-    return pin_session_threads(
+    return disable_in_workers(
         AcousticModelV2_4.load(
             _require(model_path("acoustic")),
             labels("acoustic", lang),
             backend_type=AcousticOnnxBackendFP32V2_4,
             backend_kwargs={},
-        ),
-        threads=threads,
+        )
     )
 
 
@@ -187,7 +178,7 @@ def load_geo(lang: str = "en_us") -> Any:
     """Load the v2.4 geo model on onnxruntime."""
     from birdnet.geo.models.v2_4.model import GeoModelV2_4
 
-    return pin_session_threads(
+    return disable_in_workers(
         GeoModelV2_4.load(
             _require(model_path("geo")),
             labels("geo", lang),

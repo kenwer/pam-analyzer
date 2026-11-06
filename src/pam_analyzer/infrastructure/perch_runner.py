@@ -61,8 +61,8 @@ MODEL_KEY = "Perch-2.0"
 # against 98.0, so 1.5% of throughput buys half the memory.
 #
 # The BirdNET runners set this independently, and v3.0 lands the other way for
-# a different reason. Whichever way it goes, SESSION_THREADS and the n_workers
-# below are one decision and have to move together.
+# a different reason. The lib sizes each session at cores // n_workers threads,
+# so SESSION_THREADS takes effect only through the n_workers below.
 SESSION_THREADS = 2
 
 # Perch v2's class head emits positive logits everywhere, so thresholding a
@@ -142,7 +142,7 @@ class PerchRunner(BaseAnalysisRunner):
         """
         from .perch_onnx import load_acoustic
 
-        return load_acoustic(threads=SESSION_THREADS)
+        return load_acoustic()
 
     def _open_predict_session(
         self,
@@ -186,7 +186,7 @@ class PerchRunner(BaseAnalysisRunner):
         threshold than this model's calibrated logit does.
 
         n_workers is set rather than left at the lib's default of one worker
-        per core, because each worker's session runs SESSION_THREADS threads.
+        per core, so that each worker's session gets SESSION_THREADS threads.
         """
         return model.predict_session(
             default_confidence_threshold=_perch_logit_threshold(settings.min_conf),

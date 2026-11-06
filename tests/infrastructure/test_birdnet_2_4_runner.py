@@ -91,8 +91,7 @@ def test_worker_split_fills_the_machine_exactly_once() -> None:
     The two settings are one decision: this engine runs fewer, wider workers
     than v3.0 does, and the win comes from regrouping the same threads rather
     than from adding any. A split whose product exceeded the core count would
-    reintroduce the oversubscription birdnet_onnx_threads exists to remove,
-    and one that fell short would leave cores idle.
+    oversubscribe the cores, and one that fell short would leave cores idle.
     """
     import psutil
 
@@ -102,6 +101,19 @@ def test_worker_split_fills_the_machine_exactly_once() -> None:
     assert workers >= 1
     assert workers * SESSION_THREADS <= max(cores, SESSION_THREADS)
     assert (workers + 1) * SESSION_THREADS > cores
+
+
+def test_the_lib_gives_each_worker_session_threads() -> None:
+    """birdnet sizes each session from n_workers, which has to land on SESSION_THREADS.
+
+    A miss fails silently: every detection stays the same and throughput drops.
+    """
+    import psutil
+    from birdnet.core.backends import cpu_threads_per_worker
+
+    cores = psutil.cpu_count(logical=False) or 1
+
+    assert cpu_threads_per_worker(_n_workers()) == min(SESSION_THREADS, cores)
 
 
 @pytest.mark.slow

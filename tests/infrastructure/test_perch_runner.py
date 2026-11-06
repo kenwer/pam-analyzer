@@ -169,6 +169,16 @@ def test_worker_split_fills_the_machine_without_oversubscribing() -> None:
     assert 1 <= _n_workers() * SESSION_THREADS <= max(cores, SESSION_THREADS)
 
 
+def test_the_lib_gives_each_worker_session_threads() -> None:
+    """birdnet sizes each session from n_workers, which has to land on SESSION_THREADS."""
+    import psutil
+    from birdnet.core.backends import cpu_threads_per_worker
+
+    cores = psutil.cpu_count(logical=False) or 1
+
+    assert cpu_threads_per_worker(_n_workers()) == min(SESSION_THREADS, cores)
+
+
 @pytest.mark.slow
 def test_run_writes_a_detections_csv(tmp_path: Path) -> None:
     """The runner completes a campaign and writes rows in the shared schema.

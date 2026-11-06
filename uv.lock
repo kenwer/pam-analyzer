@@ -39,7 +39,7 @@ wheels = [
 
 [[package]]
 name = "birdnet"
-version = "1.1.1"
+version = "1.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ai-edge-litert", marker = "sys_platform == 'never'" },
@@ -54,9 +54,9 @@ dependencies = [
     { name = "soundfile" },
     { name = "tqdm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d4/9d/db27514b78480bd96b23a7ff3dac3eed24dfe97d00d8ebf3307313fa293c/birdnet-1.1.1.tar.gz", hash = "sha256:38be237a239f0ab8a90a6a418776f9083880a795b057680919d1fe8e4cc17e19", size = 179513, upload-time = "2026-09-02T14:37:10.137Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/00/38/9610454afa620c4933a868672e105ceb8fe9c700b1b011ff5dec04cc76ef/birdnet-1.4.0.tar.gz", hash = "sha256:06704303a5561859e07baed385a02f97e19e86a4e9230f4d44f1fad7cacfd37e", size = 221119, upload-time = "2026-10-31T00:23:13.982Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ba/01/e0083474f480e49ea94655237969165a40eed0b74d68d52637af60016f4c/birdnet-1.1.1-py3-none-any.whl", hash = "sha256:9aea56a83d1f4f7c5edd2f3d9787a43fe108f592b9a1c4da36bec135e93afc51", size = 199365, upload-time = "2026-09-02T14:37:08.311Z" },
+    { url = "https://files.pythonhosted.org/packages/17/51/ee645de2dbd3f00068636dce9a189434262f457d6403f6558a93bb759c2f/birdnet-1.4.0-py3-none-any.whl", hash = "sha256:960a10b228ab782237d2cfca5a0b7805512516a004740561aca72ba8b90274a2", size = 231196, upload-time = "2026-10-31T00:23:12.351Z" },
 ]
 
 [[package]]
@@ -333,7 +333,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "birdnet", specifier = ">=1.1,<1.2" },
+    { name = "birdnet", specifier = ">=1.4,<1.5" },
     { name = "guano", specifier = ">=1.0.16" },
     { name = "mutagen", specifier = ">=1.48" },
     { name = "numpy", specifier = ">=1.26" },

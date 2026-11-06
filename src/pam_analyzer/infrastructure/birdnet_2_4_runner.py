@@ -40,8 +40,9 @@ MODEL_KEY = "BirdNET-2.4"
 # two onnxruntime threads each, rather than one single-threaded worker per core.
 #
 # v3.0 seems the other way around and keeps one worker per core, so the two
-# runners set this independently. Whichever way it goes, SESSION_THREADS and
-# the n_workers below are one decision and have to move together.
+# runners set this independently. The lib sizes each session at
+# cores // n_workers threads, so SESSION_THREADS takes effect only through the
+# n_workers below.
 SESSION_THREADS = 2
 
 
@@ -88,14 +89,10 @@ class Birdnet24Runner(BaseAnalysisRunner):
 
         Loaded with en_us so result rows carry English common names in the
         'Sci_Common' species_name string.
-
-        The thread count is this engine's half of the split described at
-        SESSION_THREADS, and is set here rather than in birdnet_2_4_onnx
-        because it only makes sense next to the n_workers below.
         """
         from .birdnet_2_4_onnx import load_acoustic
 
-        return load_acoustic("en_us", threads=SESSION_THREADS)
+        return load_acoustic("en_us")
 
     def _open_predict_session(
         self,
@@ -133,7 +130,7 @@ class Birdnet24Runner(BaseAnalysisRunner):
         25, and stays at 50 to keep one cap across all three runners.
 
         n_workers is set rather than left at the lib's default of one worker
-        per core, because each worker's session runs SESSION_THREADS threads.
+        per core, so that each worker's session gets SESSION_THREADS threads.
         """
         return model.predict_session(
             default_confidence_threshold=settings.min_conf,

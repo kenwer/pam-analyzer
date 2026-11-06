@@ -1,4 +1,4 @@
-"""Adapter helpers wrapping the birdnet>=1.1 library.
+"""Adapter helpers wrapping the birdnet>=1.4 library.
 
 An AnalysisRunner needs three pieces of taxonomy data from this library:
 
@@ -87,9 +87,9 @@ def _geo_model_cached(version: str):  # noqa: ANN202
 
     import birdnet
 
-    from .birdnet_onnx_threads import pin_session_threads
+    from .onnx_telemetry import disable_in_workers
 
-    return pin_session_threads(
+    return disable_in_workers(
         birdnet.load("geo", ACOUSTIC_V3_0, "onnx", lang="en_us", precision=MODEL_PRECISION)
     )
 

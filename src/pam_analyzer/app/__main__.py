@@ -34,7 +34,7 @@ def _configure_frozen_model_paths() -> None:
 _configure_frozen_model_paths()
 
 # Disable onnxruntime telemetry on macOS and Linux
-# Windows is covered by the loader in birdnet_onnx_threads
+# Windows is covered by infrastructure/onnx_telemetry, which also reaches the workers
 os.environ.setdefault("ORT_DISABLE_TELEMETRY", "1")
 
 
