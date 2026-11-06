@@ -64,15 +64,15 @@ def _model_path() -> Path:
 
     Duplicates infrastructure.perch_onnx.model_path() because this script runs
     on its own interpreter and cannot import the app package. Resolved through
-    birdnet's APP_DIR so it honours BIRDNET_APP_DATA the same way, which is what
+    birdnet's app data folder so it honours BIRDNET_APP_DATA the same way, which is what
     lets a frozen build fetch into its bundle. The two are pinned together by
     test_fetch_script_and_app_agree_on_the_model_path.
     """
     # Imported here rather than at module scope so --help works before the
     # dependency is resolved.
-    from birdnet.utils.local_data import APP_DIR
+    from birdnet.utils.local_data import get_birdnet_app_data_folder
 
-    return APP_DIR / "acoustic-models" / "perch-v2" / "onnx" / "model-fp32.onnx"
+    return get_birdnet_app_data_folder() / "acoustic-models" / "perch-v2" / "onnx" / "model-fp32.onnx"
 
 
 def _digest(path: Path) -> str:

@@ -1,7 +1,7 @@
 """Supporting pieces for the analysis runner.
 
-File discovery, recording-time parsing, progress translation, and the
-per-week species-list TXT writer.
+File discovery, recording-time parsing, progress translation, worker sizing,
+and the per-week species-list TXT writer.
 
 Module-level functions rather than methods on the runner by design: nothing
 here touches per-run state, and keeping them as plain functions keeps them
@@ -35,6 +35,19 @@ def list_audio_files(campaign_dir: Path) -> list[Path]:
         f for f in campaign_dir.rglob("*")
         if f.is_file() and f.suffix.lower() in paths.AUDIO_EXTENSIONS
     )
+
+
+def workers_for(threads_per_worker: int) -> int:
+    """Inference workers that give each one `threads_per_worker` physical cores.
+
+    birdnet sizes every worker's onnxruntime session at cores // n_workers
+    threads, so the worker count is the only lever a runner has. Physical
+    rather than logical cores, the same count the lib divides.
+    """
+    import psutil
+
+    cores = psutil.cpu_count(logical=False) or 1
+    return max(1, cores // threads_per_worker)
 
 
 def emit_progress(

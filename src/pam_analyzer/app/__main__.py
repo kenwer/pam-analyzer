@@ -11,9 +11,10 @@ def _configure_frozen_model_paths() -> None:
     """Point the birdnet lib at the bundled model cache.
 
     The build stages the birdnet-models/ tree next to the compiled binary.
-    BIRDNET_APP_DATA has to be set before any `import birdnet` call triggers a
-    model load, or the frozen app will try to write to the user's home
-    directory and re-download.
+    BIRDNET_APP_DATA has to be set before the first model load, or the frozen
+    app will try to write to the user's home directory and re-download. birdnet
+    and the app read it on every lookup, so an earlier `import birdnet` does not
+    matter.
 
     setdefault() rather than [] = so a user can still override the variable
     from the shell for development or one-off builds.

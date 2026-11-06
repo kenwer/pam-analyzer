@@ -41,9 +41,9 @@ from functools import cache
 from importlib.resources import files
 from pathlib import Path
 
+from birdnet import MODEL_PRECISION_FP32, AcousticModelPerchV2
 from birdnet.core.backends import OnnxBackend, VersionedAcousticBackendProtocol
-from birdnet.globals import MODEL_PRECISION_FP32
-from birdnet.utils.local_data import APP_DIR
+from birdnet.utils.local_data import get_birdnet_app_data_folder
 
 from .onnx_telemetry import disable_in_workers
 
@@ -133,7 +133,7 @@ def model_path() -> Path:
     is not one of them. The onnx subdirectory keeps this apart from the
     SavedModel the lib would download for its pb backend.
     """
-    return APP_DIR / "acoustic-models" / "perch-v2" / "onnx" / "model-fp32.onnx"
+    return get_birdnet_app_data_folder() / "acoustic-models" / "perch-v2" / "onnx" / "model-fp32.onnx"
 
 
 def require_weights(path: Path) -> Path:
@@ -158,8 +158,6 @@ def load_acoustic():  # noqa: ANN201
     directly and skips the '.onnx' suffix check and the `check_validity`
     subprocess spawn that would load the 413 MB model a second time.
     """
-    from birdnet.acoustic.models.perch_v2.model import AcousticModelPerchV2
-
     return disable_in_workers(
         AcousticModelPerchV2.load(
             require_weights(model_path()),

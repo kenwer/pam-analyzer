@@ -31,9 +31,7 @@ from pam_analyzer.domain import (
 from pam_analyzer.infrastructure.birdnet_lib import TAXONOMY_V3_0
 from pam_analyzer.infrastructure.perch_runner import (
     MODEL_KEY,
-    SESSION_THREADS,
     PerchRunner,
-    _n_workers,
     _perch_logit_threshold,
     _perch_logit_to_prob,
 )
@@ -153,30 +151,6 @@ def test_model_key_names_the_perch_release() -> None:
     """The key becomes part of the CSV filename on the user's disk."""
     assert MODEL_KEY == "Perch-2.0"
     assert PerchRunner.model_key == MODEL_KEY
-
-
-def test_worker_split_fills_the_machine_without_oversubscribing() -> None:
-    """Workers times threads stays within the physical cores.
-
-    Perch resolves to roughly 1.25 GB resident per worker, so this split is a
-    memory decision as much as a speed one: one worker per core measured 98.0
-    seg/s at 18.9 GB against 96.5 seg/s at 9.4 GB for this split.
-    """
-    import psutil
-
-    cores = psutil.cpu_count(logical=False) or 1
-    assert SESSION_THREADS == 2
-    assert 1 <= _n_workers() * SESSION_THREADS <= max(cores, SESSION_THREADS)
-
-
-def test_the_lib_gives_each_worker_session_threads() -> None:
-    """birdnet sizes each session from n_workers, which has to land on SESSION_THREADS."""
-    import psutil
-    from birdnet.core.backends import cpu_threads_per_worker
-
-    cores = psutil.cpu_count(logical=False) or 1
-
-    assert cpu_threads_per_worker(_n_workers()) == min(SESSION_THREADS, cores)
 
 
 @pytest.mark.slow

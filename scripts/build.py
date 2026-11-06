@@ -125,10 +125,6 @@ def _numeric_versions(version: str) -> tuple[str, str]:
 MODEL_PREWARM = textwrap.dedent("""
     import sys
     import birdnet
-    from birdnet.acoustic.models.v2_4.model import AcousticDownloaderBaseV2_4
-    from birdnet.acoustic.models.v3_0.model import AcousticDownloaderBaseV3_0
-    from birdnet.geo.models.v2_4.model import GeoDownloaderBaseV2_4
-    from birdnet.geo.models.v3_0.model import GeoDownloaderBaseV3_0
     from birdnet.utils.local_data import get_lang_dir
 
     # Only v3.0 downloads a vendor build. The v2.4 pair has no upstream ONNX
@@ -146,16 +142,16 @@ MODEL_PREWARM = textwrap.dedent("""
     # lib's own language set because a partial label set is invisible here
     # and only surfaces as a download on an end user's machine. The two
     # engines ship different language sets, so each is checked against its
-    # own downloader.
-    for kind, version, backend, downloader in (
-        ('acoustic', '3.0', 'onnx', AcousticDownloaderBaseV3_0),
-        ('geo', '3.0', 'onnx', GeoDownloaderBaseV3_0),
-        ('acoustic', '2.4', 'onnx', AcousticDownloaderBaseV2_4),
-        ('geo', '2.4', 'onnx', GeoDownloaderBaseV2_4),
+    # own version's list.
+    for kind, version, backend, languages in (
+        ('acoustic', '3.0', 'onnx', birdnet.VALID_MODEL_LANGUAGES_V3_0),
+        ('geo', '3.0', 'onnx', birdnet.VALID_MODEL_LANGUAGES_V3_0),
+        ('acoustic', '2.4', 'onnx', birdnet.VALID_MODEL_LANGUAGES_V2_4),
+        ('geo', '2.4', 'onnx', birdnet.VALID_MODEL_LANGUAGES_V2_4),
     ):
         lang_dir = get_lang_dir(kind, version, backend)
         missing = sorted(
-            lang for lang in downloader.AVAILABLE_LANGUAGES
+            lang for lang in languages
             if not (lang_dir / (lang + '.txt')).is_file()
         )
         if missing:

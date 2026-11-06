@@ -33,7 +33,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import cache, lru_cache
-from typing import Any
 
 from .species_names import canonical, canonical_set
 
@@ -47,21 +46,18 @@ ACOUSTIC_V2_4 = "2.4"
 ACOUSTIC_V3_0 = "3.0"
 
 
-def _label_base(version: str) -> Any:
-    """Downloader base class naming the locales one version ships labels for.
+@cache
+def _available_locales(version: str) -> tuple[str, ...]:
+    """Locales one version ships labels for, as the lib declares them.
 
-    Only AVAILABLE_LANGUAGES is read off it, which downloads nothing. Where the
-    label files themselves come from differs per version and is resolved in
-    _locale_label_map instead.
+    Where the label files themselves come from differs per version and is
+    resolved in _locale_label_map instead.
     """
+    import birdnet
+
     if version == ACOUSTIC_V2_4:
-        from birdnet.acoustic.models.v2_4.model import AcousticDownloaderBaseV2_4
-
-        return AcousticDownloaderBaseV2_4
-
-    from birdnet.acoustic.models.v3_0.model import AcousticDownloaderBaseV3_0
-
-    return AcousticDownloaderBaseV3_0
+        return tuple(sorted(birdnet.VALID_MODEL_LANGUAGES_V2_4))
+    return tuple(sorted(birdnet.VALID_MODEL_LANGUAGES_V3_0))
 
 
 @cache
@@ -116,11 +112,6 @@ def normalize_lang_code(code: str) -> str:
 
 
 @cache
-def _available_locales(version: str) -> tuple[str, ...]:
-    return tuple(sorted(_label_base(version).AVAILABLE_LANGUAGES))
-
-
-@cache
 def _known_species(version: str) -> frozenset[str]:
     """One version's full species axis, built once per process.
 
@@ -133,7 +124,7 @@ def _known_species(version: str) -> frozenset[str]:
 @lru_cache(maxsize=16)
 def _locale_label_map(version: str, lang: str) -> dict[str, str]:
     lang = normalize_lang_code(lang)
-    if lang not in _label_base(version).AVAILABLE_LANGUAGES:
+    if lang not in _available_locales(version):
         return {}
 
     if version == ACOUSTIC_V2_4:
@@ -242,11 +233,7 @@ class TaxonomyServices:
         return _locale_label_map(self.version, lang)
 
     def available_locales(self) -> tuple[str, ...]:
-        """Locale codes this model version ships labels for.
-
-        Reading AVAILABLE_LANGUAGES off the downloader answers the question
-        without downloading anything.
-        """
+        """Locale codes this model version ships labels for. Downloads nothing."""
         return _available_locales(self.version)
 
 

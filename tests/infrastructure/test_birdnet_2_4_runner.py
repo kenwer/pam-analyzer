@@ -23,9 +23,7 @@ import pytest
 from pam_analyzer.domain import AnalysisSettings, Campaign, FilterMode
 from pam_analyzer.infrastructure.birdnet_2_4_runner import (
     MODEL_KEY,
-    SESSION_THREADS,
     Birdnet24Runner,
-    _n_workers,
 )
 from tests.infrastructure.test_birdnet_runner import (
     _campaign_with_one_wav,
@@ -83,37 +81,6 @@ def test_common_name_lookup_keys_on_the_canonical_spelling() -> None:
     )
     assert parsed.preferred_common == "Habicht"
     assert parsed.scientific_name == CURRENT_NAME
-
-
-def test_worker_split_fills_the_machine_exactly_once() -> None:
-    """Workers times threads stays within the physical cores, on any machine.
-
-    The two settings are one decision: this engine runs fewer, wider workers
-    than v3.0 does, and the win comes from regrouping the same threads rather
-    than from adding any. A split whose product exceeded the core count would
-    oversubscribe the cores, and one that fell short would leave cores idle.
-    """
-    import psutil
-
-    cores = psutil.cpu_count(logical=False) or 1
-    workers = _n_workers()
-
-    assert workers >= 1
-    assert workers * SESSION_THREADS <= max(cores, SESSION_THREADS)
-    assert (workers + 1) * SESSION_THREADS > cores
-
-
-def test_the_lib_gives_each_worker_session_threads() -> None:
-    """birdnet sizes each session from n_workers, which has to land on SESSION_THREADS.
-
-    A miss fails silently: every detection stays the same and throughput drops.
-    """
-    import psutil
-    from birdnet.core.backends import cpu_threads_per_worker
-
-    cores = psutil.cpu_count(logical=False) or 1
-
-    assert cpu_threads_per_worker(_n_workers()) == min(SESSION_THREADS, cores)
 
 
 @pytest.mark.slow

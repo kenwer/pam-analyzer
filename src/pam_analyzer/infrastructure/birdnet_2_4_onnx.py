@@ -46,12 +46,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from birdnet import MODEL_PRECISION_FP32, AcousticModelV2_4, GeoModelV2_4
 from birdnet.core.backends import (
     OnnxBackend,
     VersionedAcousticBackendProtocol,
     VersionedGeoBackendProtocol,
 )
-from birdnet.globals import MODEL_PRECISION_FP32
 from birdnet.utils.helper import get_species_from_file
 from birdnet.utils.local_data import get_lang_dir, get_model_path
 
@@ -162,8 +162,6 @@ def _require(path: Path) -> Path:
 
 def load_acoustic(lang: str = "en_us") -> Any:
     """Load the v2.4 acoustic model on onnxruntime."""
-    from birdnet.acoustic.models.v2_4.model import AcousticModelV2_4
-
     return disable_in_workers(
         AcousticModelV2_4.load(
             _require(model_path("acoustic")),
@@ -176,8 +174,6 @@ def load_acoustic(lang: str = "en_us") -> Any:
 
 def load_geo(lang: str = "en_us") -> Any:
     """Load the v2.4 geo model on onnxruntime."""
-    from birdnet.geo.models.v2_4.model import GeoModelV2_4
-
     return disable_in_workers(
         GeoModelV2_4.load(
             _require(model_path("geo")),

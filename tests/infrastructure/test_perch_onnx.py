@@ -182,7 +182,7 @@ def test_fetch_script_and_app_agree_on_the_model_path() -> None:
     """The fetch script writes exactly where the app looks.
 
     scripts/fetch_perch_onnx.py runs on its own interpreter and cannot import
-    this package, so it rebuilds the path from birdnet's APP_DIR. That
+    this package, so it rebuilds the path from birdnet's app data folder. That
     duplication is only safe while the two stay identical, and a mismatch would
     surface as a missing-weights error after an apparently successful fetch.
     """
@@ -193,4 +193,4 @@ def test_fetch_script_and_app_agree_on_the_model_path() -> None:
     app_path = perch_onnx.model_path()
     tail = app_path.relative_to(app_path.parents[3])
     quoted = " / ".join(f'"{part}"' for part in tail.parts)
-    assert f"APP_DIR / {quoted}" in source
+    assert f"get_birdnet_app_data_folder() / {quoted}" in source

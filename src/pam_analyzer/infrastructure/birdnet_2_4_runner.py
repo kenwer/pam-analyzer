@@ -30,33 +30,19 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from ..domain import AnalysisSettings
+from ._analysis_helpers import workers_for
 from .base_analysis_runner import BaseAnalysisRunner, ParsedRow
 from .birdnet_lib import TAXONOMY_V2_4
 from .species_names import canonical
 
 MODEL_KEY = "BirdNET-2.4"
 
-# v2.4 seems to run fastest on half as many workers as the machine has cores, with
-# two onnxruntime threads each, rather than one single-threaded worker per core.
-#
-# v3.0 seems the other way around and keeps one worker per core, so the two
-# runners set this independently. The lib sizes each session at
-# cores // n_workers threads, so SESSION_THREADS takes effect only through the
-# n_workers below.
-SESSION_THREADS = 2
-
-
-def _n_workers() -> int:
-    """Enough workers for SESSION_THREADS each to fill the physical cores.
-
-    Physical rather than logical cores, matching what the lib's own
-    `n_workers=None` resolves to, so the two engines size the same machine the
-    same way.
-    """
-    import psutil
-
-    cores = psutil.cpu_count(logical=False) or 1
-    return max(1, cores // SESSION_THREADS)
+# v2.4 runs fastest on half as many workers as the machine has cores, two
+# onnxruntime threads each. Over 243 one-minute files on 14 cores that measured
+# 334-362 seg/s at 4.3 GiB against 293-310 seg/s at 8.8 GiB for the lib's
+# default of one single-threaded worker per core. v3.0 lands the other way and
+# keeps the default.
+THREADS_PER_WORKER = 2
 
 
 def _split_sci_common(species_name: str) -> tuple[str, str]:
@@ -130,7 +116,7 @@ class Birdnet24Runner(BaseAnalysisRunner):
         25, and stays at 50 to keep one cap across all three runners.
 
         n_workers is set rather than left at the lib's default of one worker
-        per core, so that each worker's session gets SESSION_THREADS threads.
+        per core, so that each worker's session gets THREADS_PER_WORKER threads.
         """
         return model.predict_session(
             default_confidence_threshold=settings.min_conf,
@@ -140,7 +126,7 @@ class Birdnet24Runner(BaseAnalysisRunner):
             apply_sigmoid=True,
             sigmoid_sensitivity=1.0,
             n_producers=1,
-            n_workers=_n_workers(),
+            n_workers=workers_for(THREADS_PER_WORKER),
             batch_size=8,
             show_stats="progress",
             progress_callback=on_stats,

@@ -46,6 +46,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from ..domain import AnalysisSettings
+from ._analysis_helpers import workers_for
 from .base_analysis_runner import BaseAnalysisRunner, ParsedRow
 from .birdnet_lib import TAXONOMY_V3_0
 from .species_names import canonical
@@ -60,10 +61,10 @@ MODEL_KEY = "Perch-2.0"
 # v3.0's 11.5 GB. Half the workers with two threads each measured 96.5 seg/s
 # against 98.0, so 1.5% of throughput buys half the memory.
 #
-# The BirdNET runners set this independently, and v3.0 lands the other way for
-# a different reason. The lib sizes each session at cores // n_workers threads,
-# so SESSION_THREADS takes effect only through the n_workers below.
-SESSION_THREADS = 2
+# The lib's n_workers=None does not cover this. It estimates a worker from the
+# model's size on disk and misses the prepacked copy, so it would start more
+# Perch workers than fit.
+THREADS_PER_WORKER = 2
 
 # Perch v2's class head emits positive logits everywhere, so thresholding a
 # sigmoid of them at face value would keep almost every window.
@@ -75,19 +76,6 @@ SESSION_THREADS = 2
 # 100% up to 11.2, then falls to 87% at 11.3 and 69% at 11.5. That cliff is the
 # boundary between genuine quiet calls and noise.
 _PERCH_2_0_LOGIT_OFFSET = 11.2
-
-
-def _n_workers() -> int:
-    """Enough workers for SESSION_THREADS each to fill the physical cores.
-
-    Physical rather than logical cores, matching what the lib's own
-    `n_workers=None` resolves to, so every engine sizes the same machine the
-    same way.
-    """
-    import psutil
-
-    cores = psutil.cpu_count(logical=False) or 1
-    return max(1, cores // SESSION_THREADS)
 
 
 def _perch_logit_threshold(min_conf: float) -> float:
@@ -186,7 +174,7 @@ class PerchRunner(BaseAnalysisRunner):
         threshold than this model's calibrated logit does.
 
         n_workers is set rather than left at the lib's default of one worker
-        per core, so that each worker's session gets SESSION_THREADS threads.
+        per core, so that each worker's session gets THREADS_PER_WORKER threads.
         """
         return model.predict_session(
             default_confidence_threshold=_perch_logit_threshold(settings.min_conf),
@@ -195,7 +183,7 @@ class PerchRunner(BaseAnalysisRunner):
             top_k=50,
             apply_sigmoid=False,
             n_producers=1,
-            n_workers=_n_workers(),
+            n_workers=workers_for(THREADS_PER_WORKER),
             batch_size=8,
             show_stats="progress",
             progress_callback=on_stats,
