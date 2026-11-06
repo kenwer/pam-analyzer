@@ -8,8 +8,8 @@ authors:
     orcid: "https://orcid.org/0009-0008-4940-5080"
     email: ken.werner@uni-tuebingen.de
     affiliation: University of Tübingen
-version: 0.7.7
-date-released: 2026-11-03
+version: 0.8.0
+date-released: 2026-11-06
 repository-code: https://github.com/kenwer/pam-analyzer
 license: AGPL-3.0
 abstract: >
