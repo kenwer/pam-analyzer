@@ -5,14 +5,12 @@
 - A "Best detections" box in the Examine panel shows the top N by confidence per species, in all ARUs or each ARU, for all time, each week or each day, and from each model when there are several.
 - Info line above the Examine table shows the detection count after each filtering step: Campaign -> Column Filters -> Best Detections.
 - Column filters can be cleared using ⓧ on hover and also with Esc while typing.
-
 ### Changed
 - Improved Recording_Time handling:
   - The time is read from the recorder's metadata (GUANO) first, then from the filename
   - Imported recordings keep their time even if the file is renamed later
   - The import warns when a recording's metadata and filename disagree
 - [Dev] Upgrade dependencies, including birdnet to 1.4.
-
 ### Fixed
 - Prefixed recordings without GUANO are no longer sorted into a week by file time.
 - Empty recordings no longer fail the import. They are left out and reported.
@@ -35,7 +33,6 @@
 - [Dev] A release no longer invalidates the CI models cache.
 - [Dev] The release script skips the pre-push hook.
 - [Dev] Qt warnings no longer clutter the test output.
-
 ### Fixed
 - A rare crash when the audio player is deleted while a background thread is running.
 - Quitting after an analysis no longer warns about leaked semaphores.
@@ -48,7 +45,6 @@
 - [Dev] The build no longer bundles pandas and pyarrow.
 - [Dev] Pin Python to 3.14.8 and only use uv-managed interpreters.
 - [Dev] CI prewarms the models once for all platforms.
-
 ### Fixed
 - Windows: the campaign map no longer crashes the app when another OpenSSL is on the PATH.
 
@@ -61,7 +57,6 @@
   - open the folder of the audio file
   - export the selected rows as audio snippets
 - `Ctrl+C` / `⌘C` copies the selected rows of the Examine table.
-
 ### Changed
 - On the Examine data table the `T`, `F` and `U` shortcuts adjust `Verified` on all selected rows.
 - Improved performance when selecting and marking many rows in large Examine tables.
@@ -74,7 +69,6 @@
 - Improved file naming when exporting audio snippets.
 - The CSV and audio snippet export dialogs remember the folder of the last export.
 - Selecting the checked `Blank` or `Not blank` column filter again in the Examine panel removes the filter.
-
 ### Fixed
 - A column filter set to `Blank` or `Not blank` in the Examine panel can be changed again.
 - Playing a detection from a newly loaded audio file no longer occasionally starts at the beginning of the file.
@@ -90,7 +84,6 @@
   - errors and notices occur that previously opened a modal dialog
 - Exporting audio snippets shows a cancellable progress dialog.
 - Recent projects on the welcome screen can be removed from the list or pointed to a new folder via `Locate…`.
-
 ### Changed
 - Audio snippets are exported as FLAC instead of WAV.
 - Values of editable cells in the Examine panel can be changed using a single click.
@@ -100,7 +93,6 @@
 - [Dev] Use Polars frame (DetectionStore) instead of a list of Detection objects.
 - [Dev] Upgrade dependencies.
 - [Dev] BirdNET v2.4 ONNX conversion downloads the shared SavedModel zip only once.
-
 ### Fixed
 - Editing a detection in the Examine panel (e.g. adjusting the Comment) only writes the CSV the detection belongs to.
 
@@ -113,7 +105,6 @@
   - The German name for `Tyto alba` is corrected from `Amerikaschleiereule`, which belongs to `Tyto furcata`.
   - A window with no signal at all (a dead channel, a dropout) makes the preview score every class as NaN. Those detections are dropped and logged instead of aborting the campaign.
 - `Help -> Log Level` allows to change how much detail will be in the log.
-
 ### Fixed
 - Species lists no longer truncate names that contain an underscore, so Perch's sound-event classes such as `Acoustic_guitar` work as list or must-have entries.
 - On Windows, the selected tab in the main window is now visibly highlighted.
@@ -121,10 +112,8 @@
 - [Dev] On Windows, log lines that Qt writes to the console are no longer garbled into CJK characters when the .exe is launched from a terminal.
 - UI should now also work in dark mode.
 - [Dev] SpectrogramWidget stops its render thread when the widget is destroyed, not only when the application quits.
-
 ### Removed
 - The project Species taxonomy setting. Detections are always written under BirdNET-3.0 scientific names.
-
 ### Changed
 - [Dev] The distributables are built with Nuitka.
 - Perch-2.0 and BirdNET v2.4 now run on ONNX Runtime.
