@@ -15,6 +15,7 @@ on:
       - 'scripts/build.py'
       - 'scripts/convert_birdnet_2_4_onnx.py'
       - 'scripts/fetch_perch_onnx.py'
+      - 'scripts/smoke_test_installer.py'
       - 'pyproject.toml'
       - 'uv.lock'
       - '.github/workflows/build.yml'
@@ -33,8 +34,6 @@ jobs:
     needs: models
     runs-on: ${{ matrix.os }}
     timeout-minutes: 150
-    permissions:
-      contents: write  # softprops/action-gh-release publishes from this job
     strategy:
       fail-fast: false
       matrix:
@@ -50,7 +49,8 @@ jobs:
           - os: windows-latest
             name: Windows
             asset: PAM-Analyzer-windows-x86_64-setup.exe
-          - os: ubuntu-latest
+          # Pinned, not ubuntu-latest: the AppImage needs a glibc at least as new as the build's
+          - os: ubuntu-24.04
             name: Linux (x86_64)
             asset: PAM-Analyzer-linux-x86_64.AppImage
           - os: ubuntu-24.04-arm
@@ -88,7 +88,61 @@ jobs:
           path: dist/${{ matrix.asset }}
           if-no-files-found: error
 
+  smoke:
+    name: Smoke test (${{ matrix.name }})
+    needs: build
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: write  # softprops/action-gh-release publishes from this job
+    strategy:
+      fail-fast: false
+      matrix:
+        # Same platforms and asset names as the build matrix
+        include:
+          - os: macos-latest
+            name: macOS (arm64)
+            asset: PAM-Analyzer-macos-arm64.dmg
+          - os: windows-latest
+            name: Windows
+            asset: PAM-Analyzer-windows-x86_64-setup.exe
+          - os: ubuntu-24.04
+            name: Linux (x86_64)
+            asset: PAM-Analyzer-linux-x86_64.AppImage
+          - os: ubuntu-24.04-arm
+            name: Linux (arm64)
+            asset: PAM-Analyzer-linux-arm64.AppImage
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.upload_release_assets }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v9.0.0
+
+      - name: Install system dependencies
+        # What a desktop Linux has and a bare runner lacks: Qt's system libs,
+        # plus fuse3, which the AppImage runtime mounts itself with
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y fuse3 libegl1 libpulse0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-util1 libxcb-render-util0 libxcb-image0 libxcb-shape0 libxcb-xkb1 libxcb-icccm4 libxcb-keysyms1 libtiff6 libminizip1t64 libgstreamer-plugins-base1.0-0 libgstreamer-plugins-good1.0-0 libgstreamer-plugins-bad1.0-0 libgstreamer-gl1.0-0
+
+      - name: Download installer
+        uses: actions/download-artifact@v8
+        with:
+          name: dist-${{ matrix.name }}
+          path: dist
+
+      - name: Install and start the app
+        shell: bash
+        run: uv run --script scripts/smoke_test_installer.py "dist/${{ matrix.asset }}"
+
       - name: Upload release asset
+        # Only an installer that passed the smoke test reaches the release
         if: github.event_name == 'release' || inputs.upload_release_assets != ''
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228  # v3.0.2
         with:
