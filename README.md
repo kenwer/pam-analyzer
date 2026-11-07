@@ -3,33 +3,34 @@ Automated bird species detection from acoustic recordings.
 
 <!--TOC-->
 
-- [About](#about)
-- [Download](#download)
-- [Features](#features)
-- [Usage](#usage)
-  - [Migrating legacy projects](#migrating-legacy-projects)
-- [Workflow](#workflow)
-  - [Project Settings](#project-settings)
-  - [Campaigns](#campaigns)
-  - [Run bird species detection](#run-bird-species-detection)
-  - [Output files](#output-files)
-  - [Examine Detections](#examine-detections)
-- [Keyboard shortcuts](#keyboard-shortcuts)
-- [Core Concepts](#core-concepts)
-  - [Project](#project)
-  - [Campaign](#campaign)
-  - [ARU (Autonomous Recording Unit)](#aru-autonomous-recording-unit)
-- [Models](#models)
-  - [Species names](#species-names)
-  - [Perch confidence](#perch-confidence)
-  - [Region filtering](#region-filtering)
-- [Troubleshooting](#troubleshooting)
-  - [Changing the log level](#changing-the-log-level)
-    - [Overriding the level from the environment](#overriding-the-level-from-the-environment)
-- [Changelog](#changelog)
-- [Acknowledgements](#acknowledgements)
-- [Citation](#citation)
-- [License](#license)
+- [PAM Analyzer](#pam-analyzer)
+  - [About](#about)
+  - [Download](#download)
+  - [Features](#features)
+  - [Usage](#usage)
+    - [Migrating legacy projects](#migrating-legacy-projects)
+  - [Workflow](#workflow)
+    - [Project Settings](#project-settings)
+    - [Campaigns](#campaigns)
+    - [Run bird species detection](#run-bird-species-detection)
+    - [Output files](#output-files)
+    - [Examine Detections](#examine-detections)
+  - [Keyboard shortcuts](#keyboard-shortcuts)
+  - [Core Concepts](#core-concepts)
+    - [Project](#project)
+    - [Campaign](#campaign)
+    - [ARU (Autonomous Recording Unit)](#aru-autonomous-recording-unit)
+  - [Models](#models)
+    - [Species names](#species-names)
+    - [Perch confidence](#perch-confidence)
+    - [Region filtering](#region-filtering)
+  - [Troubleshooting](#troubleshooting)
+    - [Changing the log level](#changing-the-log-level)
+      - [Overriding the level from the environment](#overriding-the-level-from-the-environment)
+  - [Changelog](#changelog)
+  - [Acknowledgements](#acknowledgements)
+  - [Citation](#citation)
+  - [License](#license)
 
 <!--TOC-->
 
@@ -63,6 +64,8 @@ Download the installer for your platform from the [Download](#download) section.
 - **macOS**: open the DMG and drag `PAM Analyzer` into `Applications`. The app is not notarized by Apple, so the first launch shows "PAM Analyzer Not Opened". Select `Done`, open `System Settings > Privacy & Security`, select `Open Anyway`, then open the app again and confirm.
 - **Windows**: run the setup. The installer is not code-signed, so SmartScreen shows "Windows protected your PC" the first time. Select `More info`, then `Run anyway`. The app installs for the current user only, needs no admin rights, and appears in the Start menu.
 - **Linux**: make the AppImage executable (`chmod +x PAM-Analyzer-linux-*.AppImage`) and run it. Where FUSE is unavailable, for example in a container, run it with `APPIMAGE_EXTRACT_AND_RUN=1`.
+
+**Updates**: at every start the app checks for updates. When a newer version is out, a button in the status bar offers to downloads it in the background, and installs it on restart. `Help > Check for Updates...` checks on demand. Because the app is not signed, macOS asks again for access to folders such as removable drives after each update.
 
 Versions up to 0.8.x shipped as zip and tar.gz archives. Delete the old app after installing a newer version. On Windows and Linux they also left an unpack cache of about 1.6 GB per version behind, which newer versions remove on their first launch.
 

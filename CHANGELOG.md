@@ -1,8 +1,10 @@
 # Changelog
 
 ## [Unreleased]
+### Added
+- The app checks for new versions and installs them from inside the app.
 ### Changed
-- Releases ship as installers: a DMG on macOS, a per-user setup.exe on Windows, an AppImage on Linux.
+- Releases ship as installers: a DMG on macOS, a setup.exe on Windows, an AppImage on Linux.
 - Windows and Linux builds no longer unpack on launch. The old unpack caches are removed on first start.
 
 ## [0.8.0] - 2026-11-06

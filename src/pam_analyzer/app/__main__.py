@@ -40,9 +40,11 @@ os.environ.setdefault("ORT_DISABLE_TELEMETRY", "1")
 
 
 import shiboken6  # noqa: E402
+from PySide6.QtCore import QTimer  # noqa: E402
 from PySide6.QtGui import QIcon  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
+from .. import __version__  # noqa: E402
 from ..domain import logging_setup, paths  # noqa: E402
 from ..infrastructure import (  # noqa: E402
     AudioImporter,
@@ -52,10 +54,14 @@ from ..infrastructure import (  # noqa: E402
     PsutilSdCardScanner,
 )
 from ..infrastructure.legacy_onefile_cache import legacy_cache_dir, remove_legacy_cache  # noqa: E402
+from ..infrastructure.running_mutex import hold_running_mutex  # noqa: E402
+from ..infrastructure.update_feed import DEFAULT_FEED_URL, release_asset_name  # noqa: E402
+from ..infrastructure.update_install import cleanup_after_update, detect_install_target  # noqa: E402
 from ..ui import resources_rc  # noqa: F401, E402  registers :/icons/* resources
 from ..ui.app_state import AppState  # noqa: E402
 from ..ui.main_window import MainWindow  # noqa: E402
 from ..ui.settings import AppSettings  # noqa: E402
+from ..ui.update_controller import UpdateController  # noqa: E402
 from ..workers import ImportOrchestrator  # noqa: E402
 
 
@@ -74,6 +80,19 @@ def build_main_window(settings: AppSettings) -> MainWindow:
     )
 
 
+def attach_updater(window: MainWindow, compiled: bool) -> UpdateController:
+    """Give window the in-app updater and clear what an applied update left behind.
+
+    A source run gets no install target, so it only reports new versions.
+    """
+    target = detect_install_target(sys.platform, Path(sys.executable), os.environ) if compiled else None
+    threading.Thread(
+        target=cleanup_after_update, args=(target, __version__), name="update-cleanup", daemon=True
+    ).start()
+    feed_url = os.environ.get("PAM_UPDATE_FEED_URL", DEFAULT_FEED_URL)
+    return UpdateController(window, __version__, target, feed_url, release_asset_name(), compiled=compiled)
+
+
 def main() -> int:
     settings = AppSettings()
     levels = logging.getLevelNamesMapping()
@@ -86,6 +105,8 @@ def main() -> int:
         "BIRDNET_APP_DATA=%s", os.environ.get("BIRDNET_APP_DATA", "<unset, per-user cache>")
     )
 
+    # Held until the process exits, so the installer waits for this instance
+    hold_running_mutex()
     app = QApplication(sys.argv)
     app.setApplicationName("PAM Analyzer")
     app.setOrganizationName("PAM Analyzer")
@@ -98,8 +119,13 @@ def main() -> int:
             target=remove_legacy_cache, args=(legacy_cache_dir(),), name="legacy-cache-cleanup", daemon=True
         ).start()
 
+    updater = attach_updater(window, compiled="__compiled__" in globals())
+
     window.show()
+    QTimer.singleShot(0, lambda: updater.check(manual=False))
     exit_code = app.exec()
+    # Only reached once the close went through, so a declined quit applies nothing
+    updater.apply_pending_update()
     if window.running_threads():
         settings.sync()  # os._exit skips the QSettings destructor that would write it
         logging.shutdown()
