@@ -3,7 +3,7 @@
 import logging
 import os
 import sys
-import tempfile
+import threading
 from pathlib import Path
 
 
@@ -51,6 +51,7 @@ from ..infrastructure import (  # noqa: E402
     PerchRunner,
     PsutilSdCardScanner,
 )
+from ..infrastructure.legacy_onefile_cache import legacy_cache_dir, remove_legacy_cache  # noqa: E402
 from ..ui import resources_rc  # noqa: F401, E402  registers :/icons/* resources
 from ..ui.app_state import AppState  # noqa: E402
 from ..ui.main_window import MainWindow  # noqa: E402
@@ -91,14 +92,11 @@ def main() -> int:
     app.setWindowIcon(QIcon(":/icons/icon.svg"))
     window = build_main_window(settings)
 
-    # Signal the splash screen removal to nuitka
-    if "NUITKA_ONEFILE_PARENT" in os.environ:
-        splash_filename = os.path.join(
-            tempfile.gettempdir(),
-            f"onefile_{int(os.environ['NUITKA_ONEFILE_PARENT'])}_splash_feedback.tmp",
-        )
-        if os.path.exists(splash_filename):
-            os.unlink(splash_filename)
+    if "__compiled__" in globals():
+        # A daemon thread, so gigabytes of deletion never hold up startup or exit
+        threading.Thread(
+            target=remove_legacy_cache, args=(legacy_cache_dir(),), name="legacy-cache-cleanup", daemon=True
+        ).start()
 
     window.show()
     exit_code = app.exec()

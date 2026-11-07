@@ -3,12 +3,14 @@
 # requires-python = ">=3.14,<3.15"
 # dependencies = []
 # ///
-"""Build PAM Analyzer distributable using Nuitka.
+"""Build the PAM Analyzer installer using Nuitka.
 
 Creates an isolated venv, installs the project and Nuitka into it,
 pre-downloads every model the app needs at runtime into a build-local
 cache directory, then compiles the app with that cache bundled next to
-the binary.
+the binary. Nuitka wraps the result in the platform's installer: an NSIS
+setup.exe on Windows, a DMG on macOS, an AppImage on Linux. The installer
+lands in dist/ under the release asset name the in-app updater looks for.
 
 One environment variable controls where the model files land during the
 download phase:
@@ -29,27 +31,42 @@ Usage:
 """
 
 import argparse
+import hashlib
 import os
+import platform
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import textwrap
+import time
+import urllib.request
 from pathlib import Path
 
 PACKAGING_DIR = Path(__file__).parent
 ROOT_DIR = PACKAGING_DIR.parent
 
 APP_ICON_PNG = ROOT_DIR / 'assets' / 'icon.png'
-APP_NAME = 'pam-analyzer'
-# Matches the reverse-DNS style already used for --macos-signed-app-name.
-# On Windows/Linux this also names a path component of the onefile cache
-# directory (--onefile-cache-mode=cached expands {COMPANY}/{PRODUCT}/{VERSION}).
+# Shown in the Dock, the Start menu and Apps & Features.
+APP_NAME = 'PAM Analyzer'
+# The binary, the .app/.dist folder and the release assets. Unversioned, so
+# Dock items and shortcuts survive an update.
+FILE_NAME = 'PAM-Analyzer'
 COMPANY_NAME = 'de.ken'
+# Unchanged from the onefile builds. macOS keys folder permissions to it.
+BUNDLE_ID = f'{COMPANY_NAME}.pam-analyzer'
 DIST_DIR = ROOT_DIR / 'dist'
-BUILD_DIR = DIST_DIR / 'build' / APP_NAME
+BUILD_DIR = DIST_DIR / 'build' / FILE_NAME
 VENV_DIR = DIST_DIR / 'venv'
+
+# The maintained appimagetool embeds the static type2 runtime, so the AppImage
+# runs without libfuse2. Nuitka's default download is the older AppImageKit one.
+APPIMAGETOOL_VERSION = '1.9.1'
+APPIMAGETOOL_SHA256 = {
+    'x86_64': 'ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0',
+    'aarch64': 'f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158',
+}
 
 # All bundled model assets live under this single root. Reused across
 # builds; delete this directory to force a fresh download.
@@ -108,13 +125,52 @@ def _numeric_versions(version: str) -> tuple[str, str]:
     """
     The app version as the plain numbers bundle metadata takes: 0.7.6 for the
     macOS bundle, and 0.7.6.2 for --product-version, where the dev number
-    keeps the onefile cache folders of dev builds apart.
+    tells dev builds apart in the Windows version resource.
     """
     match = re.fullmatch(r'(\d+\.\d+\.\d+)(?:\.dev(\d+))?', version)
     if match is None:
         raise SystemExit(f'Unexpected app version {version!r}. Is the checkout missing its git tags?')
     release, dev = match.groups()
     return release, f'{release}.{dev}' if dev else release
+
+
+def _asset_name() -> str:
+    """The installer's release asset name, like PAM-Analyzer-windows-x86_64-setup.exe.
+
+    The in-app updater picks the asset for its platform by this exact name.
+    """
+    arch = {'amd64': 'x86_64', 'x86_64': 'x86_64', 'arm64': 'arm64', 'aarch64': 'arm64'}.get(
+        platform.machine().lower()
+    )
+    if arch is None:
+        raise SystemExit(f'Unsupported architecture {platform.machine()!r}')
+    if sys.platform == 'darwin':
+        return f'{FILE_NAME}-macos-{arch}.dmg'
+    if sys.platform == 'win32':
+        return f'{FILE_NAME}-windows-{arch}-setup.exe'
+    return f'{FILE_NAME}-linux-{arch}.AppImage'
+
+
+def _fetch_appimagetool() -> Path:
+    """Download the pinned appimagetool for this machine, verified by sha256."""
+    arch = 'aarch64' if platform.machine().lower() in ('aarch64', 'arm64') else 'x86_64'
+    tool = DIST_DIR / 'tools' / f'appimagetool-{APPIMAGETOOL_VERSION}-{arch}.AppImage'
+    expected = APPIMAGETOOL_SHA256[arch]
+    if not tool.is_file() or hashlib.sha256(tool.read_bytes()).hexdigest() != expected:
+        url = (
+            'https://github.com/AppImage/appimagetool/releases/download/'
+            f'{APPIMAGETOOL_VERSION}/appimagetool-{arch}.AppImage'
+        )
+        print(f'  Downloading {url}')
+        tool.parent.mkdir(parents=True, exist_ok=True)
+        with urllib.request.urlopen(url, timeout=60) as response:
+            data = response.read()
+        actual = hashlib.sha256(data).hexdigest()
+        if actual != expected:
+            raise SystemExit(f'appimagetool sha256 is {actual}, expected {expected}')
+        tool.write_bytes(data)
+    tool.chmod(0o755)
+    return tool
 
 
 # Single prewarm script: load every model the app reaches for, so the
@@ -271,6 +327,43 @@ def _resolve_model_file(pattern: str) -> str:
     return found[0].relative_to(BIRDNET_APP_DATA_CACHE).as_posix()
 
 
+def _create_dmg(app: Path, dmg: Path) -> None:
+    """Pack app into dmg next to an Applications link, for drag-to-install.
+
+    Plain hdiutil rather than create-dmg: no Finder AppleScript to hang on a
+    headless runner, at the cost of the styled window. The app is moved into
+    a staging folder and back, since copying it would cost 1.6 GB.
+
+    GitHub's macOS runners intermittently fail hdiutil with "Resource busy"
+    (actions/runner-images#7522), hence the retries.
+    """
+    stage = app.parent / 'dmg-stage'
+    if stage.exists():
+        shutil.rmtree(stage)
+    stage.mkdir()
+    staged_app = stage / app.name
+    app.rename(staged_app)
+    try:
+        (stage / 'Applications').symlink_to('/Applications')
+        cmd = [
+            'hdiutil', 'create', '-volname', APP_NAME, '-srcfolder', str(stage),
+            '-fs', 'HFS+', '-format', 'ULFO', '-ov', str(dmg),
+        ]
+        max_attempts = 5
+        for attempt in range(1, max_attempts + 1):
+            try:
+                run(cmd)
+                break
+            except subprocess.CalledProcessError:
+                if attempt == max_attempts:
+                    raise
+                print(f'  hdiutil failed (attempt {attempt}/{max_attempts}), retrying...')
+                time.sleep(10)
+    finally:
+        staged_app.rename(app)
+        shutil.rmtree(stage)
+
+
 def _verify_bundle(app_root: Path) -> None:
     """Fail the build if the bundled data did not make it into the output.
 
@@ -279,11 +372,8 @@ def _verify_bundle(app_root: Path) -> None:
     lib's progress bar going to a stderr that a GUI user won't see. So it is
     checked here.
 
-    app_root is a directory tree with every file present: the macOS .app, or,
-    on Windows/Linux, the standalone .dist tree Nuitka builds on its way to
-    the single-file executable. The onefile binary itself seals its payload
-    and cannot be stat'd, so --remove-output is skipped on those platforms
-    and the caller checks the .dist tree before deleting it.
+    app_root is the tree the installer wraps: the macOS .app, or the .dist
+    folder on Windows/Linux.
     """
     expected = {
         rel: (BIRDNET_APP_DATA_CACHE / rel).stat().st_size
@@ -425,17 +515,14 @@ def main() -> None:
             ]
         )
 
-    splash_png = BUILD_DIR / 'splash.png'
-    if is_win:
-        print('  Generating splash screen')
-        run(['uv', 'run', '--script', PACKAGING_DIR / 'make_splash.py', splash_png])
-
     print('  Running Nuitka')
     # Remove any output from previous builds
     for pattern in ('*.dist', '*.app', '*.build'):
         for stale in BUILD_DIR.glob(pattern):
             shutil.rmtree(stale)
-    binary_name = f'{APP_NAME}.exe' if is_win else APP_NAME
+    installer = DIST_DIR / _asset_name()
+    installer.unlink(missing_ok=True)
+    binary_name = f'{FILE_NAME}.exe' if is_win else FILE_NAME
     cmd = [
         'uv',
         'run',
@@ -443,7 +530,9 @@ def main() -> None:
         'python',
         '-m',
         'nuitka',
-        '--standalone',
+        # A folder on Windows/Linux, an app bundle on macOS
+        '--mode=app-dist',
+        '--remove-output',
         '--enable-plugin=pyside6',
         '--include-qt-plugins=platforminputcontexts,geoservices,multimedia,position,qml',
         '--noinclude-qt-translations',
@@ -470,6 +559,8 @@ def main() -> None:
         # as they do under `python -m pam_analyzer`.
         '--python-flag=-m',
         f'--output-dir={BUILD_DIR}',
+        # Names the .app/.dist folder. Without it Nuitka uses the package name.
+        f'--output-folder-name={FILE_NAME}',
         f'--output-filename={binary_name}',
     ]
     cmd += [f'--include-module={module}' for module in MODULES]
@@ -478,27 +569,16 @@ def main() -> None:
     cmd.append(f'--include-data-dir={MODEL_CACHE}=birdnet-models')
     cmd += [f'--include-data-files={src}={dest}' for src, dest in DATA]
     if is_mac:
-        # Standalone .app, not onefile
         cmd += [
-            '--remove-output',
-            '--macos-create-app-bundle',
             f'--macos-app-icon={icon}',
             f'--macos-app-name={APP_NAME}',
             f'--macos-app-version={bundle_version}',
-            f'--macos-signed-app-name={COMPANY_NAME}.{APP_NAME}',
+            f'--macos-signed-app-name={BUNDLE_ID}',
+            # Not --macos-create-installer: Nuitka 4.3.4 hands create-dmg the
+            # empty .dist folder instead of the .app. _create_dmg builds it.
         ]
     else:
-        # onefile-cache-mode=cached unpacks the app into
-        # {CACHE_DIR}/{COMPANY}/{PRODUCT}/{VERSION} and reuses it on later
-        # launches.
-        # --company-name/--product-name/--product-version are what fill in
-        # those placeholders, so the cache path only depends on the version.
-        # --remove-output is skipped here: the onefile binary seals its
-        # payload, so _verify_bundle checks the intermediate .dist tree
-        # before main() deletes it.
         cmd += [
-            '--onefile',
-            '--onefile-cache-mode=cached',
             f'--company-name={COMPANY_NAME}',
             f'--product-name={APP_NAME}',
             f'--product-version={product_version}',
@@ -508,52 +588,42 @@ def main() -> None:
                 f'--windows-icon-from-ico={icon}',
                 '--windows-console-mode=attach',  # Reuses parent console on terminal launch, no console on double-click
                 '--msvc=latest',
-                f'--onefile-windows-splash-screen-image={splash_png}',
+                '--windows-create-installer',
+                f'--windows-installer-output={installer}',
+                # Per user, so neither installing nor updating needs admin rights
+                '--windows-installer-mode=user',
+                '--windows-installer-shortcuts=start-menu',
+                # The uninstaller deletes the install folder recursively, and
+                # the updater runs it. A user-picked folder like Documents
+                # would go with it.
+                '--windows-installer-no-user-change-install-dir',
             ]
         else:
-            cmd.append(f'--linux-icon={icon}')
+            cmd += [
+                f'--linux-icon={icon}',
+                '--linux-create-installer',
+                f'--linux-installer-output={installer}',
+                f'--linux-installer-appimagetool-path={_fetch_appimagetool()}',
+            ]
+            # appimagetool is itself an AppImage, and CI runners may lack FUSE
+            build_env['APPIMAGE_EXTRACT_AND_RUN'] = '1'
     cmd.append(ROOT_DIR / 'src' / 'pam_analyzer')
     run(cmd, env=build_env)
 
-    print('  Moving output into place')
+    app_tree = BUILD_DIR / f'{FILE_NAME}.app' if is_mac else BUILD_DIR / f'{FILE_NAME}.dist'
+    if not app_tree.is_dir():
+        raise SystemExit(f'Expected {app_tree}, not found')
+    # On Windows/Linux this runs after Nuitka has already built the installer,
+    # which is fine: a failure here stops the build before CI uploads anything.
+    print('  Verifying bundled models')
+    _verify_bundle(app_tree)
     if is_mac:
-        # Nuitka names the tree after the compiled package, so it arrives as
-        # pam_analyzer.app. Globbing rather than hardcoding that name keeps
-        # the rename working if Nuitka changes how it derives it.
-        produced = list(BUILD_DIR.glob('*.app'))
-        if len(produced) != 1:
-            raise SystemExit(f'Expected exactly one *.app in {BUILD_DIR}, found {produced}')
-        final = DIST_DIR / f'{APP_NAME}.app'
-        if final.exists():
-            shutil.rmtree(final)
-        shutil.move(str(produced[0]), str(final))
+        print('  Creating DMG')
+        _create_dmg(app_tree, installer)
+    if not installer.is_file():
+        raise SystemExit(f'Expected the installer at {installer}, not found')
 
-        print('  Verifying bundled models')
-        _verify_bundle(final)
-    else:
-        # --remove-output was skipped for onefile, so the standalone .dist
-        # tree Nuitka built on its way to the single-file binary is still
-        # here. Verify the exact per-file bundle against it, the same check
-        # macOS gets, then discard it: only the sealed onefile binary ships.
-        dist_trees = list(BUILD_DIR.glob('*.dist'))
-        if len(dist_trees) != 1:
-            raise SystemExit(f'Expected exactly one *.dist in {BUILD_DIR}, found {dist_trees}')
-        print('  Verifying bundled models')
-        _verify_bundle(dist_trees[0])
-        shutil.rmtree(dist_trees[0])
-        build_trees = list(BUILD_DIR.glob('*.build'))
-        for stale in build_trees:
-            shutil.rmtree(stale)
-
-        produced_file = BUILD_DIR / binary_name
-        if not produced_file.is_file():
-            raise SystemExit(f'Expected {binary_name} in {BUILD_DIR}, not found')
-        final = DIST_DIR / binary_name
-        if final.exists():
-            final.unlink()
-        shutil.move(str(produced_file), str(final))
-
-    print(f'\nDone. Output is in {final}')
+    print(f'\nDone. Installer: {installer}\n      App:       {app_tree}')
 
 
 if __name__ == '__main__':

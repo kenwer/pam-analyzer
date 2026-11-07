@@ -41,31 +41,21 @@ jobs:
         include:
           - os: macos-latest
             name: macOS (arm64)
-            os_name: macos
-            arch: arm64
-            archive_ext: zip
+            asset: PAM-Analyzer-macos-arm64.dmg
           # macOS Intel (x86_64) is disabled because TensorFlow dropped macOS x86_64
           # wheels starting with 2.21.0, and Perch 2.0 doesn't support Intel mac either
           # - os: macos-15-intel
           #   name: macOS (x86_64)
-          #   os_name: macos
-          #   arch: x86_64
-          #   archive_ext: zip
+          #   asset: PAM-Analyzer-macos-x86_64.dmg
           - os: windows-latest
             name: Windows
-            os_name: windows
-            arch: x86_64
-            archive_ext: zip
+            asset: PAM-Analyzer-windows-x86_64-setup.exe
           - os: ubuntu-latest
             name: Linux (x86_64)
-            os_name: linux
-            arch: x86_64
-            archive_ext: tar.gz
+            asset: PAM-Analyzer-linux-x86_64.AppImage
           - os: ubuntu-24.04-arm
             name: Linux (arm64)
-            os_name: linux
-            arch: arm64
-            archive_ext: tar.gz
+            asset: PAM-Analyzer-linux-arm64.AppImage
 
     steps:
       - name: Checkout
@@ -76,11 +66,6 @@ jobs:
           ref: ${{ inputs.upload_release_assets }}
           # The app version comes from the git tags, which a shallow clone lacks
           fetch-depth: 0
-
-      - name: Set ARCHIVE_NAME
-        shell: bash
-        run: |
-          echo "ARCHIVE_NAME=PAM-Analyzer-${{ matrix.os_name }}-${{ matrix.arch }}.${{ matrix.archive_ext }}" >> $GITHUB_ENV
 
       - name: Setup environment
         uses: ./.github/actions/setup-env
@@ -95,15 +80,12 @@ jobs:
 
       - name: Build distributable
         uses: ./.github/actions/build-dist
-        with:
-          os_name: ${{ matrix.os_name }}
-          arch: ${{ matrix.arch }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
           name: dist-${{ matrix.name }}
-          path: dist/${{ env.ARCHIVE_NAME }}
+          path: dist/${{ matrix.asset }}
           if-no-files-found: error
 
       - name: Upload release asset
@@ -112,5 +94,6 @@ jobs:
         with:
           # Empty on a release event, where the action takes the tag from github.ref
           tag_name: ${{ inputs.upload_release_assets }}
-          files: dist/${{ env.ARCHIVE_NAME }}
+          # The name build.py gives the installer. A mismatch fails the upload.
+          files: dist/${{ matrix.asset }}
           fail_on_unmatched_files: true
