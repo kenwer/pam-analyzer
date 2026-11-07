@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+### Changed
+- Releases ship as installers: a DMG on macOS, a per-user setup.exe on Windows, an AppImage on Linux.
+- Windows and Linux builds no longer unpack on launch. The old unpack caches are removed on first start.
+
 ## [0.8.0] - 2026-11-06
 ### Added
 - A "Best detections" box in the Examine panel shows the top N by confidence per species, in all ARUs or each ARU, for all time, each week or each day, and from each model when there are several.

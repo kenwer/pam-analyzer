@@ -40,11 +40,11 @@ PAM Analyzer is a cross-platform desktop application designed to help researcher
 ![Examine panel of the application interface](https://github.com/user-attachments/assets/613c7c67-abaf-4425-b2dc-15d194037eee)
 
 ## Download
-Pre-built binaries are available for the following platforms:
-* macOS (Apple Silicon): [PAM-Analyzer-macos-arm64.zip](https://github.com/kenwer/pam-analyzer/releases/latest/download/PAM-Analyzer-macos-arm64.zip)
-* Windows (x86_64): [PAM-Analyzer-windows-x86_64.zip](https://github.com/kenwer/pam-analyzer/releases/latest/download/PAM-Analyzer-windows-x86_64.zip)
-* Linux (x86_64): [PAM-Analyzer-linux-x86_64.tar.gz](https://github.com/kenwer/pam-analyzer/releases/latest/download/PAM-Analyzer-linux-x86_64.tar.gz)
-* Linux (arm64): [PAM-Analyzer-linux-arm64.tar.gz](https://github.com/kenwer/pam-analyzer/releases/latest/download/PAM-Analyzer-linux-arm64.tar.gz)
+Installers are available for the following platforms:
+* macOS (Apple Silicon): [PAM-Analyzer-macos-arm64.dmg](https://github.com/kenwer/pam-analyzer/releases/latest/download/PAM-Analyzer-macos-arm64.dmg)
+* Windows (x86_64): [PAM-Analyzer-windows-x86_64-setup.exe](https://github.com/kenwer/pam-analyzer/releases/latest/download/PAM-Analyzer-windows-x86_64-setup.exe)
+* Linux (x86_64): [PAM-Analyzer-linux-x86_64.AppImage](https://github.com/kenwer/pam-analyzer/releases/latest/download/PAM-Analyzer-linux-x86_64.AppImage)
+* Linux (arm64): [PAM-Analyzer-linux-arm64.AppImage](https://github.com/kenwer/pam-analyzer/releases/latest/download/PAM-Analyzer-linux-arm64.AppImage)
 
 Note: On any supported OS you can also easily run PAM Analyzer from source using `uv run poe run`
 
@@ -58,7 +58,13 @@ Note: On any supported OS you can also easily run PAM Analyzer from source using
 
 
 ## Usage
-Download the archive for your platform from the [Download](#download) section and unpack it.
+Download the installer for your platform from the [Download](#download) section.
+
+- **macOS**: open the DMG and drag `PAM Analyzer` into `Applications`. The app is not notarized by Apple, so the first launch shows "PAM Analyzer Not Opened". Select `Done`, open `System Settings > Privacy & Security`, select `Open Anyway`, then open the app again and confirm.
+- **Windows**: run the setup. The installer is not code-signed, so SmartScreen shows "Windows protected your PC" the first time. Select `More info`, then `Run anyway`. The app installs for the current user only, needs no admin rights, and appears in the Start menu.
+- **Linux**: make the AppImage executable (`chmod +x PAM-Analyzer-linux-*.AppImage`) and run it. Where FUSE is unavailable, for example in a container, run it with `APPIMAGE_EXTRACT_AND_RUN=1`.
+
+Versions up to 0.8.x shipped as zip and tar.gz archives. Delete the old app after installing a newer version. On Windows and Linux they also left an unpack cache of about 1.6 GB per version behind, which newer versions remove on their first launch.
 
 Upon first launch, use `New Project` and pick (or create) the folder that will hold your data such as recordings and detection CSVs. The app marks it as a project by writing a `pam-analyzer.toml` settings file into it. Then create at least one campaign in the `Campaigns` panel (audio import from SD cards is also handled there), run species detection in the `BirdNET` panel, and review detections in the `Examine` panel. More details are in the workflow section below.
 
