@@ -169,14 +169,13 @@ class UpdateController(QObject):
 
     def _start(self, worker: QObject, *done: SignalInstance) -> ReadOnlyThread:
         thread = ReadOnlyThread(self)
-        # The parented thread keeps the worker's Python wrapper alive. Without a
-        # reference the worker is freed while its thread still runs it.
+        # Python alone owns the worker and frees it with the thread, once that
+        # has finished. A worker.deleteLater would race that from the worker thread.
         thread.worker = worker
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         for signal in done:
             signal.connect(thread.quit)
-        thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
         thread.start()
         return thread
