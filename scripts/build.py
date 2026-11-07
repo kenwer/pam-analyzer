@@ -152,9 +152,14 @@ def _asset_name() -> str:
 
 
 def _fetch_appimagetool() -> Path:
-    """Download the pinned appimagetool for this machine, verified by sha256."""
+    """Download the pinned appimagetool for this machine, verified by sha256.
+
+    Returns the folder that holds it. Despite its help text, Nuitka 4.3.4
+    treats --linux-installer-appimagetool-path as a PATH entry and looks for
+    a file named exactly appimagetool in it.
+    """
     arch = 'aarch64' if platform.machine().lower() in ('aarch64', 'arm64') else 'x86_64'
-    tool = DIST_DIR / 'tools' / f'appimagetool-{APPIMAGETOOL_VERSION}-{arch}.AppImage'
+    tool = DIST_DIR / 'tools' / f'appimagetool-{APPIMAGETOOL_VERSION}-{arch}' / 'appimagetool'
     expected = APPIMAGETOOL_SHA256[arch]
     if not tool.is_file() or hashlib.sha256(tool.read_bytes()).hexdigest() != expected:
         url = (
@@ -170,7 +175,7 @@ def _fetch_appimagetool() -> Path:
             raise SystemExit(f'appimagetool sha256 is {actual}, expected {expected}')
         tool.write_bytes(data)
     tool.chmod(0o755)
-    return tool
+    return tool.parent
 
 
 # Single prewarm script: load every model the app reaches for, so the
