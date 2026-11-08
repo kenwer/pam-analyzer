@@ -140,7 +140,7 @@ def _asset_name() -> str:
 def _fetch_appimagetool() -> Path:
     """Download the pinned appimagetool for this machine, verified by sha256.
 
-    Returns the folder that holds it. Despite its help text, Nuitka 4.3.4
+    Returns the folder that holds it. Despite its help text, Nuitka 4.3.5
     treats --linux-installer-appimagetool-path as a PATH entry and looks for
     a file named exactly appimagetool in it.
     """
@@ -595,7 +595,7 @@ def main() -> None:
             f'--macos-app-name={APP_NAME}',
             f'--macos-app-version={app_version}',
             f'--macos-signed-app-name={BUNDLE_ID}',
-            # Not --macos-create-installer: Nuitka 4.3.4 hands create-dmg the
+            # Not --macos-create-installer: Nuitka 4.3.5 hands create-dmg the
             # empty .dist folder instead of the .app. _create_dmg builds it.
         ]
     else:
