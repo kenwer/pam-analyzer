@@ -20,6 +20,8 @@ from pam_analyzer.domain.audio_import import CardImportResult, DetectedCard, Imp
 from pam_analyzer.infrastructure import AudioImporter
 from pam_analyzer.infrastructure.birdnet_2_4_runner import MODEL_KEY as MODEL_KEY_V2_4
 from pam_analyzer.infrastructure.birdnet_runner import MODEL_KEY as MODEL_KEY_V3_0
+from pam_analyzer.infrastructure.update.feed import Update
+from pam_analyzer.infrastructure.update.install import LinuxAppInstall
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -81,6 +83,14 @@ def folder_card(root: Path, name: str) -> DetectedCard:
     folder.mkdir()
     sf.write(folder / "20260619_073000.WAV", np.zeros(4800, dtype=np.int16), 48_000, subtype="PCM_16")
     return DetectedCard(name=name, mountpoint=folder, device="", source=ImportSource.FOLDER)
+
+
+# A release the update tests offer over version 0.8.0
+UPDATE = Update("0.9.0", "notes", "https://example.org/r", "a.AppImage", "https://example.org/a", 10, "0" * 64)
+
+
+def linux_install(tmp_path: Path) -> LinuxAppInstall:
+    return LinuxAppInstall(tmp_path / "PAM-Analyzer.AppImage", tmp_path / "stage")
 
 
 def stop_worker_threads(owner: QObject) -> None:

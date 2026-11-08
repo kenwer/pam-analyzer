@@ -102,10 +102,11 @@ def show_info_toast(
     title: str,
     text: str,
     *,
+    links: Links = (),
     duration: int | None = None,
 ) -> Toast:
-    """Show a non-blocking information toast."""
-    return _show_toast(parent, title, text, ToastPreset.INFORMATION, duration=duration)
+    """Show a non-blocking information toast, optionally ending in clickable links."""
+    return _show_toast(parent, title, text, ToastPreset.INFORMATION, links=links, duration=duration)
 
 
 def show_error_toast(

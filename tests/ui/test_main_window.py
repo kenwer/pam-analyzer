@@ -6,60 +6,24 @@ from pathlib import Path
 import pytest
 import shiboken6
 from PySide6.QtCore import QCoreApplication, Qt
-from PySide6.QtGui import QCloseEvent
 
 from pam_analyzer.domain import AnalysisRunResult, Campaign, FilterMode, Project, RunStatus, paths
-from pam_analyzer.infrastructure import AudioImporter
 from pam_analyzer.ui import main_window
-from pam_analyzer.ui.app_state import AppState
 from pam_analyzer.ui.main_window import MainWindow
-from pam_analyzer.ui.settings import AppSettings
 from pam_analyzer.widgets.spectrogram_widget import SpectrogramWidget
-from pam_analyzer.workers import ImportOrchestrator, audio_inventory_refresher, project_load_worker
+from pam_analyzer.workers import audio_inventory_refresher, project_load_worker
 from tests.conftest import (
     DEFAULT_MODEL_KEY,
-    FakeScanner,
     ImporterUntilCancelled,
     folder_card,
     wait_until_cancelled,
 )
-
-
-class _FakeRunner:
-    model_key = DEFAULT_MODEL_KEY
-
-    def count_audio_files(self, _path: Path) -> int:
-        return 0
-
-    def available_locales(self) -> list[str]:
-        return ["en"]
-
-    def run(self, **kwargs) -> AnalysisRunResult:
-        return AnalysisRunResult(status=RunStatus.COMPLETED)
-
-
-class _RecordingWindow(MainWindow):
-    """Records an accepted close. A closing window is already hidden, so visibility cannot tell."""
-
-    closed = False
-
-    def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802  Qt API
-        super().closeEvent(event)
-        self.closed = event.isAccepted()
-
-
-def _main_window(runner: _FakeRunner | None = None, importer: AudioImporter | None = None) -> _RecordingWindow:
-    return _RecordingWindow(
-        AppState(),
-        {DEFAULT_MODEL_KEY: runner or _FakeRunner()},
-        ImportOrchestrator(importer or AudioImporter(), FakeScanner()),
-        AppSettings(),
-    )
+from tests.ui.conftest import FakeRunner, RecordingWindow, make_main_window
 
 
 @pytest.fixture
-def window(qtbot) -> _RecordingWindow:
-    w = _main_window()
+def window(qtbot) -> RecordingWindow:
+    w = make_main_window()
     qtbot.addWidget(w)
     return w
 
@@ -180,13 +144,13 @@ def confirm_stop(monkeypatch) -> list[list[str]]:
     return asked
 
 
-def test_closing_an_idle_window_closes_at_once(window: _RecordingWindow, confirm_stop) -> None:
+def test_closing_an_idle_window_closes_at_once(window: RecordingWindow, confirm_stop) -> None:
     assert window.close()
     assert window.closed
     assert confirm_stop == []
 
 
-class _RunnerUntilCancelled(_FakeRunner):
+class _RunnerUntilCancelled(FakeRunner):
     def __init__(self) -> None:
         self.cancelled = threading.Event()
 
@@ -197,7 +161,7 @@ class _RunnerUntilCancelled(_FakeRunner):
         return AnalysisRunResult(status=RunStatus.CANCELLED)
 
 
-class _StuckRunner(_FakeRunner):
+class _StuckRunner(FakeRunner):
     """Ignores cancellation, like a write the runner cannot interrupt, until released."""
 
     def __init__(self) -> None:
@@ -208,8 +172,8 @@ class _StuckRunner(_FakeRunner):
         return AnalysisRunResult(status=RunStatus.CANCELLED)
 
 
-def _window_running_analysis(qtbot, tmp_path: Path, load_project, runner: _FakeRunner) -> _RecordingWindow:
-    w = _main_window(runner)
+def _window_running_analysis(qtbot, tmp_path: Path, load_project, runner: FakeRunner) -> RecordingWindow:
+    w = make_main_window(runner)
     qtbot.addWidget(w)
     Campaign(name="alpha", folder=tmp_path / "alpha", species_filter_mode=FilterMode.LIST).create()
     Project(folder=tmp_path).save()
@@ -301,7 +265,7 @@ def stuck_load(window: MainWindow, tmp_path: Path, monkeypatch):
 
 
 def test_closing_does_not_wait_for_a_project_load(
-    window: _RecordingWindow, stuck_load: threading.Event, confirm_stop
+    window: RecordingWindow, stuck_load: threading.Event, confirm_stop
 ) -> None:
     window.show()
 
@@ -312,7 +276,7 @@ def test_closing_does_not_wait_for_a_project_load(
 
 
 def test_closing_does_not_wait_for_an_audio_size_pass(
-    window: _RecordingWindow, qtbot, tmp_path: Path, load_project, monkeypatch, confirm_stop
+    window: RecordingWindow, qtbot, tmp_path: Path, load_project, monkeypatch, confirm_stop
 ) -> None:
     def _sizes_until_cancelled(inventory, is_cancelled):
         wait_until_cancelled(is_cancelled)
@@ -336,7 +300,7 @@ def test_closing_does_not_wait_for_an_audio_size_pass(
 
 def test_closing_during_a_folder_import_does_not_start_the_next_card(qtbot, tmp_path: Path, confirm_stop) -> None:
     importer = ImporterUntilCancelled()
-    w = _main_window(importer=importer)
+    w = make_main_window(importer=importer)
     qtbot.addWidget(w)
     campaign = Campaign(name="alpha", folder=tmp_path / "alpha", species_filter_mode=FilterMode.LIST)
     campaign.create()
@@ -355,7 +319,7 @@ def test_closing_during_a_folder_import_does_not_start_the_next_card(qtbot, tmp_
 def test_deleting_a_closed_window_stops_the_spectrogram_render_thread(qtbot) -> None:
     # Not qtbot.addWidget: the window's C++ side is deleted here, so qtbot's own
     # close at teardown would hit a deleted object.
-    w = _main_window()
+    w = make_main_window()
     render_thread = w.findChild(SpectrogramWidget)._thread
     assert w.close()
 

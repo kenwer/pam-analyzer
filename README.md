@@ -64,6 +64,8 @@ Download the installer for your platform from the [Download](#download) section.
 - **Windows**: run the setup. The installer is not code-signed, so SmartScreen shows "Windows protected your PC" the first time. Select `More info`, then `Run anyway`. The app installs for the current user only, needs no admin rights, and appears in the Start menu.
 - **Linux**: make the AppImage executable (`chmod +x PAM-Analyzer-linux-*.AppImage`) and run it. Where FUSE is unavailable, for example in a container, run it with `APPIMAGE_EXTRACT_AND_RUN=1`.
 
+**Updates**: at every start the app checks for updates. When a newer version is available, the info at the status bar offers to download it in the background. Once downloaded, select `Install and relaunch` to install it. `Help > Check for Updates...` checks on demand. Because the app is not signed, macOS asks again for access to folders such as removable drives after each update.
+
 Versions up to 0.8.x shipped as zip and tar.gz archives. Delete the old app after installing a newer version. On Windows and Linux they also left an unpack cache of about 1.6 GB per version behind, which newer versions remove on their first launch.
 
 Upon first launch, use `New Project` and pick (or create) the folder that will hold your data such as recordings and detection CSVs. The app marks it as a project by writing a `pam-analyzer.toml` settings file into it. Then create at least one campaign in the `Campaigns` panel (audio import from SD cards is also handled there), run species detection in the `BirdNET` panel, and review detections in the `Examine` panel. More details are in the workflow section below.

@@ -54,6 +54,9 @@ APP_ENV = {
     **os.environ,
     'QT_QPA_PLATFORM': 'offscreen',
     'PAM_LOG_LEVEL': 'DEBUG',
+    # A port nothing listens on: the update check fails fast and only logs at
+    # info level, so the result never depends on GitHub or the latest release
+    'PAM_UPDATE_FEED_URL': 'http://127.0.0.1:9/release.json',
 }
 
 

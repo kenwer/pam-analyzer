@@ -4,6 +4,7 @@ from .audio_inventory_refresher import AudioInventoryRefresher
 from .import_orchestrator import ImportOrchestrator
 from .project_load_worker import ProjectLoadWorker
 from .read_only_thread import ReadOnlyThread
+from .update_workers import UpdateCheckWorker, UpdateDownloadWorker
 
 __all__ = [
     "AnalysisWorker",
@@ -12,4 +13,6 @@ __all__ = [
     "ImportOrchestrator",
     "ProjectLoadWorker",
     "ReadOnlyThread",
+    "UpdateCheckWorker",
+    "UpdateDownloadWorker",
 ]

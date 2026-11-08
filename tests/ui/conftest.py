@@ -10,11 +10,48 @@ from pathlib import Path
 
 import pytest
 from PySide6.QtCore import QCoreApplication, QSettings, Qt, QThread
+from PySide6.QtGui import QCloseEvent
 
+from pam_analyzer.domain import AnalysisRunResult, RunStatus
+from pam_analyzer.infrastructure import AudioImporter
 from pam_analyzer.ui import toasts as toasts_module
 from pam_analyzer.ui.app_state import AppState
+from pam_analyzer.ui.main_window import MainWindow
 from pam_analyzer.ui.settings import AppSettings
-from pam_analyzer.workers import ProjectLoadWorker
+from pam_analyzer.workers import ImportOrchestrator, ProjectLoadWorker
+from tests.conftest import DEFAULT_MODEL_KEY, FakeScanner
+
+
+class FakeRunner:
+    model_key = DEFAULT_MODEL_KEY
+
+    def count_audio_files(self, _path: Path) -> int:
+        return 0
+
+    def available_locales(self) -> list[str]:
+        return ["en"]
+
+    def run(self, **kwargs) -> AnalysisRunResult:
+        return AnalysisRunResult(status=RunStatus.COMPLETED)
+
+
+class RecordingWindow(MainWindow):
+    """Records an accepted close. A closing window is already hidden, so visibility cannot tell."""
+
+    closed = False
+
+    def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802  Qt API
+        super().closeEvent(event)
+        self.closed = event.isAccepted()
+
+
+def make_main_window(runner: FakeRunner | None = None, importer: AudioImporter | None = None) -> RecordingWindow:
+    return RecordingWindow(
+        AppState(),
+        {DEFAULT_MODEL_KEY: runner or FakeRunner()},
+        ImportOrchestrator(importer or AudioImporter(), FakeScanner()),
+        AppSettings(),
+    )
 
 
 @pytest.fixture(autouse=True)
