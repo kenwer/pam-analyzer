@@ -49,7 +49,8 @@ jobs:
           - os: windows-latest
             name: Windows
             asset: PAM-Analyzer-windows-x86_64-setup.exe
-          - os: ubuntu-latest
+          # Pinned, not ubuntu-latest: the AppImage needs a glibc at least as new as the build's
+          - os: ubuntu-24.04
             name: Linux (x86_64)
             asset: PAM-Analyzer-linux-x86_64.AppImage
           - os: ubuntu-24.04-arm
@@ -105,7 +106,7 @@ jobs:
           - os: windows-latest
             name: Windows
             asset: PAM-Analyzer-windows-x86_64-setup.exe
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             name: Linux (x86_64)
             asset: PAM-Analyzer-linux-x86_64.AppImage
           - os: ubuntu-24.04-arm
