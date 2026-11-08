@@ -8,8 +8,8 @@
 Creates an isolated venv, installs the project and Nuitka into it,
 pre-downloads every model the app needs at runtime into a build-local
 cache directory, then compiles the app with that cache bundled next to
-the binary. Nuitka wraps the result in the platform's installer: an NSIS
-setup.exe on Windows, a DMG on macOS, an AppImage on Linux. The installer
+the binary, then wraps the result in the platform's installer: an Inno
+Setup setup.exe on Windows, a DMG on macOS, an AppImage on Linux. The installer
 lands in dist/ under the release asset name the in-app updater looks for.
 
 One environment variable controls where the model files land during the
@@ -369,6 +369,39 @@ def _create_dmg(app: Path, dmg: Path) -> None:
         shutil.rmtree(stage)
 
 
+ISS_SCRIPT = ROOT_DIR / 'packaging' / 'windows' / 'pam-analyzer.iss'
+
+
+def _find_iscc() -> Path:
+    """Inno Setup's compiler, preinstalled on GitHub's Windows runners."""
+    found = shutil.which('ISCC')
+    if found:
+        return Path(found)
+    program_files = Path(os.environ.get('ProgramFiles(x86)', r'C:\Program Files (x86)'))
+    default = program_files / 'Inno Setup 6' / 'ISCC.exe'
+    if default.is_file():
+        return default
+    raise SystemExit('Inno Setup not found. Install it with: winget install JRSoftware.InnoSetup')
+
+
+def _create_windows_installer(
+    dist: Path, installer: Path, icon: Path, app_version: str, numeric_version: str
+) -> None:
+    """Compile packaging/windows/pam-analyzer.iss over the Nuitka .dist folder."""
+    # The installer's version resource takes exactly four numbers
+    numeric4 = '.'.join((numeric_version.split('.') + ['0'] * 4)[:4])
+    run([
+        str(_find_iscc()),
+        f'/DAppVersion={app_version}',
+        f'/DNumericVersion={numeric4}',
+        f'/DSourceDir={dist}',
+        f'/DOutputDir={installer.parent}',
+        f'/DOutputBaseFilename={installer.stem}',
+        f'/DIconFile={icon}',
+        str(ISS_SCRIPT),
+    ])
+
+
 def _verify_bundle(app_root: Path) -> None:
     """Fail the build if the bundled data did not make it into the output.
 
@@ -593,15 +626,8 @@ def main() -> None:
                 f'--windows-icon-from-ico={icon}',
                 '--windows-console-mode=attach',  # Reuses parent console on terminal launch, no console on double-click
                 '--msvc=latest',
-                '--windows-create-installer',
-                f'--windows-installer-output={installer}',
-                # Per user, so neither installing nor updating needs admin rights
-                '--windows-installer-mode=user',
-                '--windows-installer-shortcuts=start-menu',
-                # The uninstaller deletes the install folder recursively, and
-                # the updater runs it. A user-picked folder like Documents
-                # would go with it.
-                '--windows-installer-no-user-change-install-dir',
+                # Not --windows-create-installer: Nuitka's NSIS script cannot
+                # clean the folder or wait for a running app. See _create_windows_installer.
             ]
         else:
             cmd += [
@@ -618,13 +644,16 @@ def main() -> None:
     app_tree = BUILD_DIR / f'{FILE_NAME}.app' if is_mac else BUILD_DIR / f'{FILE_NAME}.dist'
     if not app_tree.is_dir():
         raise SystemExit(f'Expected {app_tree}, not found')
-    # On Windows/Linux this runs after Nuitka has already built the installer,
-    # which is fine: a failure here stops the build before CI uploads anything.
+    # On Linux this runs after Nuitka has already built the AppImage, which is
+    # fine: a failure here stops the build before CI uploads anything.
     print('  Verifying bundled models')
     _verify_bundle(app_tree)
     if is_mac:
         print('  Creating DMG')
         _create_dmg(app_tree, installer)
+    elif is_win:
+        print('  Creating installer')
+        _create_windows_installer(app_tree, installer, icon, app_version, product_version)
     if not installer.is_file():
         raise SystemExit(f'Expected the installer at {installer}, not found')
 

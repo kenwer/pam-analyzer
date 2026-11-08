@@ -52,6 +52,7 @@ from ..infrastructure import (  # noqa: E402
     PsutilSdCardScanner,
 )
 from ..infrastructure.legacy_onefile_cache import legacy_cache_dir, remove_legacy_cache  # noqa: E402
+from ..infrastructure.running_mutex import hold_running_mutex  # noqa: E402
 from ..ui import resources_rc  # noqa: F401, E402  registers :/icons/* resources
 from ..ui.app_state import AppState  # noqa: E402
 from ..ui.main_window import MainWindow  # noqa: E402
@@ -86,6 +87,8 @@ def main() -> int:
         "BIRDNET_APP_DATA=%s", os.environ.get("BIRDNET_APP_DATA", "<unset, per-user cache>")
     )
 
+    # Held until the process exits, so the installer waits for this instance
+    hold_running_mutex()
     app = QApplication(sys.argv)
     app.setApplicationName("PAM Analyzer")
     app.setOrganizationName("PAM Analyzer")
