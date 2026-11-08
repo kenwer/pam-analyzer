@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.9.1] - 2026-11-08
 ### Changed
 - The Linux ARM release is named `PAM-Analyzer-linux-aarch64.AppImage` instead of `PAM-Analyzer-linux-arm64.AppImage`.
 
