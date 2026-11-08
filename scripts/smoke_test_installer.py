@@ -132,7 +132,7 @@ def check_starts(exe: Path) -> None:
 
 
 def smoke_windows(installer: Path) -> None:
-    instdir = Path(os.environ['LOCALAPPDATA']) / 'Programs' / APP_NAME
+    instdir = Path(os.environ['LOCALAPPDATA']) / 'Programs' / FILE_NAME
     exe = instdir / f'{FILE_NAME}.exe'
     uninstaller = instdir / 'unins000.exe'
     silent = ['/VERYSILENT', '/SUPPRESSMSGBOXES']

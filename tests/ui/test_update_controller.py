@@ -344,7 +344,7 @@ def test_restart_waits_for_other_instances_on_windows(window, monkeypatch, toast
     applied: list = []
     monkeypatch.setattr(update_install, "apply_update", lambda target, payload: applied.append(payload))
     monkeypatch.setattr(running_mutex, "other_instance_running", lambda: True)
-    controller = _controller(window, InstallTarget("windows", tmp_path / "PAM Analyzer", tmp_path / "t"))
+    controller = _controller(window, InstallTarget("windows", tmp_path / "PAM-Analyzer", tmp_path / "t"))
     controller._update = UPDATE
     controller._payload = tmp_path / "setup.exe"
     controller._set_state(UpdateState.READY)

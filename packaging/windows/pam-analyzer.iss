@@ -33,7 +33,7 @@ VersionInfoVersion={#NumericVersion}
 ; Per user: no admin prompt to install or to update, and {autopf} resolves
 ; to %LOCALAPPDATA%\Programs
 PrivilegesRequired=lowest
-DefaultDirName={autopf}\PAM Analyzer
+DefaultDirName={autopf}\PAM-Analyzer
 ; Fixed, because [InstallDelete] empties it. A user-picked folder could
 ; hold other files.
 DisableDirPage=yes

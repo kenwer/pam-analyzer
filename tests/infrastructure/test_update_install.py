@@ -27,11 +27,11 @@ def make_update(version: str = "0.9.0", size: int = 1000, sha256: str | None = "
 
 
 def test_windows_target_is_the_executable_folder(tmp_path: Path) -> None:
-    exe = tmp_path / "PAM Analyzer" / "PAM-Analyzer.exe"
+    exe = tmp_path / "PAM-Analyzer" / "PAM-Analyzer.exe"
     exe.parent.mkdir()
     (exe.parent / "unins000.exe").write_bytes(b"MZ")
     target = detect_install_target("win32", exe, {"TEMP": str(tmp_path / "t")})
-    assert target == InstallTarget("windows", tmp_path / "PAM Analyzer", tmp_path / "t" / "pam-analyzer-update")
+    assert target == InstallTarget("windows", tmp_path / "PAM-Analyzer", tmp_path / "t" / "pam-analyzer-update")
 
 
 def test_macos_target_is_the_enclosing_app(tmp_path: Path) -> None:
@@ -277,7 +277,7 @@ def _bundle(path: Path, marker: str) -> Path:
 def test_windows_starts_the_installer_silently_with_relaunch(tmp_path: Path) -> None:
     launch = Recorder()
     setup = tmp_path / "setup.exe"
-    apply_update(InstallTarget("windows", tmp_path / "PAM Analyzer", tmp_path), setup, launch)
+    apply_update(InstallTarget("windows", tmp_path / "PAM-Analyzer", tmp_path), setup, launch)
     assert launch.commands == [[str(setup), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/RELAUNCH"]]
 
 
@@ -462,7 +462,7 @@ def test_a_failed_launch_is_logged_not_raised(tmp_path: Path) -> None:
     def missing(command: list[str]) -> None:
         raise FileNotFoundError(command[0])
 
-    target = InstallTarget("windows", tmp_path / "PAM Analyzer", tmp_path / "t")
+    target = InstallTarget("windows", tmp_path / "PAM-Analyzer", tmp_path / "t")
     apply_update(target, tmp_path / "t" / "0.9.0" / "setup.exe", missing)
     assert take_apply_failure(target)
 
