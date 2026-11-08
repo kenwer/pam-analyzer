@@ -64,8 +64,6 @@ jobs:
           # Rebuilding an old release checks out its tag, since the tag sets
           # the app version. Empty on every other event, which keeps the default.
           ref: ${{ inputs.upload_release_assets }}
-          # The app version comes from the git tags, which a shallow clone lacks
-          fetch-depth: 0
 
       - name: Setup environment
         uses: ./.github/actions/setup-env

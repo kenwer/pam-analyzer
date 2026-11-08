@@ -6,6 +6,7 @@
 ### Changed
 - Releases ship as installers: a DMG on macOS, a setup.exe on Windows, an AppImage on Linux.
 - Windows and Linux builds no longer unpack on launch. The old unpack caches are removed on first start.
+- [Dev] version is set via `uv version` instead of hatch-vcs.
 
 ## [0.8.0] - 2026-11-06
 ### Added

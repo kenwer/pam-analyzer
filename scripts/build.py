@@ -34,7 +34,6 @@ import argparse
 import hashlib
 import os
 import platform
-import re
 import shutil
 import subprocess
 import sys
@@ -113,25 +112,12 @@ DATA: tuple[tuple[Path, str], ...] = (
 
 
 def _app_version(python: Path) -> str:
-    """The version installed into the build venv, which hatch-vcs takes from git, like 0.7.6.dev2."""
+    """The version installed into the build venv, from pyproject.toml, like 0.8.0."""
     result = subprocess.run(
         [str(python), '-c', 'from importlib.metadata import version; print(version("pam-analyzer"))'],
         check=True, capture_output=True, text=True,
     )
     return result.stdout.strip()
-
-
-def _numeric_versions(version: str) -> tuple[str, str]:
-    """
-    The app version as the plain numbers bundle metadata takes: 0.7.6 for the
-    macOS bundle, and 0.7.6.2 for --product-version, where the dev number
-    tells dev builds apart in the Windows version resource.
-    """
-    match = re.fullmatch(r'(\d+\.\d+\.\d+)(?:\.dev(\d+))?', version)
-    if match is None:
-        raise SystemExit(f'Unexpected app version {version!r}. Is the checkout missing its git tags?')
-    release, dev = match.groups()
-    return release, f'{release}.{dev}' if dev else release
 
 
 def _asset_name() -> str:
@@ -384,12 +370,10 @@ def _find_iscc() -> Path:
     raise SystemExit('Inno Setup not found. Install it with: winget install JRSoftware.InnoSetup')
 
 
-def _create_windows_installer(
-    dist: Path, installer: Path, icon: Path, app_version: str, numeric_version: str
-) -> None:
+def _create_windows_installer(dist: Path, installer: Path, icon: Path, app_version: str) -> None:
     """Compile packaging/windows/pam-analyzer.iss over the Nuitka .dist folder."""
     # The installer's version resource takes exactly four numbers
-    numeric4 = '.'.join((numeric_version.split('.') + ['0'] * 4)[:4])
+    numeric4 = f'{app_version}.0'
     run([
         str(_find_iscc()),
         f'/DAppVersion={app_version}',
@@ -489,7 +473,7 @@ def main() -> None:
     # the version into importlib.metadata.version("pam-analyzer"). Uninstalled,
     # the app would report "unknown". Nuitka still compiles straight from src/,
     # which is also the only way the gitignored ui_*.py and *_rc.py modules
-    # reach the build: a wheel would omit them, since hatchling selects files via git.
+    # reach the build, since they are generated after the sync.
     # nuitka comes from the build group so uv.lock pins it.
     # --no-default-groups drops dev, which the build does not use: the compile
     # scripts call pyside6-uic and pyside6-rcc, both shipped with PySide6.
@@ -503,7 +487,6 @@ def main() -> None:
         env=build_env,
     )
     app_version = _app_version(python)
-    bundle_version, product_version = _numeric_versions(app_version)
     print(f'  Version  : {app_version}')
 
     print('  Compiling Qt resources and UI files')
@@ -610,7 +593,7 @@ def main() -> None:
         cmd += [
             f'--macos-app-icon={icon}',
             f'--macos-app-name={APP_NAME}',
-            f'--macos-app-version={bundle_version}',
+            f'--macos-app-version={app_version}',
             f'--macos-signed-app-name={BUNDLE_ID}',
             # Not --macos-create-installer: Nuitka 4.3.4 hands create-dmg the
             # empty .dist folder instead of the .app. _create_dmg builds it.
@@ -619,7 +602,7 @@ def main() -> None:
         cmd += [
             f'--company-name={COMPANY_NAME}',
             f'--product-name={APP_NAME}',
-            f'--product-version={product_version}',
+            f'--product-version={app_version}',
         ]
         if is_win:
             cmd += [
@@ -653,7 +636,7 @@ def main() -> None:
         _create_dmg(app_tree, installer)
     elif is_win:
         print('  Creating installer')
-        _create_windows_installer(app_tree, installer, icon, app_version, product_version)
+        _create_windows_installer(app_tree, installer, icon, app_version)
     if not installer.is_file():
         raise SystemExit(f'Expected the installer at {installer}, not found')
 

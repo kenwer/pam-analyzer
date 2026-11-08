@@ -302,6 +302,7 @@ wheels = [
 
 [[package]]
 name = "pam-analyzer"
+version = "0.8.0"
 source = { editable = "." }
 dependencies = [
     { name = "birdnet" },

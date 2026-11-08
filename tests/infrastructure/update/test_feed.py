@@ -46,10 +46,6 @@ def test_same_version_is_no_update() -> None:
     assert find_update(release("v0.8.0"), "0.8.0", ASSET) is None
 
 
-def test_dev_build_is_not_offered_the_release_it_follows() -> None:
-    assert find_update(release("v0.9.0"), "0.9.1.dev2", ASSET) is None
-
-
 def test_unparsable_versions_are_no_update() -> None:
     assert find_update(release("v0.9.0"), "unknown", ASSET) is None
     assert find_update(release("nightly"), "0.8.0", ASSET) is None
