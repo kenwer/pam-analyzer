@@ -44,7 +44,7 @@ Installers are available for the following platforms:
 * macOS (Apple Silicon): [PAM-Analyzer-macos-arm64.dmg](https://github.com/kenwer/pam-analyzer/releases/latest/download/PAM-Analyzer-macos-arm64.dmg)
 * Windows (x86_64): [PAM-Analyzer-windows-x86_64-setup.exe](https://github.com/kenwer/pam-analyzer/releases/latest/download/PAM-Analyzer-windows-x86_64-setup.exe)
 * Linux (x86_64): [PAM-Analyzer-linux-x86_64.AppImage](https://github.com/kenwer/pam-analyzer/releases/latest/download/PAM-Analyzer-linux-x86_64.AppImage)
-* Linux (arm64): [PAM-Analyzer-linux-arm64.AppImage](https://github.com/kenwer/pam-analyzer/releases/latest/download/PAM-Analyzer-linux-arm64.AppImage)
+* Linux (aarch64): [PAM-Analyzer-linux-aarch64.AppImage](https://github.com/kenwer/pam-analyzer/releases/latest/download/PAM-Analyzer-linux-aarch64.AppImage)
 
 Note: On any supported OS you can also easily run PAM Analyzer from source using `uv run poe run`
 

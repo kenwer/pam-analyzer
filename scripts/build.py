@@ -134,7 +134,7 @@ def _asset_name() -> str:
         return f'{FILE_NAME}-macos-{arch}.dmg'
     if sys.platform == 'win32':
         return f'{FILE_NAME}-windows-{arch}-setup.exe'
-    return f'{FILE_NAME}-linux-{arch}.AppImage'
+    return f'{FILE_NAME}-linux-{"aarch64" if arch == "arm64" else arch}.AppImage'
 
 
 def _fetch_appimagetool() -> Path:

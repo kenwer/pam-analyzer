@@ -54,8 +54,8 @@ jobs:
             name: Linux (x86_64)
             asset: PAM-Analyzer-linux-x86_64.AppImage
           - os: ubuntu-24.04-arm
-            name: Linux (arm64)
-            asset: PAM-Analyzer-linux-arm64.AppImage
+            name: Linux (aarch64)
+            asset: PAM-Analyzer-linux-aarch64.AppImage
 
     steps:
       - name: Checkout
@@ -108,8 +108,8 @@ jobs:
             name: Linux (x86_64)
             asset: PAM-Analyzer-linux-x86_64.AppImage
           - os: ubuntu-24.04-arm
-            name: Linux (arm64)
-            asset: PAM-Analyzer-linux-arm64.AppImage
+            name: Linux (aarch64)
+            asset: PAM-Analyzer-linux-aarch64.AppImage
 
     steps:
       - name: Checkout

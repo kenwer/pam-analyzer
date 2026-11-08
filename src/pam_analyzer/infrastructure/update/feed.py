@@ -46,7 +46,7 @@ def release_asset_name(system: str = sys.platform, machine: str = platform.machi
     if system == "win32":
         return f"PAM-Analyzer-windows-{arch}-setup.exe"
     if system.startswith("linux"):
-        return f"PAM-Analyzer-linux-{arch}.AppImage"
+        return f"PAM-Analyzer-linux-{'aarch64' if arch == 'arm64' else arch}.AppImage"
     return None
 
 
