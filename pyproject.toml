@@ -19,6 +19,7 @@ dependencies = [
     "mutagen>=1.48",
     "packaging>=24.0",
     "pyqt-toast-notification==1.3.3",  # Pinned: the toast link reaches a private label attr (_Toast__text_label). Re-verify that hook before bumping. See src/pam_analyzer/ui/toasts.py
+    "truststore>=0.10.5",
 ]
 
 [project.scripts]
@@ -39,8 +40,7 @@ build = [
 ]
 
 [tool.uv]
-# .python-version pins the exact patch. Without this, uv takes a system Python
-# (e.g. Homebrew on the macOS runner) whenever one happens to match the pin.
+# Ignore system Pythons, so every build bundles the uv-managed Python that .python-version names
 python-preference = "only-managed"
 
 # birdnet depends on ai-edge-litert to run TFLite weights but this app runs all 
