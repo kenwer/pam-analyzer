@@ -4,6 +4,7 @@
 ### Changed
 - Updates verify certificates with the OS trust store.
 - [Dev] Update Python to 3.14.10.
+- [Dev] Simplify `pyproject.toml` and add a `compile-qt` poe task that runs `compile-ui` and `compile-qrc`.
 
 ## [0.9.1] - 2026-11-08
 ### Changed

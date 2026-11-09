@@ -5,20 +5,22 @@ description = "Automated bird species detection from acoustic recordings."
 readme = "README.md"
 requires-python = ">=3.14,<3.15"
 dependencies = [
-    "PySide6-Essentials>=6.12",
-    "PySide6-Addons>=6.12",
-    "birdnet>=1.4,<1.5",  # Pinned as birdnet_2_4_onnx and perch_onnx build on lib internals that are not public API (OnnxBackend, the backend protocols, the model cache paths)
-    "platformdirs>=4.3.0",
-    "psutil>=6.0.0",
+    # Pinned as birdnet_2_4_onnx and perch_onnx build on lib internals that are not public API (OnnxBackend, the backend protocols, the model cache paths)
+    "birdnet>=1.4,<1.5",
     "guano>=1.0.16",
-    "soundfile>=0.12.1",
-    "numpy>=1.26",
-    "scipy>=1.12",
-    "tomli-w>=1.2",
-    "polars>=1.0",
     "mutagen>=1.48",
+    "numpy>=1.26",
     "packaging>=24.0",
-    "pyqt-toast-notification==1.3.3",  # Pinned: the toast link reaches a private label attr (_Toast__text_label). Re-verify that hook before bumping. See src/pam_analyzer/ui/toasts.py
+    "platformdirs>=4.3.0",
+    "polars>=1.0",
+    "psutil>=6.0.0",
+    # Pinned: the toast link reaches a private label attr (_Toast__text_label). Re-verify that hook before bumping. See src/pam_analyzer/ui/toasts.py
+    "pyqt-toast-notification==1.3.3",
+    "PySide6-Addons>=6.12",
+    "PySide6-Essentials>=6.12",
+    "scipy>=1.12",
+    "soundfile>=0.12.1",
+    "tomli-w>=1.2",
     "truststore>=0.10.5",
 ]
 
@@ -27,11 +29,11 @@ pam-analyzer = "pam_analyzer.app.__main__:main"
 
 [dependency-groups]
 dev = [
+    "poethepoet>=0.29",
+    "py-spy>=0.3",
     "pytest>=8.0",
     "pytest-qt>=4.4",
     "ruff>=0.6",
-    "poethepoet>=0.29",
-    "py-spy>=0.3",
 ]
 
 # Only scripts/build.py needs these, so they stay out of the default groups a plain `uv sync` installs.
@@ -91,14 +93,15 @@ select = [
 [tool.poe.tasks]
 compile-ui = { cmd = "python scripts/compile_ui.py", help = "Compile Qt Designer .ui files to ui_*.py modules" }
 compile-qrc = { cmd = "python scripts/compile_qrc.py", help = "Compile Qt resource files to *_rc.py modules" }
+compile-qt = { sequence = ["compile-ui", "compile-qrc"], help = "Compile Qt UI and resource files" }
 designer = { shell = "open -a $VIRTUAL_ENV/lib/python*/site-packages/PySide6/Designer.app \"$ui\"", interpreter = "bash", args = [{ name = "ui", positional = true, help = "Path to the .ui file" }], help = "Open Qt Designer.app on a given .ui file" }
 run-app = "python -m pam_analyzer"
-run = { ref = "run-app", deps = ["compile-ui", "compile-qrc"], help = "Compile UI/resources, then run the app" }
-run-dbg = { cmd = "python -m pam_analyzer", env = {PAM_LOG_LEVEL = "DEBUG"}, deps = ["compile-ui", "compile-qrc"], help = "Compile UI/resources, then run the app with DEBUG logging" }
+run = { ref = "run-app", deps = ["compile-qt"], help = "Compile UI/resources, then run the app" }
+run-dbg = { cmd = "python -m pam_analyzer", env = {PAM_LOG_LEVEL = "DEBUG"}, deps = ["compile-qt"], help = "Compile UI/resources, then run the app with DEBUG logging" }
 profile = { cmd = "py-spy record -o spectrogram_profile.svg -- python -m pam_analyzer", help = "Record a py-spy flame graph; navigate the app then Ctrl+C to write spectrogram_profile.svg (Windows: run as Administrator)" }
-test = { cmd = "pytest", deps = ["compile-ui", "compile-qrc"], help = "Compile UI/resources, then run all tests" }
-test-fast = { cmd = "pytest -m 'not slow'", deps = ["compile-ui", "compile-qrc"], help = "Compile UI/resources, then run only fast tests" }
-test-slow = { cmd = "pytest -m slow", deps = ["compile-ui", "compile-qrc"], help = "Compile UI/resources, then run only the slow model tests" }
+test = { cmd = "pytest", deps = ["compile-qt"], help = "Compile UI/resources, then run all tests" }
+test-fast = { cmd = "pytest -m 'not slow'", deps = ["compile-qt"], help = "Compile UI/resources, then run only fast tests" }
+test-slow = { cmd = "pytest -m slow", deps = ["compile-qt"], help = "Compile UI/resources, then run only the slow model tests" }
 lint = "ruff check src tests"
 fmt = "ruff format src tests"
 install-hooks = { cmd = "git config core.hooksPath .githooks", help = "Point git at the repo's tracked hooks (pre-push runs test-fast)" }
