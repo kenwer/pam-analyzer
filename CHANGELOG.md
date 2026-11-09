@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.9.2] - 2026-11-09
 ### Changed
 - Updates verify certificates with the OS trust store.
 - [Dev] Update Python to 3.14.10.
