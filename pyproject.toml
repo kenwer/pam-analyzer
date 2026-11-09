@@ -31,8 +31,8 @@ pam-analyzer = "pam_analyzer.app.__main__:main"
 dev = [
     "poethepoet>=0.29",
     "py-spy>=0.3",
-    "pytest>=8.0",
-    "pytest-qt>=4.4",
+    "pytest>=9.0",
+    "pytest-qt>=4.5",
     "ruff>=0.6",
 ]
 
@@ -45,17 +45,10 @@ build = [
 # Ignore system Pythons, so every build bundles the uv-managed Python that .python-version names
 python-preference = "only-managed"
 
-# birdnet depends on ai-edge-litert to run TFLite weights but this app runs all 
-# models on ONNX Runtime, so nothing in this app reaches that interpreter.
-# Since ai-edge-litert is a birdnet dep, we can't simply delete it, but we 
-# can rewrite the requirement uv resolves with a marker no platform
-# satisfies drops it from the lock and the venv. birdnet imports it lazily,
-# inside load_lib_litert_model, so its absence is only reachable by asking for
-# a TFLite backend, which this app never does.
-#
-# pandas and pyarrow are dropped the same way. birdnet imports them only inside
-# its result export methods (to_dataframe, to_arrow_table, to_parquet), and this
-# app reads results through to_structured_array.
+# A marker no platform satisfies drops these birdnet deps from the lock and the venv.
+# birdnet imports them lazily and this app never reaches those paths: ai-edge-litert
+# only backs TFLite models (the app runs ONNX), pandas and pyarrow only back the
+# result export methods (the app reads results through to_structured_array).
 override-dependencies = [
     "ai-edge-litert; sys_platform == 'never'",
     "pandas; sys_platform == 'never'",
@@ -66,11 +59,9 @@ override-dependencies = [
 requires = ["uv_build>=0.13.5,<0.14"]
 build-backend = "uv_build"
 
-# Run ruff using uvx:
-#  uvx ruff check src/pam_analyzer/
-#  uvx ruff check src/pam_analyzer/ --fix
 [tool.ruff]
 line-length = 120
+# Exclude files generated from .ui and .qrc sources
 extend-exclude = [
     "**/ui_*.py",
     "**/*_rc.py",
@@ -94,26 +85,71 @@ select = [
 compile-ui = { cmd = "python scripts/compile_ui.py", help = "Compile Qt Designer .ui files to ui_*.py modules" }
 compile-qrc = { cmd = "python scripts/compile_qrc.py", help = "Compile Qt resource files to *_rc.py modules" }
 compile-qt = { sequence = ["compile-ui", "compile-qrc"], help = "Compile Qt UI and resource files" }
-designer = { shell = "open -a $VIRTUAL_ENV/lib/python*/site-packages/PySide6/Designer.app \"$ui\"", interpreter = "bash", args = [{ name = "ui", positional = true, help = "Path to the .ui file" }], help = "Open Qt Designer.app on a given .ui file" }
-run-app = "python -m pam_analyzer"
+designer = { shell = "open -a $VIRTUAL_ENV/lib/python*/site-packages/PySide6/Designer.app \"$ui\"", interpreter = "bash", args = [{ name = "ui", positional = true, help = "Path to the .ui file" }], help = "Open Qt Designer.app on a given .ui file (macOS only)" }
+run-app = { cmd = "python -m pam_analyzer", help = "Run the app without recompiling UI/resources" }
 run = { ref = "run-app", deps = ["compile-qt"], help = "Compile UI/resources, then run the app" }
 run-dbg = { cmd = "python -m pam_analyzer", env = {PAM_LOG_LEVEL = "DEBUG"}, deps = ["compile-qt"], help = "Compile UI/resources, then run the app with DEBUG logging" }
 profile = { cmd = "py-spy record -o spectrogram_profile.svg -- python -m pam_analyzer", help = "Record a py-spy flame graph; navigate the app then Ctrl+C to write spectrogram_profile.svg (Windows: run as Administrator)" }
+# cmd tasks forward extra arguments, so `poe test -k name` reaches pytest
 test = { cmd = "pytest", deps = ["compile-qt"], help = "Compile UI/resources, then run all tests" }
 test-fast = { cmd = "pytest -m 'not slow'", deps = ["compile-qt"], help = "Compile UI/resources, then run only fast tests" }
 test-slow = { cmd = "pytest -m slow", deps = ["compile-qt"], help = "Compile UI/resources, then run only the slow model tests" }
-lint = "ruff check src tests"
-fmt = "ruff format src tests"
+lint = { cmd = "ruff check src tests", help = "Run the ruff linter" }
+fmt = { cmd = "ruff format src tests", help = "Run the ruff formatter" }
 install-hooks = { cmd = "git config core.hooksPath .githooks", help = "Point git at the repo's tracked hooks (pre-push runs test-fast)" }
 build = { cmd = "uv run --script scripts/build.py", help = "Compile a standalone distributable for the current platform" }
 prewarm = { cmd = "uv run --script scripts/build.py --prewarm-only", help = "Download every bundled model into dist/.birdnet-models, then exit" }
 
-[tool.pytest.ini_options]
+# uv ships the list of downloadable Pythons inside its own release, so upgrade uv first to see new patches
+[tool.poe.tasks.upgrade-python]
+help = "Pin the newest patch release of the pinned Python minor version and sync"
+# Hides the "Poe =>" echo of the whole script, the task's own output still shows
+verbosity = -1
+args = [{ name = "dry-run", type = "boolean", help = "Only report whether a newer patch release exists" }]
+shell = """
+set -e
+PINNED=$(cat .python-version)
+LATEST=$(uv python list "${PINNED%.*}" --only-downloads | head -n 1 | cut -d- -f2)
+if [ -z "$LATEST" ]; then
+    echo "uv lists no downloads for Python ${PINNED%.*}"
+    exit 1
+elif [ "$PINNED" = "$LATEST" ]; then
+    echo "Python $PINNED is the newest ${PINNED%.*} release known to uv $(uv --version | cut -d' ' -f2)"
+elif [ -n "$dry_run" ]; then
+    echo "Python $LATEST is available (pinned: $PINNED)"
+else
+    uv python pin "$LATEST"
+    uv sync
+fi
+"""
+
+[tool.poe.tasks.upgrade-deps]
+help = "Upgrade all locked dependencies and sync"
+verbosity = -1
+args = [{ name = "dry-run", type = "boolean", help = "Only report which locked versions would change" }]
+shell = """
+set -e
+if [ -n "$dry_run" ]; then
+    uv lock --upgrade --dry-run
+else
+    uv lock --upgrade
+    uv sync
+fi
+"""
+
+[tool.pytest]
 testpaths = ["tests"]
-# --no-qt-log: pytest-qt swaps a Python Qt message handler in and out per test.
-# PySide6 segfaults when a non-Python thread (FFmpeg's loader) is logging
-# through that handler while it is removed. Qt messages go to stderr instead.
-addopts = "-ra -q --no-qt-log"
+addopts = [
+    "-ra",
+    "-q",
+    # pytest-qt swaps a Python Qt message handler in and out per test. PySide6
+    # segfaults when a non-Python thread (FFmpeg's loader) logs through that
+    # handler while it is removed. Qt messages go to stderr instead.
+    "--no-qt-log",
+    # List only tests over a second, so a healthy run prints nothing extra
+    "--durations=15",
+    "--durations-min=1.0",
+]
 # Dump all-thread tracebacks to stderr when a single test exceeds this many
 # seconds, so a hang identifies itself in CI logs (it does not kill the test).
 faulthandler_timeout = 120
