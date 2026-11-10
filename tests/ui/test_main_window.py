@@ -8,12 +8,14 @@ import shiboken6
 from PySide6.QtCore import QCoreApplication, Qt
 
 from pam_analyzer.domain import AnalysisRunResult, Campaign, FilterMode, Project, RunStatus, paths
+from pam_analyzer.infrastructure.http_download import DownloadCancelled
 from pam_analyzer.ui import main_window
 from pam_analyzer.ui.main_window import MainWindow
 from pam_analyzer.widgets.spectrogram_widget import SpectrogramWidget
 from pam_analyzer.workers import audio_inventory_refresher, project_load_worker
 from tests.conftest import (
     DEFAULT_MODEL_KEY,
+    FAKE_MODEL_INFO,
     ImporterUntilCancelled,
     folder_card,
     wait_until_cancelled,
@@ -170,6 +172,44 @@ class _StuckRunner(FakeRunner):
     def run(self, **kwargs) -> AnalysisRunResult:
         self.release.wait()
         return AnalysisRunResult(status=RunStatus.CANCELLED)
+
+
+class _DownloadUntilCancelled(FakeRunner):
+    def install_model(self, progress, cancelled) -> None:
+        wait_until_cancelled(cancelled)
+        raise DownloadCancelled
+
+
+def _window_downloading(qtbot, tmp_path: Path, load_project) -> RecordingWindow:
+    runner = _DownloadUntilCancelled()
+    w = make_main_window(runner)
+    qtbot.addWidget(w)
+    Project(folder=tmp_path).save()
+    load_project(w._app_state, tmp_path)
+    w._model_downloads.start(runner)
+    w.show()
+    return w
+
+
+def test_quitting_asks_before_stopping_a_model_download(qtbot, tmp_path: Path, load_project, confirm_stop) -> None:
+    w = _window_downloading(qtbot, tmp_path, load_project)
+
+    w.close()
+
+    qtbot.waitUntil(lambda: w.closed)
+    assert confirm_stop == [[f"{FAKE_MODEL_INFO.name} model download"]]
+
+
+def test_switching_projects_leaves_a_model_download_running(qtbot, tmp_path: Path, load_project, confirm_stop) -> None:
+    """Models belong to no project, so a switch neither asks nor stops the download."""
+    w = _window_downloading(qtbot, tmp_path, load_project)
+
+    assert w._confirm_cancel_running()
+
+    assert confirm_stop == []
+    assert w._model_downloads.labels()
+    w._model_downloads.cancel(DEFAULT_MODEL_KEY)
+    qtbot.waitUntil(lambda: not w._model_downloads.labels())
 
 
 def _window_running_analysis(qtbot, tmp_path: Path, load_project, runner: FakeRunner) -> RecordingWindow:

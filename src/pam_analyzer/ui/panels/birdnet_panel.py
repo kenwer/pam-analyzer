@@ -1,5 +1,6 @@
 """BirdNET panel: configure analysis settings, run, and review results."""
 
+import html
 from collections import Counter
 from dataclasses import dataclass
 from enum import IntEnum
@@ -9,8 +10,11 @@ from PySide6.QtCore import QCoreApplication, Qt, QThread, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
     QHBoxLayout,
     QMessageBox,
+    QStyle,
+    QStyleOptionComboBox,
     QToolButton,
     QWidget,
 )
@@ -22,18 +26,22 @@ from ...domain import (
     AnalysisRunResult,
     Campaign,
     FilterMode,
+    ModelInfo,
     Project,
     RunStatus,
 )
 from ...widgets.no_hover_style import disable_item_hover
 from ...workers import AnalysisWorker
 from ..app_state import AppState
+from ..model_downloads import ModelDownloads
 from ..models.birdnet_results_model import BirdnetResultsModel
 from ..toasts import show_success_toast, show_warning_toast
+from .model_status_widget import ModelStatusWidget, to_mb
 from .ui_birdnet_panel import Ui_BirdNetPanel
 
 _ALL_CAMPAIGNS_LABEL = "All campaigns"
 _ALL_CAMPAIGNS_DATA = "__all__"
+_CAPTION_CAMPAIGN_NAMES = 3
 
 
 class _StatusPage(IntEnum):
@@ -54,6 +62,7 @@ class BirdNetPanel(QWidget):
         self,
         app_state: AppState,
         runners: dict[str, AnalysisRunner],
+        downloads: ModelDownloads,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -64,9 +73,8 @@ class BirdNetPanel(QWidget):
             raise ValueError("BirdNetPanel requires at least one analysis runner")
         self._app_state = app_state
         self._runners = runners
-        first_key = next(iter(runners))
-        self._runner: AnalysisRunner = runners[first_key]
-        self._runner_key: str = first_key
+        self._runner_key: str = next(iter(runners))
+        self._runner: AnalysisRunner = runners[self._runner_key]
         self._state = _PanelState()
         self._thread: QThread | None = None
         self._worker: AnalysisWorker | None = None
@@ -75,8 +83,19 @@ class BirdNetPanel(QWidget):
         self.ui.results_tree.header().setStretchLastSection(True)
         disable_item_hover(self.ui.results_tree)
 
+        self._model_status = ModelStatusWidget(self.ui.model_status_host)
+        self.ui.model_status_layout.addWidget(self._model_status)
+        self._downloads = downloads
+        # Two lines reserved so a longer caption does not shift the Run button and table
+        for combo, caption in (
+            (self.ui.model_combo, self.ui.model_caption_label),
+            (self.ui.campaign_combo, self.ui.campaign_caption_label),
+        ):
+            caption.setMinimumHeight(caption.fontMetrics().lineSpacing() * 2)
+            caption.setContentsMargins(_combo_text_inset(combo), 0, 0, 0)
+
         self._populate_model_combo()
-        self._update_run_label()
+        self._select_runner(self._runner_key)
         self._wire_signals()
         self._set_status_page(_StatusPage.IDLE)
         self._render_project(app_state.project)
@@ -90,6 +109,27 @@ class BirdNetPanel(QWidget):
             combo.addItem(key, key)
         combo.setCurrentIndex(0)
         combo.blockSignals(False)
+
+    def _select_runner(self, key: str) -> None:
+        self._runner_key = key
+        self._runner = self._runners[key]
+        self._update_run_label()
+        self.ui.model_caption_label.setText(_model_caption_html(self._runner.model_info))
+        self._refresh_model_status()
+
+    def _refresh_model_status(self) -> None:
+        if (progress := self._downloads.progress(self._runner_key)) is not None:
+            self._model_status.show_download(*progress)
+        else:
+            self._model_status.show_model(self._runner.missing_download_bytes())
+
+    def _on_download_changed(self, key: str) -> None:
+        if key == self._runner_key:
+            self._refresh_model_status()
+
+    def _on_download_failed(self, _key: str, error: str) -> None:
+        # The message names the model already
+        show_warning_toast(self.window(), "Model download failed", error)
 
     def _update_run_label(self) -> None:
         """Show the selected model on the Run button (idle state only).
@@ -113,6 +153,10 @@ class BirdNetPanel(QWidget):
         self.ui.model_combo.currentIndexChanged.connect(self._on_model_changed)
         self.ui.campaign_combo.currentIndexChanged.connect(self._on_campaign_changed)
         self.ui.run_button.clicked.connect(self._on_run_clicked)
+        self._model_status.downloadRequested.connect(lambda: self._downloads.start(self._runner))
+        self._model_status.cancelRequested.connect(lambda: self._downloads.cancel(self._runner_key))
+        self._downloads.changed.connect(self._on_download_changed)
+        self._downloads.failed.connect(self._on_download_failed)
 
     def _on_model_changed(self, index: int) -> None:
         if index < 0:
@@ -120,9 +164,7 @@ class BirdNetPanel(QWidget):
         key = str(self.ui.model_combo.itemData(index))
         if key not in self._runners or key == self._runner_key:
             return
-        self._runner_key = key
-        self._runner = self._runners[key]
-        self._update_run_label()
+        self._select_runner(key)
         self._app_state.save_project_fields(analysis_model=key)
 
     def _render_project(self, project: Project | None) -> None:
@@ -130,7 +172,7 @@ class BirdNetPanel(QWidget):
         self._set_settings_enabled(loaded)
         if not loaded:
             self.ui.campaign_combo.clear()
-            self.ui.filter_info_label.clear()
+            self._set_campaign_caption("")
             self._set_status_page(_StatusPage.IDLE)
             return
         assert project is not None
@@ -157,9 +199,7 @@ class BirdNetPanel(QWidget):
             self.ui.model_combo.setCurrentIndex(idx)
         finally:
             self.ui.model_combo.blockSignals(False)
-        self._runner_key = target
-        self._runner = self._runners[target]
-        self._update_run_label()
+        self._select_runner(target)
 
     def _set_settings_enabled(self, enabled: bool) -> None:
         for w in (
@@ -185,7 +225,7 @@ class BirdNetPanel(QWidget):
             combo.setCurrentIndex(0)
             self._on_campaign_changed(0)
         else:
-            self.ui.filter_info_label.setText("No campaigns found")
+            self._set_campaign_caption("No campaigns found")
             self.ui.run_button.setEnabled(False)
 
     def _on_campaign_changed(self, index: int) -> None:
@@ -193,12 +233,17 @@ class BirdNetPanel(QWidget):
             return
         data = self.ui.campaign_combo.itemData(index)
         if data == _ALL_CAMPAIGNS_DATA:
-            n = len(self._app_state.campaigns)
-            self.ui.filter_info_label.setText(f"{n} campaign{'s' if n != 1 else ''}")
+            names = [c.name for c in self._app_state.campaigns]
+            tooltip = "\n".join(names) if len(names) > _CAPTION_CAMPAIGN_NAMES else ""
+            self._set_campaign_caption(_campaign_names_caption(names), tooltip)
         else:
             campaign = self._campaign_by_name(str(data))
-            self.ui.filter_info_label.setText(self._campaign_info_text(campaign))
+            self._set_campaign_caption(self._campaign_info_text(campaign))
         self.ui.run_button.setEnabled(self._can_run())
+
+    def _set_campaign_caption(self, text: str, tooltip: str = "") -> None:
+        self.ui.campaign_caption_label.setText(text)
+        self.ui.campaign_caption_label.setToolTip(tooltip)
 
     def _campaign_by_name(self, name: str) -> Campaign | None:
         for c in self._app_state.campaigns:
@@ -244,12 +289,16 @@ class BirdNetPanel(QWidget):
             return
 
         settings = project.analysis_settings
+        # The run's own install takes over, resuming the partial file, so its
+        # progress page shows the download and its Stop cancels it
+        self._downloads.cancel(self._runner_key)
 
         self._thread = QThread(self)
         self._worker = AnalysisWorker(self._runner, project, campaigns, settings)
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
         self._worker.progress.connect(self._on_progress)
+        self._worker.downloadProgress.connect(self._on_download_progress)
         self._worker.finished.connect(self._on_finished)
         # DirectConnection: quit() is called inline from the worker thread.
         # Without this, quit() is queued to the main thread, which is already
@@ -259,6 +308,7 @@ class BirdNetPanel(QWidget):
         )
 
         self._state.running = True
+        self._model_status.hide()  # the progress page shows the run's own download
         self._set_status_page(_StatusPage.PROGRESS)
         self.ui.progress_bar.setRange(0, 0)  # indeterminate while preparing
         self.ui.progress_label.setText("Preparing…")
@@ -307,6 +357,16 @@ class BirdNetPanel(QWidget):
             parts.append(snap.phase_detail)
         self.ui.progress_label.setText("  ·  ".join(parts))
 
+    def _on_download_progress(self, done: int, total: int) -> None:
+        """The run's own download of missing model files, before the analysis starts."""
+        if done >= total:
+            self.ui.progress_bar.setRange(0, 0)
+            self.ui.progress_label.setText("Preparing…")
+            return
+        self.ui.progress_bar.setRange(0, to_mb(total))
+        self.ui.progress_bar.setValue(to_mb(done))
+        self.ui.progress_label.setText(f"Downloading {self._runner.model_info.name}  ·  {to_mb(done)} / {to_mb(total)} MB")
+
     def _on_finished(self, outcome: AnalysisRunResult) -> None:
         """Single terminal handler for every way a run can end.
 
@@ -319,6 +379,7 @@ class BirdNetPanel(QWidget):
         when nothing was produced.
         """
         self._teardown_worker()
+        self._refresh_model_status()
         self._app_state.analysisFinished.emit(outcome)
         self._app_state.refresh_analysis_inventory()
         # When the discovery snapshot did not change (a cancel before any CSV
@@ -366,6 +427,7 @@ class BirdNetPanel(QWidget):
 
     def _teardown_worker(self) -> None:
         self._state.running = False
+        self._model_status.show()
         if self._thread is not None:
             # wait() is safe here: quit() was already called via DirectConnection
             # from the worker thread, so the event loop stops without needing the
@@ -459,3 +521,27 @@ class BirdNetPanel(QWidget):
 def _plural(n: int, noun: str) -> str:
     """Format a count with its noun, adding a trailing 's' unless n is 1."""
     return f"{n:,} {noun}" if n == 1 else f"{n:,} {noun}s"
+
+
+def _campaign_names_caption(names: list[str]) -> str:
+    """The first few names and a count of the rest, so a large project keeps the caption short."""
+    shown = ", ".join(names[:_CAPTION_CAMPAIGN_NAMES])
+    rest = len(names) - _CAPTION_CAMPAIGN_NAMES
+    return f"{shown} +{rest} more" if rest > 0 else shown
+
+
+def _model_caption_html(info: ModelInfo) -> str:
+    """Licence and info link on one line, for the caption under the model combo."""
+    # A word joiner after each slash stops Qt breaking the link text there. Qt ignores CSS nowrap on spans.
+    label = html.escape(info.info_url.removeprefix("https://")).replace("/", "/\u2060")
+    link = f'<a href="{html.escape(info.info_url)}">{label}</a>'
+    return f"{html.escape(info.licence)} · {link}"
+
+
+def _combo_text_inset(combo: QComboBox) -> int:
+    """Left offset of the combo's text, so a caption below lines up with it under any style."""
+    combo.ensurePolished()
+    opt = QStyleOptionComboBox()
+    combo.initStyleOption(opt)
+    field = combo.style().subControlRect(QStyle.ComplexControl.CC_ComboBox, opt, QStyle.SubControl.SC_ComboBoxEditField, combo)
+    return field.left()

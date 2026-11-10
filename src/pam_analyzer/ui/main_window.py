@@ -29,6 +29,7 @@ from ..workers import ImportOrchestrator, ProjectLoadWorker, ReadOnlyThread
 from .app_state import AppState
 from .dialogs.about_dialog import show_about_dialog
 from .dialogs.shortcuts_dialog import ShortcutsDialog
+from .model_downloads import ModelDownloads
 from .panels.birdnet_panel import BirdNetPanel
 from .panels.campaigns_panel import CampaignsPanel
 from .panels.examine_panel import ExaminePanel
@@ -98,7 +99,9 @@ class MainWindow(QMainWindow):
         if import_idx != -1:
             self.ui.tab_widget.removeTab(import_idx)
 
-        self._birdnet_panel = BirdNetPanel(app_state, analysis_runners, self.ui.birdnet_tab)
+        # Owned by the window, not the panel: downloads belong to no project and only quitting stops them
+        self._model_downloads = ModelDownloads(self)
+        self._birdnet_panel = BirdNetPanel(app_state, analysis_runners, self._model_downloads, self.ui.birdnet_tab)
         self._mount_tab(self.ui.birdnet_tab, self._birdnet_panel, "BirdNET")
 
         self._examine_panel = ExaminePanel(
@@ -607,7 +610,7 @@ class MainWindow(QMainWindow):
         thread stops later, when main() deletes the window.
         """
         if self._close_deadline is None:
-            busy = self._busy_labels()
+            busy = self._busy_labels() + self._model_downloads.labels()
             if busy and not self._confirm_stop(busy, "Quit", "Quitting"):
                 event.ignore()
                 return

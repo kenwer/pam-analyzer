@@ -24,32 +24,38 @@
     <number>8</number>
    </property>
    <item>
-    <layout class="QHBoxLayout" name="campaign_row">
-     <item>
+    <layout class="QGridLayout" name="selection_grid" columnstretch="1,1,1">
+     <property name="horizontalSpacing">
+      <number>24</number>
+     </property>
+     <property name="verticalSpacing">
+      <number>4</number>
+     </property>
+     <item row="0" column="0">
       <widget class="QLabel" name="model_label">
        <property name="text">
         <string>Model</string>
        </property>
       </widget>
      </item>
-     <item>
-      <widget class="QComboBox" name="model_combo">
-       <property name="minimumSize">
-        <size>
-         <width>120</width>
-         <height>0</height>
-        </size>
-       </property>
-      </widget>
-     </item>
-     <item>
+     <item row="0" column="1">
       <widget class="QLabel" name="campaign_label">
        <property name="text">
         <string>Campaign</string>
        </property>
       </widget>
      </item>
-     <item>
+     <item row="1" column="0">
+      <widget class="QComboBox" name="model_combo">
+       <property name="minimumSize">
+        <size>
+         <width>200</width>
+         <height>0</height>
+        </size>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="1">
       <widget class="QComboBox" name="campaign_combo">
        <property name="minimumSize">
         <size>
@@ -59,28 +65,37 @@
        </property>
       </widget>
      </item>
-     <item>
-      <widget class="QLabel" name="filter_info_label">
+     <item row="2" column="0">
+      <widget class="QLabel" name="model_caption_label">
        <property name="styleSheet">
-        <string>color: palette(placeholder-text);</string>
+        <string notr="true">color: palette(placeholder-text);</string>
        </property>
-       <property name="text">
-        <string/>
+       <property name="textFormat">
+        <enum>Qt::TextFormat::RichText</enum>
+       </property>
+       <property name="alignment">
+        <set>Qt::AlignmentFlag::AlignLeading|Qt::AlignmentFlag::AlignLeft|Qt::AlignmentFlag::AlignTop</set>
+       </property>
+       <property name="wordWrap">
+        <bool>true</bool>
+       </property>
+       <property name="openExternalLinks">
+        <bool>true</bool>
        </property>
       </widget>
      </item>
-     <item>
-      <spacer name="campaign_spacer">
-       <property name="orientation">
-        <enum>Qt::Orientation::Horizontal</enum>
+     <item row="2" column="1">
+      <widget class="QLabel" name="campaign_caption_label">
+       <property name="styleSheet">
+        <string notr="true">color: palette(placeholder-text);</string>
        </property>
-       <property name="sizeHint" stdset="0">
-        <size>
-         <width>40</width>
-         <height>20</height>
-        </size>
+       <property name="alignment">
+        <set>Qt::AlignmentFlag::AlignLeading|Qt::AlignmentFlag::AlignLeft|Qt::AlignmentFlag::AlignTop</set>
        </property>
-      </spacer>
+       <property name="wordWrap">
+        <bool>true</bool>
+       </property>
+      </widget>
      </item>
     </layout>
    </item>
@@ -96,6 +111,9 @@
    </item>
    <item>
     <layout class="QHBoxLayout" name="run_row">
+     <property name="spacing">
+      <number>12</number>
+     </property>
      <item>
       <widget class="QPushButton" name="run_button">
        <property name="styleSheet">
@@ -120,6 +138,16 @@ QPushButton:disabled { background-color: palette(button); color: palette(placeho
        <property name="checkable">
         <bool>true</bool>
        </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QWidget" name="model_status_host" native="true">
+       <layout class="QHBoxLayout" name="model_status_layout">
+        <property name="leftMargin"><number>0</number></property>
+        <property name="topMargin"><number>0</number></property>
+        <property name="rightMargin"><number>0</number></property>
+        <property name="bottomMargin"><number>0</number></property>
+       </layout>
       </widget>
      </item>
      <item>

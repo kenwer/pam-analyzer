@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 ### Changed
+- The BirdNET panel shows the selected model's info and download status.
 - BirdNET v2.4 is downloaded as upstream's Keras weights from Zenodo and converted to ONNX on first run.
 - [Dev] `poe prewarm` downloads the models through the app's model store.
 
