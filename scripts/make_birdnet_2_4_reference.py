@@ -5,7 +5,7 @@
 # ///
 """Capture BirdNET v2.4 reference output from the TFLite model on ai-edge-litert.
 
-The app runs v2.4 on ONNX, converted by convert_birdnet_2_4_onnx.py. Nothing in
+The app runs v2.4 on ONNX, converted by birdnet_2_4_keras_onnx. Nothing in
 the app loads the TFLite weights any more, so this file is what pins the
 converted model to the numbers the litert build produced. The equivalence test
 in tests/infrastructure/test_birdnet_2_4_onnx.py reads the fixture this writes

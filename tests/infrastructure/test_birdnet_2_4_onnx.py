@@ -1,11 +1,12 @@
 """Equivalence tests pinning the converted v2.4 ONNX models to litert's output.
 
-The app converts BirdNET v2.4 from upstream's SavedModel rather than downloading
-a vendor ONNX export, and it converts per platform during the build. Nothing
-guarantees tf2onnx emits a byte-identical graph on macOS, Windows and Linux, so
-byte comparison is the wrong gate. What has to hold is that every platform's
-converted model reproduces the numbers the previous ai-edge-litert build
-produced, because campaigns analysed across releases land in one time series.
+Upstream publishes no ONNX export of BirdNET v2.4, so
+birdnet_2_4_keras_onnx builds one from upstream's Keras weights.
+Its output is byte-reproducible, but onnxruntime's numbers still vary by
+platform and build, so byte comparison is the wrong gate. What has to hold is
+that the model reproduces the numbers the previous ai-edge-litert build
+produced on every platform, because campaigns analysed across releases land in
+one time series.
 
 tests/data/birdnet_2_4_reference.npz holds that reference, captured from the
 TFLite model by scripts/make_birdnet_2_4_reference.py before litert was dropped.
@@ -17,7 +18,7 @@ implementation detail, and what reaches the CSV is sigmoid(logit). Because
 d(sigmoid)/d(logit) is at most 0.25, a logit difference shrinks by at least 4x
 on the way to the number a user reads.
 
-The tests that load a 73 MB model are marked slow. CI runs the slow suite on
+The tests that load a 63 MB model are marked slow. CI runs the slow suite on
 all four platforms with BIRDNET_APP_DATA pointed at the prewarmed cache. The
 pickling guard is deliberately not marked, because it is cheap and guards a
 failure mode that only shows up under the multiprocessing pipeline.
@@ -36,9 +37,11 @@ from pam_analyzer.infrastructure import birdnet_2_4_onnx as onnx_v2_4
 REFERENCE = Path(__file__).parent.parent / "data" / "birdnet_2_4_reference.npz"
 
 # Agreement required on the confidence a detection row carries. Measured drift
-# on the reference platform is 2.1e-06 for the acoustic model and 3.0e-07 for
-# the geo one, so this leaves roughly 48x headroom for a slower BLAS or a
-# different onnxruntime build elsewhere. It is deliberately not tightened to
+# on the reference platform is 1.6e-05 for the acoustic model and 2.3e-06 for
+# the geo one, so this leaves roughly 6x headroom for a slower BLAS or a
+# different onnxruntime build elsewhere. The acoustic drift comes from the DFT,
+# which TFLite computes as an FFT and the ONNX model as a matrix product. The
+# ONNX result is the closer of the two to a float64 reference. It is deliberately not tightened to
 # match: the detection-set tests below are the sensitive gate, and this one is
 # meant to survive platform variation rather than measure it.
 CONFIDENCE_TOLERANCE = 1e-4
@@ -127,8 +130,8 @@ def test_acoustic_detection_sets_match_litert(acoustic, reference, threshold: fl
 def test_acoustic_inference_is_deterministic(acoustic, reference) -> None:
     """Two runs of one input agree bit for bit.
 
-    The SavedModel carries dropout and augmentation nodes. They should be
-    unreachable in the inference signature, but a conversion that left one live
+    The Keras model carries dropout layers. The converter maps them to
+    identities, but a conversion that left one live
     would make every analysis irreproducible, which is worth an explicit check
     rather than an assumption.
     """

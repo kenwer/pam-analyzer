@@ -8,8 +8,10 @@ dependencies = [
     # Pinned as birdnet_2_4_onnx and perch_onnx build on lib internals that are not public API (OnnxBackend, the backend protocols, the model cache paths)
     "birdnet>=1.4,<1.5",
     "guano>=1.0.16",
+    "h5py>=3.12",
     "mutagen>=1.48",
     "numpy>=1.26",
+    "onnx>=1.23",
     "packaging>=24.0",
     "platformdirs>=4.3.0",
     "polars>=1.0",
