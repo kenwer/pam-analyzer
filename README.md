@@ -5,6 +5,7 @@ Automated bird species detection from acoustic recordings.
 
 - [About](#about)
 - [Download](#download)
+  - [Code signing policy](#code-signing-policy)
 - [Features](#features)
 - [Usage](#usage)
   - [Migrating legacy projects](#migrating-legacy-projects)
@@ -26,6 +27,7 @@ Automated bird species detection from acoustic recordings.
 - [Troubleshooting](#troubleshooting)
   - [Changing the log level](#changing-the-log-level)
     - [Overriding the level from the environment](#overriding-the-level-from-the-environment)
+- [Privacy policy](#privacy-policy)
 - [Changelog](#changelog)
 - [Acknowledgements](#acknowledgements)
 - [Citation](#citation)
@@ -47,6 +49,12 @@ Installers are available for the following platforms:
 * Linux (aarch64): [PAM-Analyzer-linux-aarch64.AppImage](https://github.com/kenwer/pam-analyzer/releases/latest/download/PAM-Analyzer-linux-aarch64.AppImage)
 
 Note: On any supported OS you can also easily run PAM Analyzer from source using `uv run poe run`
+
+### Code signing policy
+Free code signing for the Windows installer and app provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+
+* Committers and reviewers: [Ken Werner](https://github.com/kenwer)
+* Approvers: [Ken Werner](https://github.com/kenwer)
 
 
 ## Features
@@ -338,6 +346,18 @@ without it.
 ```sh
 PAM_LOG_LEVEL=DEBUG ./pam-analyzer-<version>-linux-x86_64
 ```
+
+
+## Privacy policy
+PAM Analyzer does not collect or store any user data. Your projects, recordings, settings and logs stay on your computer, and nothing is sent to the developer.
+
+The program contacts these services, and no others:
+
+* GitHub, to check for a newer release at startup. Turn this off with Help > Check for Updates at Startup. Help > Check for Updates... still checks on request.
+* Zenodo (BirdNET) or Hugging Face (Perch), to download an analysis engine's model files the first time you run that engine.
+* OpenStreetMap, to load map tiles while a campaign's location map is shown.
+
+It does not transfer any other information. See the privacy statements of [GitHub](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement), [Zenodo](https://about.zenodo.org/privacy-policy/), [Hugging Face](https://huggingface.co/privacy) and the [OpenStreetMap Foundation](https://osmfoundation.org/wiki/Privacy_Policy) for what they record.
 
 
 ## Changelog
