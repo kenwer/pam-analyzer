@@ -21,7 +21,7 @@ from typing import ClassVar
 from packaging.version import InvalidVersion, Version
 
 from .. import running_mutex
-from .download import download, sha256_of
+from ..http_download import download_file, sha256_of
 from .feed import Update, UpdateError
 
 _log = logging.getLogger(__name__)
@@ -106,7 +106,7 @@ class AppInstall(ABC):
         if payload is not None:
             return payload
         archive = self.archive_path(update)
-        download(update, archive, progress, cancelled)
+        download_file(update.asset_url, update.size, update.sha256, archive, progress, cancelled)
         return self.prepare(update, archive)
 
     def cleanup(self, current_version: str) -> None:

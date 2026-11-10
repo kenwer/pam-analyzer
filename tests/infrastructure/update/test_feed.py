@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
+from pam_analyzer.infrastructure.http_download import USER_AGENT
 from pam_analyzer.infrastructure.update.feed import (
-    USER_AGENT,
     UpdateError,
     fetch_latest_release,
     find_update,

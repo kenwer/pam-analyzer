@@ -390,7 +390,7 @@ def _linux_target(tmp_path: Path) -> LinuxAppInstall:
 def test_fetch_reuses_a_staged_payload(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     staged = tmp_path / "stage" / "0.9.0" / "a.bin"
     monkeypatch.setattr(LinuxAppInstall, "staged_payload", lambda target, update: staged)
-    monkeypatch.setattr(install, "download", lambda *a: pytest.fail("downloaded again"))
+    monkeypatch.setattr(install, "download_file", lambda *a: pytest.fail("downloaded again"))
     assert _linux_target(tmp_path).fetch_payload(make_update(), no_progress, never) == staged
 
 
@@ -410,7 +410,7 @@ def test_a_staged_appimage_is_made_executable(tmp_path: Path) -> None:
 
 
 def test_staged_payload_is_none_without_a_download(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(install, "download", lambda *a: pytest.fail("downloaded without a click"))
+    monkeypatch.setattr(install, "download_file", lambda *a: pytest.fail("downloaded without a click"))
     assert _linux_target(tmp_path).staged_payload(make_update()) is None
 
 
@@ -423,7 +423,7 @@ def test_staged_payload_removes_other_staged_versions(tmp_path: Path) -> None:
 
 def test_fetch_downloads_into_the_version_dir_and_prepares(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     downloaded: list[Path] = []
-    monkeypatch.setattr(install, "download", lambda update, dest, *_a: downloaded.append(dest))
+    monkeypatch.setattr(install, "download_file", lambda _url, _size, _sha256, dest, *_a: downloaded.append(dest))
     monkeypatch.setattr(LinuxAppInstall, "prepare", lambda target, update, archive: archive)
     payload = _linux_target(tmp_path).fetch_payload(make_update(), no_progress, never)
     assert downloaded == [tmp_path / "stage" / "0.9.0" / "a.bin"]
@@ -435,7 +435,7 @@ def test_staged_payload_prepares_a_verified_archive_again(monkeypatch: pytest.Mo
     archive = tmp_path / "stage" / "0.9.0" / "a.bin"
     prepared: list[Path] = []
     monkeypatch.setattr(MacOSAppInstall, "verified_archive", lambda target, update: archive)
-    monkeypatch.setattr(install, "download", lambda *a: pytest.fail("downloaded again"))
+    monkeypatch.setattr(install, "download_file", lambda *a: pytest.fail("downloaded again"))
     monkeypatch.setattr(MacOSAppInstall, "prepare", lambda target, update, a: prepared.append(a) or a)
     mac = MacOSAppInstall(tmp_path / "PAM-Analyzer.app", tmp_path / "stage")
     payload = mac.staged_payload(make_update())

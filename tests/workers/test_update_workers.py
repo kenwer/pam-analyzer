@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from pam_analyzer.infrastructure.http_download import DownloadCancelled
 from pam_analyzer.infrastructure.update import feed
-from pam_analyzer.infrastructure.update.download import DownloadCancelled
 from pam_analyzer.infrastructure.update.feed import UpdateError
 from pam_analyzer.infrastructure.update.install import AppInstall, LinuxAppInstall
 from pam_analyzer.workers.update_workers import UpdateCheckWorker, UpdateDownloadWorker

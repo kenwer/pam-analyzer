@@ -5,8 +5,8 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal, Slot
 
+from ..infrastructure.http_download import DownloadCancelled, DownloadError
 from ..infrastructure.update import feed
-from ..infrastructure.update.download import DownloadCancelled
 from ..infrastructure.update.feed import Update, UpdateError
 from ..infrastructure.update.install import AppInstall
 
@@ -93,5 +93,5 @@ class UpdateDownloadWorker(QObject):
             self.cancelled.emit()
         except Exception as exc:  # noqa: BLE001  a raising slot would leave the download stuck
             # A traceback only for a bug, not for a network or disk failure
-            _log.warning("update download failed: %s", exc, exc_info=not isinstance(exc, UpdateError | OSError))
+            _log.warning("update download failed: %s", exc, exc_info=not isinstance(exc, UpdateError | DownloadError | OSError))
             self.failed.emit(str(exc))

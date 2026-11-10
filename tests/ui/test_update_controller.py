@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from pam_analyzer.app.__main__ import attach_updater
+from pam_analyzer.infrastructure.http_download import DownloadCancelled, DownloadError
 from pam_analyzer.infrastructure.update import feed, install
-from pam_analyzer.infrastructure.update.download import DownloadCancelled
 from pam_analyzer.infrastructure.update.feed import DEFAULT_FEED_URL, Update, UpdateError
 from pam_analyzer.infrastructure.update.install import (
     AppInstall,
@@ -90,7 +90,7 @@ def _ready(controller: UpdateController, payload: Path, monkeypatch: pytest.Monk
 def _start_download(controller: UpdateController, monkeypatch: pytest.MonkeyPatch, download) -> None:
     monkeypatch.setattr(LinuxAppInstall, "free_space_ok", lambda target, update: True)
     monkeypatch.setattr(LinuxAppInstall, "staged_payload", lambda target, update: None)
-    monkeypatch.setattr(install, "download", download)
+    monkeypatch.setattr(install, "download_file", download)
     controller._update = UPDATE
     controller.start_download()
 
@@ -232,7 +232,7 @@ def test_download_without_space_shows_error(window, monkeypatch, toasts, tmp_pat
 def test_download_reaches_ready(qtbot, window, monkeypatch, toasts, tmp_path) -> None:
     monkeypatch.setattr(LinuxAppInstall, "prepare", lambda target, update, archive: archive)
     controller = _controller(window, linux_install(tmp_path))
-    _start_download(controller, monkeypatch, lambda update, dest, progress, cancelled: progress(10, 10))
+    _start_download(controller, monkeypatch, lambda _url, _size, _sha256, _dest, progress, _cancelled: progress(10, 10))
     qtbot.waitUntil(lambda: controller.state is UpdateState.READY)
     assert _titles(toasts) == ["Update ready"]
     assert _link(toasts, 0, "Install and relaunch")
@@ -249,7 +249,7 @@ def _on_ui_thread() -> bool:
 
 def test_failed_download_is_handled_on_the_ui_thread(qtbot, window, monkeypatch, tmp_path) -> None:
     def mismatch(*_args) -> None:
-        raise UpdateError("checksum mismatch")
+        raise DownloadError("checksum mismatch")
 
     threads: list[bool] = []
     monkeypatch.setattr(toasts_module, "show_error_toast", lambda *_a, **_kw: threads.append(_on_ui_thread()))

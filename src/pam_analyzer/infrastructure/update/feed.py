@@ -5,21 +5,17 @@ import json
 import logging
 import platform
 import re
-import ssl
 import sys
 import urllib.request
 from dataclasses import dataclass
 
-import truststore
 from packaging.version import InvalidVersion, Version
 
-from ... import __version__
+from ..http_download import TLS_CONTEXT, USER_AGENT
 
 _log = logging.getLogger(__name__)
 
 DEFAULT_FEED_URL = "https://api.github.com/repos/kenwer/pam-analyzer/releases/latest"
-USER_AGENT = f"PAM-Analyzer/{__version__}"
-TLS_CONTEXT = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)  # Verifies certs with the OS trust store
 
 _SHA256 = re.compile(r"sha256:([0-9a-f]{64})")
 
