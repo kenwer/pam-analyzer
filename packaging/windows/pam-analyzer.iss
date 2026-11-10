@@ -30,6 +30,8 @@ AppVersion={#AppVersion}
 AppPublisher=de.ken
 AppPublisherURL=https://github.com/kenwer/pam-analyzer
 VersionInfoVersion={#NumericVersion}
+; The exe carries the same four-part product version, which SignPath checks
+VersionInfoProductTextVersion={#NumericVersion}
 ; Per user: no admin prompt to install or to update, and {autopf} resolves
 ; to %LOCALAPPDATA%\Programs
 PrivilegesRequired=lowest

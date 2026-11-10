@@ -14,9 +14,13 @@ No model weights ship in the bundle. Each engine downloads its files on its
 first run (infrastructure/model_store.py).
 
 Usage:
-    uv run --script scripts/build.py
+    uv run --script scripts/build.py [--stage {all,app,installer}]
+
+On Windows, CI signs PAM-Analyzer.exe between the app and installer stages.
+This script knows nothing about signing.
 """
 
+import argparse
 import hashlib
 import os
 import platform
@@ -97,6 +101,15 @@ def _app_version(python: Path) -> str:
         check=True, capture_output=True, text=True,
     )
     return result.stdout.strip()
+
+
+def _numeric_version(app_version: str) -> str:
+    """The four-part a.b.c.0 form that Windows version resources require.
+
+    Nuitka and Inno both write it, so the exe and the installer report the
+    same product version, which the SignPath artifact configurations check.
+    """
+    return f'{app_version}.0'
 
 
 def _asset_name() -> str:
@@ -201,12 +214,10 @@ def _find_iscc() -> Path:
 
 def _create_windows_installer(dist: Path, installer: Path, icon: Path, app_version: str) -> None:
     """Compile packaging/windows/pam-analyzer.iss over the Nuitka .dist folder."""
-    # The installer's version resource takes exactly four numbers
-    numeric4 = f'{app_version}.0'
     run([
         str(_find_iscc()),
         f'/DAppVersion={app_version}',
-        f'/DNumericVersion={numeric4}',
+        f'/DNumericVersion={_numeric_version(app_version)}',
         f'/DSourceDir={dist}',
         f'/DOutputDir={installer.parent}',
         f'/DOutputBaseFilename={installer.stem}',
@@ -230,23 +241,49 @@ def _verify_bundle(app_root: Path) -> None:
     print(f'  Verified bundle: {len(DATA)} data files')
 
 
-def main() -> None:
-    is_mac = sys.platform == 'darwin'
-    is_win = sys.platform == 'win32'
-    python = VENV_DIR / ('Scripts/python.exe' if is_win else 'bin/python')
+STAGES = ('all', 'app', 'installer')
 
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description='Build the PAM Analyzer installer.')
+    parser.add_argument(
+        '--stage',
+        choices=STAGES,
+        default='all',
+        help=(
+            'Windows only: "app" stops after Nuitka, "installer" packs an existing '
+            '.dist folder with Inno Setup. Default: the whole build.'
+        ),
+    )
+    args = parser.parse_args(argv)
+    if args.stage != 'all' and sys.platform != 'win32':
+        parser.error(f'--stage {args.stage} is only supported on Windows')
+    return args
+
+
+def _build_env() -> dict[str, str]:
     # Force uv to use our build venv instead of the default project .venv.
     # VIRTUAL_ENV is for general python tool awareness, UV_PROJECT_ENVIRONMENT
     # is specifically to stop uv from auto-discovering the root .venv.
-    build_env = {
+    return {
         **os.environ,
         'VIRTUAL_ENV': str(VENV_DIR),
         'UV_PROJECT_ENVIRONMENT': str(VENV_DIR),
     }
 
-    print(f'Building : {APP_NAME}')
-    print(f'  Platform : {sys.platform}')
 
+def _venv_python() -> Path:
+    return VENV_DIR / ('Scripts/python.exe' if sys.platform == 'win32' else 'bin/python')
+
+
+def _app_tree() -> Path:
+    """The tree the installer wraps: the macOS .app, or the .dist folder."""
+    suffix = '.app' if sys.platform == 'darwin' else '.dist'
+    return BUILD_DIR / f'{FILE_NAME}{suffix}'
+
+
+def _prepare_venv(python: Path, build_env: dict[str, str]) -> str:
+    """Create the build venv, compile the Qt files into src/, return the app version."""
     print('  Creating venv')
     DIST_DIR.mkdir(parents=True, exist_ok=True)
     run(['uv', 'venv', '--clear', VENV_DIR])
@@ -277,12 +314,18 @@ def main() -> None:
     # that tree, since it compiles the sources rather than an installed copy.
     run(['uv', 'run', '--no-project', 'python', str(PACKAGING_DIR / 'compile_ui.py')], env=build_env)
     run(['uv', 'run', '--no-project', 'python', str(PACKAGING_DIR / 'compile_qrc.py')], env=build_env)
+    return app_version
 
+
+def _windows_icon() -> Path:
+    return BUILD_DIR / 'app.ico'
+
+
+def _generate_icon() -> Path:
     print('  Generating app icon')
     BUILD_DIR.mkdir(parents=True, exist_ok=True)
     src_png = APP_ICON_PNG
-    icon = src_png  # Nuitka takes a PNG directly on Linux
-    if is_mac:
+    if sys.platform == 'darwin':
         iconset_sizes = [16, 32, 128, 256, 512]
         with tempfile.TemporaryDirectory() as tmp:
             iconset = Path(tmp) / 'app.iconset'
@@ -292,8 +335,9 @@ def main() -> None:
                 run(['sips', '-z', str(s * 2), str(s * 2), src_png, '--out', str(iconset / f'icon_{s}x{s}@2x.png')])
             icon = BUILD_DIR / 'app.icns'
             run(['iconutil', '-c', 'icns', '-o', icon, iconset])
-    elif is_win:
-        icon = BUILD_DIR / 'app.ico'
+        return icon
+    if sys.platform == 'win32':
+        icon = _windows_icon()
         run(
             [
                 'uv',
@@ -312,14 +356,18 @@ def main() -> None:
                 '256',
             ]
         )
+        return icon
+    return src_png  # Nuitka takes a PNG directly on Linux
 
+
+def _run_nuitka(icon: Path, app_version: str, installer: Path, build_env: dict[str, str]) -> None:
+    is_mac = sys.platform == 'darwin'
+    is_win = sys.platform == 'win32'
     print('  Running Nuitka')
     # Remove any output from previous builds
     for pattern in ('*.dist', '*.app', '*.build'):
         for stale in BUILD_DIR.glob(pattern):
             shutil.rmtree(stale)
-    installer = DIST_DIR / _asset_name()
-    installer.unlink(missing_ok=True)
     binary_name = f'{FILE_NAME}.exe' if is_win else FILE_NAME
     cmd = [
         'uv',
@@ -376,7 +424,7 @@ def main() -> None:
         cmd += [
             f'--company-name={COMPANY_NAME}',
             f'--product-name={APP_NAME}',
-            f'--product-version={app_version}',
+            f'--product-version={_numeric_version(app_version) if is_win else app_version}',
         ]
         if is_win:
             cmd += [
@@ -398,22 +446,60 @@ def main() -> None:
     cmd.append(ROOT_DIR / 'src' / 'pam_analyzer')
     run(cmd, env=build_env)
 
-    app_tree = BUILD_DIR / f'{FILE_NAME}.app' if is_mac else BUILD_DIR / f'{FILE_NAME}.dist'
-    if not app_tree.is_dir():
-        raise SystemExit(f'Expected {app_tree}, not found')
+
+def _finish_installer(app_tree: Path, installer: Path, icon: Path, app_version: str) -> None:
+    """Verify the app tree, then wrap it in the platform installer."""
     # On Linux this runs after Nuitka has already built the AppImage, which is
     # fine: a failure here stops the build before CI uploads anything.
-    print('  Verifying bundled models')
+    print('  Verifying bundled data files')
     _verify_bundle(app_tree)
-    if is_mac:
+    if sys.platform == 'darwin':
         print('  Creating DMG')
         _create_dmg(app_tree, installer)
-    elif is_win:
+    elif sys.platform == 'win32':
         print('  Creating installer')
         _create_windows_installer(app_tree, installer, icon, app_version)
     if not installer.is_file():
         raise SystemExit(f'Expected the installer at {installer}, not found')
 
+
+def main(argv: list[str] | None = None) -> None:
+    stage = _parse_args(argv).stage
+    python = _venv_python()
+    build_env = _build_env()
+    app_tree = _app_tree()
+    installer = DIST_DIR / _asset_name()
+
+    print(f'Building : {APP_NAME}')
+    print(f'  Platform : {sys.platform}')
+    print(f'  Stage    : {stage}')
+
+    if stage == 'installer':
+        # Packs the .dist folder an earlier --stage app left, which CI may
+        # have changed since by putting the signed exe into it.
+        if not app_tree.is_dir():
+            raise SystemExit(f'Expected {app_tree}, not found. Run --stage app first.')
+        app_version = _app_version(python)
+        print(f'  Version  : {app_version}')
+        installer.unlink(missing_ok=True)
+        _finish_installer(app_tree, installer, _windows_icon(), app_version)
+        print(f'\nDone. Installer: {installer}')
+        return
+
+    app_version = _prepare_venv(python, build_env)
+    icon = _generate_icon()
+    installer.unlink(missing_ok=True)
+    _run_nuitka(icon, app_version, installer, build_env)
+    if not app_tree.is_dir():
+        raise SystemExit(f'Expected {app_tree}, not found')
+
+    if stage == 'app':
+        print('  Verifying bundled data files')
+        _verify_bundle(app_tree)
+        print(f'\nDone. App: {app_tree}')
+        return
+
+    _finish_installer(app_tree, installer, icon, app_version)
     print(f'\nDone. Installer: {installer}\n      App:       {app_tree}')
 
 

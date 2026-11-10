@@ -10,6 +10,7 @@
 - Downloaded models are kept in the app's user data folder, so updates keep them. The Windows uninstaller removes them.
 - [Dev] `poe prewarm` downloads the models through the app's model store.
 - [Dev] The Build workflow no longer restores the models cache or runs the tests.
+- [Dev] `scripts/build.py --stage app|installer` builds the Windows app and installer separately.
 
 ## [0.9.2] - 2026-11-09
 ### Changed
