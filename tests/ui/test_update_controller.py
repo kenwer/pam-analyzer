@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from pam_analyzer.app.__main__ import attach_updater
+from pam_analyzer.app.__main__ import STARTUP_CHECK_TEXT, attach_updater
 from pam_analyzer.infrastructure.http_download import DownloadCancelled, DownloadError
 from pam_analyzer.infrastructure.update import feed, install
 from pam_analyzer.infrastructure.update.feed import DEFAULT_FEED_URL, Update, UpdateError
@@ -19,6 +19,7 @@ from pam_analyzer.infrastructure.update.install import (
 )
 from pam_analyzer.ui import toasts as toasts_module
 from pam_analyzer.ui import update_controller
+from pam_analyzer.ui.settings import AppSettings
 from pam_analyzer.ui.update_controller import NO_INSTALL_REASON, UpdateController, UpdateState
 from tests.conftest import UPDATE, linux_install, stop_worker_threads
 from tests.ui.conftest import make_main_window
@@ -315,9 +316,10 @@ def test_restart_waits_for_other_instances_on_windows(window, monkeypatch, toast
 
 
 def test_attach_updater_places_the_action_and_link(window, monkeypatch) -> None:
-    controller = attach_updater(window, compiled=False)
+    controller = attach_updater(window, AppSettings(), compiled=False)
     texts = [a.text() for a in window.ui.menu_help.actions()]
-    assert texts.index("Check for Updates...") < texts.index(window.ui.action_about.text())
+    assert texts.index("Check for Updates...") < texts.index(STARTUP_CHECK_TEXT)
+    assert texts.index(STARTUP_CHECK_TEXT) < texts.index(window.ui.action_about.text())
     assert controller.status_link.parent() is window.ui.status_bar
     assert controller.block_reason() == NO_INSTALL_REASON
 
@@ -329,7 +331,29 @@ def test_attach_updater_asks_the_feed_url(qtbot, window, monkeypatch, override: 
     else:
         monkeypatch.setenv("PAM_UPDATE_FEED_URL", override)
     asked = _feed(monkeypatch, update=None)
-    controller = attach_updater(window, compiled=False)
+    controller = attach_updater(window, AppSettings(), compiled=False)
     controller.check()
     qtbot.waitUntil(lambda: controller.state is UpdateState.IDLE)
     assert asked == [override or DEFAULT_FEED_URL]
+
+
+def _startup_check_action(window):
+    return next(a for a in window.ui.menu_help.actions() if a.text() == STARTUP_CHECK_TEXT)
+
+
+@pytest.mark.parametrize("stored", [True, False])
+def test_startup_check_action_shows_the_setting(window, stored: bool) -> None:
+    settings = AppSettings()
+    settings.check_updates_at_startup = stored
+    attach_updater(window, settings, compiled=False)
+    action = _startup_check_action(window)
+    assert action.isCheckable()
+    assert action.isChecked() is stored
+
+
+def test_startup_check_action_writes_the_setting(window) -> None:
+    attach_updater(window, AppSettings(), compiled=False)
+    _startup_check_action(window).trigger()
+    assert AppSettings().check_updates_at_startup is False
+    _startup_check_action(window).trigger()
+    assert AppSettings().check_updates_at_startup is True

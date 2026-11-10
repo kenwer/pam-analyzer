@@ -1,6 +1,8 @@
 # Changelog
 
 ## [Unreleased]
+### Added
+- Help menu option to toggle the update check at startup.
 ### Changed
 - Models are no longer bundled. Each engine downloads its files on its first run or on user request.
 - The BirdNET panel shows the selected model's info and download status.

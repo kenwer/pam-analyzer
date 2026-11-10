@@ -34,6 +34,7 @@ class AppSettings:
     KEY_SNIPPET_EXPORT_DIRECTORY = "snippet_export_directory"
     KEY_CAMPAIGN_SORT_ORDER = "sort_order"
     KEY_LOG_LEVEL = "log_level"
+    KEY_CHECK_UPDATES_AT_STARTUP = "check_updates_at_startup"
     MAX_RECENT_PROJECTS = 8
     DEFAULT_CAMPAIGN_SORT_ORDER = "name_asc"
     DEFAULT_LOG_LEVEL = "WARNING"
@@ -128,6 +129,22 @@ class AppSettings:
     def log_level(self, value: str) -> None:
         self._settings.beginGroup(self.GROUP_UI)
         self._settings.setValue(self.KEY_LOG_LEVEL, value.upper())
+        self._settings.endGroup()
+
+    # updates
+
+    @property
+    def check_updates_at_startup(self) -> bool:
+        """Whether the app checks GitHub for a newer release when it starts."""
+        self._settings.beginGroup(self.GROUP_UI)
+        value = self._settings.value(self.KEY_CHECK_UPDATES_AT_STARTUP, True, type=bool)
+        self._settings.endGroup()
+        return cast(bool, value)
+
+    @check_updates_at_startup.setter
+    def check_updates_at_startup(self, value: bool) -> None:
+        self._settings.beginGroup(self.GROUP_UI)
+        self._settings.setValue(self.KEY_CHECK_UPDATES_AT_STARTUP, value)
         self._settings.endGroup()
 
     # examine panel state

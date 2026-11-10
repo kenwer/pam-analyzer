@@ -30,7 +30,7 @@ _configure_frozen_model_dir()
 
 import shiboken6  # noqa: E402
 from PySide6.QtCore import QTimer  # noqa: E402
-from PySide6.QtGui import QIcon  # noqa: E402
+from PySide6.QtGui import QAction, QIcon  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from .. import __version__  # noqa: E402
@@ -69,8 +69,11 @@ def build_main_window(settings: AppSettings) -> MainWindow:
     )
 
 
-def attach_updater(window: MainWindow, compiled: bool) -> UpdateController:
-    """Give window the in-app updater.
+STARTUP_CHECK_TEXT = "Check for Updates at Startup"
+
+
+def attach_updater(window: MainWindow, settings: AppSettings, compiled: bool) -> UpdateController:
+    """Give window the in-app updater and the switch for its startup check.
 
     A source run gets no install, so it only reports new versions.
     """
@@ -78,6 +81,17 @@ def attach_updater(window: MainWindow, compiled: bool) -> UpdateController:
     feed_url = os.environ.get("PAM_UPDATE_FEED_URL", DEFAULT_FEED_URL)
     updater = UpdateController(window, __version__, install, feed_url, release_asset_name())
     window.ui.menu_help.insertAction(window.ui.action_about, updater.action)
+
+    startup_check = QAction(STARTUP_CHECK_TEXT, window)
+    startup_check.setCheckable(True)
+    startup_check.setChecked(settings.check_updates_at_startup)
+
+    def store(checked: bool) -> None:
+        settings.check_updates_at_startup = checked
+
+    # triggered, not toggled, so the setChecked above writes nothing back
+    startup_check.triggered.connect(store)
+    window.ui.menu_help.insertAction(window.ui.action_about, startup_check)
     window.ui.status_bar.addPermanentWidget(updater.status_link)
     return updater
 
@@ -108,10 +122,11 @@ def main() -> int:
             target=remove_legacy_cache, args=(legacy_cache_dir(),), name="legacy-cache-cleanup", daemon=True
         ).start()
 
-    updater = attach_updater(window, compiled="__compiled__" in globals())
+    updater = attach_updater(window, settings, compiled="__compiled__" in globals())
 
     window.show()
-    QTimer.singleShot(0, updater.check)
+    if settings.check_updates_at_startup:
+        QTimer.singleShot(0, updater.check)
     exit_code = app.exec()
     # Only reached once the close went through, so a declined quit applies nothing
     updater.apply_pending_update()
