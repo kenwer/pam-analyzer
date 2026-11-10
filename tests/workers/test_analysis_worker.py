@@ -25,8 +25,9 @@ from pam_analyzer.domain import (
     Project,
     RunStatus,
 )
-from pam_analyzer.workers.analysis_worker import AnalysisWorker
-from tests.conftest import DEFAULT_MODEL_KEY
+from pam_analyzer.infrastructure.http_download import DownloadCancelled, DownloadError
+from pam_analyzer.workers import AnalysisWorker, ModelDownloadWorker
+from tests.conftest import DEFAULT_MODEL_KEY, FAKE_MODEL_INFO
 
 
 class FakeRunner:
@@ -36,9 +37,19 @@ class FakeRunner:
     Records the kwargs it was called with so a test can check forwarding.
     """
 
-    def __init__(self, enacts: AnalysisRunResult | Exception) -> None:
+    model_key = DEFAULT_MODEL_KEY
+    model_info = FAKE_MODEL_INFO
+
+    def __init__(self, enacts: AnalysisRunResult | Exception, install_raises: type[Exception] | None = None) -> None:
         self.enacts = enacts
+        self.install_raises = install_raises
         self.calls: list[dict] = []
+
+    def install_model(self, progress, cancelled) -> None:
+        progress(1, 2)
+        if self.install_raises is not None:
+            # A fresh instance per call: a stored one would keep its traceback, and the worker with it, alive
+            raise self.install_raises("example.org answered 503.")
 
     def count_audio_files(self, _path: Path) -> int:
         return 0
@@ -120,3 +131,54 @@ def test_exception_escaping_run_becomes_failed_outcome(tmp_path: Path, qtbot) ->
     outcome = blocker.args[0]
     assert outcome.status is RunStatus.FAILED
     assert "model failed to load" in (outcome.error or "")
+
+
+def test_download_progress_is_forwarded_before_the_run(tmp_path: Path, qtbot) -> None:
+    worker = _worker(FakeRunner(AnalysisRunResult(status=RunStatus.COMPLETED)), tmp_path)
+
+    with qtbot.waitSignal(worker.downloadProgress, raising=True) as blocker:
+        worker.run()
+
+    assert blocker.args == [1, 2]
+
+
+def test_failed_download_fails_the_run_without_running(tmp_path: Path, qtbot) -> None:
+    runner = FakeRunner(AnalysisRunResult(status=RunStatus.COMPLETED), DownloadError)
+    worker = _worker(runner, tmp_path)
+
+    with qtbot.waitSignal(worker.finished, raising=True) as blocker:
+        worker.run()
+
+    outcome = blocker.args[0]
+    assert outcome.status is RunStatus.FAILED
+    assert outcome.error == "example.org answered 503."
+    assert runner.calls == []
+
+
+def test_cancelled_download_skips_the_run(tmp_path: Path, qtbot) -> None:
+    runner = FakeRunner(AnalysisRunResult(status=RunStatus.COMPLETED), DownloadCancelled)
+    worker = _worker(runner, tmp_path)
+
+    with qtbot.waitSignal(worker.finished, raising=True) as blocker:
+        worker.run()
+
+    assert blocker.args[0].status is RunStatus.CANCELLED
+    assert runner.calls == []
+
+
+def test_model_download_worker_reports_only_a_failure(qtbot) -> None:
+    ok = ModelDownloadWorker(FakeRunner(AnalysisRunResult(status=RunStatus.COMPLETED)))
+    with qtbot.waitSignal(ok.finished, raising=True) as blocker:
+        ok.run()
+    assert blocker.args == [DEFAULT_MODEL_KEY, ""]
+
+    cancelled = ModelDownloadWorker(FakeRunner(AnalysisRunResult(status=RunStatus.COMPLETED), DownloadCancelled))
+    with qtbot.waitSignal(cancelled.finished, raising=True) as blocker:
+        cancelled.run()
+    assert blocker.args == [DEFAULT_MODEL_KEY, ""]
+
+    failed = ModelDownloadWorker(FakeRunner(AnalysisRunResult(status=RunStatus.COMPLETED), DownloadError))
+    with qtbot.waitSignal(failed.finished, raising=True) as blocker:
+        failed.run()
+    assert blocker.args[0] == DEFAULT_MODEL_KEY
+    assert "503" in blocker.args[1]

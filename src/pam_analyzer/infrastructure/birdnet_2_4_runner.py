@@ -5,9 +5,9 @@ alongside the v3.0 runner so a monitoring study that started under v2.4 can
 keep extending its time series under the same model, and so there is a
 non-preview engine available while v3.0 ships as a preview build.
 
-Upstream publishes no ONNX export for v2.4, so the weights this loads are
-converted from upstream's SavedModel by scripts/convert_birdnet_2_4_onnx.py
-and loaded through birdnet_2_4_onnx.
+Upstream publishes no ONNX export for v2.4, so the package downloads
+upstream's Keras weights and converts them on this machine
+(birdnet_2_4_convert), and the result loads through birdnet_2_4_onnx.
 
 v2.4 labels its classes on the older eBird-based axis. Every name is
 canonicalised at the boundary (species_names.canonical), so the species
@@ -29,10 +29,12 @@ from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Any, ClassVar
 
-from ..domain import AnalysisSettings
+from ..domain import AnalysisSettings, ModelInfo
+from . import birdnet_2_4_convert
 from ._analysis_helpers import workers_for
 from .base_analysis_runner import BaseAnalysisRunner, ParsedRow
 from .birdnet_lib import TAXONOMY_V2_4
+from .model_store import ModelPackage
 from .species_names import canonical
 
 MODEL_KEY = "BirdNET-2.4"
@@ -64,6 +66,15 @@ class Birdnet24Runner(BaseAnalysisRunner):
     model_key: ClassVar[str] = MODEL_KEY
     log_prefix: ClassVar[str] = "birdnet2.4"
     taxonomy = TAXONOMY_V2_4
+    package: ClassVar[ModelPackage] = ModelPackage(
+        info=ModelInfo(
+            name="BirdNET v2.4",
+            info_url="https://zenodo.org/records/15050749",
+            licence="CC BY-NC-SA 4.0",
+        ),
+        artifacts=birdnet_2_4_convert.artifacts,
+        prepare=birdnet_2_4_convert.prepare,
+    )
 
     def _load_model(self) -> Any:
         """Load BirdNET v2.4's converted weights on onnxruntime.

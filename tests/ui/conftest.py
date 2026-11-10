@@ -19,11 +19,18 @@ from pam_analyzer.ui.app_state import AppState
 from pam_analyzer.ui.main_window import MainWindow
 from pam_analyzer.ui.settings import AppSettings
 from pam_analyzer.workers import ImportOrchestrator, ProjectLoadWorker
-from tests.conftest import DEFAULT_MODEL_KEY, FakeScanner
+from tests.conftest import DEFAULT_MODEL_KEY, FAKE_MODEL_INFO, FakeScanner
 
 
 class FakeRunner:
     model_key = DEFAULT_MODEL_KEY
+    model_info = FAKE_MODEL_INFO
+
+    def missing_download_bytes(self) -> int:
+        return 0
+
+    def install_model(self, progress, cancelled) -> None:
+        pass
 
     def count_audio_files(self, _path: Path) -> int:
         return 0

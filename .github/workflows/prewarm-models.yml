@@ -1,8 +1,8 @@
 name: Prewarm models
 
-# Downloads and converts the models once, on one runner, and saves them to the
-# cache that every platform job then restores. Without it each matrix job on a
-# cold cache fetches about 1.1 GB and converts v2.4 itself.
+# Downloads the models once, on one runner, through the app's model store, and
+# saves them to the cache that every platform's test job then restores for the
+# slow tests. Without it each matrix job on a cold cache fetches about 1 GB.
 
 on:
   workflow_call:
@@ -19,9 +19,9 @@ jobs:
     name: Prewarm models
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 180
-    # Test and Build both call this workflow. On a cold key they would both
-    # prewarm, and the one that loses the save would hand its jobs a key that
-    # is still uploading. Queued, the second caller finds the entry instead.
+    # Two pushes in quick succession would both prewarm on a cold key, and
+    # the one that loses the save would hand its jobs a key that is still
+    # uploading. Queued, the second run finds the entry instead.
     concurrency: prewarm-models-${{ github.ref }}
     outputs:
       cache-key: ${{ steps.models-cache.outputs.cache-primary-key }}
@@ -55,10 +55,9 @@ jobs:
           # on a hit, so downloading the 940 MB archive is left to the jobs
           # that do.
           lookup-only: true
-          # Everything that decides which weights land in the cache: the birdnet
-          # version, the engine list (build.py), the v2.4 converter with its
-          # pinned toolchain, and the Perch pin.
-          key: birdnet-models-${{ steps.birdnet.outputs.version }}-${{ hashFiles('scripts/build.py', 'scripts/convert_birdnet_2_4_onnx.py', 'scripts/fetch_perch_onnx.py') }}
+          # Everything that decides which files land in the cache: the birdnet
+          # version, the store, and the modules that pin each engine's artifacts.
+          key: birdnet-models-${{ steps.birdnet.outputs.version }}-${{ hashFiles('scripts/prewarm_models.py', 'src/pam_analyzer/infrastructure/model_store.py', 'src/pam_analyzer/infrastructure/birdnet_lib.py', 'src/pam_analyzer/infrastructure/perch_onnx.py', 'src/pam_analyzer/infrastructure/birdnet_2_4_onnx.py', 'src/pam_analyzer/infrastructure/birdnet_2_4_convert.py', 'src/pam_analyzer/infrastructure/birdnet_2_4_keras_onnx.py', 'src/pam_analyzer/infrastructure/*_runner.py') }}
 
       - name: Install uv
         if: steps.models-cache.outputs.cache-hit != 'true'
@@ -66,7 +65,10 @@ jobs:
 
       - name: Prewarm models
         if: steps.models-cache.outputs.cache-hit != 'true'
-        run: uv run --script scripts/build.py --prewarm-only
+        env:
+          # The same folder the run-tests action points the tests at
+          BIRDNET_APP_DATA: ${{ github.workspace }}/dist/.birdnet-models/birdnet-app-data
+        run: uv run poe prewarm
 
       - name: Save BirdNET models
         if: steps.models-cache.outputs.cache-hit != 'true'

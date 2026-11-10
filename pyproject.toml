@@ -100,7 +100,7 @@ lint = { cmd = "ruff check src tests", help = "Run the ruff linter" }
 fmt = { cmd = "ruff format src tests", help = "Run the ruff formatter" }
 install-hooks = { cmd = "git config core.hooksPath .githooks", help = "Point git at the repo's tracked hooks (pre-push runs test-fast)" }
 build = { cmd = "uv run --script scripts/build.py", help = "Compile a standalone distributable for the current platform" }
-prewarm = { cmd = "uv run --script scripts/build.py --prewarm-only", help = "Download every bundled model into dist/.birdnet-models, then exit" }
+prewarm = { cmd = "python scripts/prewarm_models.py", help = "Download every engine's model files (into BIRDNET_APP_DATA, else the per-user folder) so the slow tests never download" }
 
 # uv ships the list of downloadable Pythons inside its own release, so upgrade uv first to see new patches
 [tool.poe.tasks.upgrade-python]

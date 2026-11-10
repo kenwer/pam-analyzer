@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+### Changed
+- BirdNET v2.4 is downloaded as upstream's Keras weights from Zenodo and converted to ONNX on first run.
+- [Dev] `poe prewarm` downloads the models through the app's model store.
+
 ## [0.9.2] - 2026-11-09
 ### Changed
 - Updates verify certificates with the OS trust store.

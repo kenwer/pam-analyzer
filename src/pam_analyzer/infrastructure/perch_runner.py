@@ -45,10 +45,16 @@ from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Any, ClassVar
 
-from ..domain import AnalysisSettings
+from ..domain import AnalysisSettings, ModelInfo
 from ._analysis_helpers import workers_for
 from .base_analysis_runner import BaseAnalysisRunner, ParsedRow
-from .birdnet_lib import TAXONOMY_V3_0
+from .birdnet_lib import (
+    TAXONOMY_V3_0,
+    prepare_v3_0_labels,
+    v3_0_geo_artifact,
+    v3_0_label_artifacts,
+)
+from .model_store import Artifact, ModelPackage
 from .species_names import canonical
 
 # Hardcoded rather than derived from the model, because this string is part of
@@ -93,6 +99,13 @@ def _perch_logit_to_prob(logit: float) -> float:
     return 1.0 / (1.0 + math.exp(-(logit - _PERCH_2_0_LOGIT_OFFSET)))
 
 
+def _artifacts() -> tuple[Artifact, ...]:
+    """Perch's weights plus the BirdNET v3.0 files its taxonomy and location filter read."""
+    from .perch_onnx import perch_artifact  # lazy, perch_onnx imports the birdnet lib
+
+    return (perch_artifact(), v3_0_geo_artifact(), *v3_0_label_artifacts())
+
+
 class PerchRunner(BaseAnalysisRunner):
     """AnalysisRunner implementation backed by Perch v2 (ONNX).
 
@@ -104,6 +117,15 @@ class PerchRunner(BaseAnalysisRunner):
     model_key: ClassVar[str] = MODEL_KEY
     log_prefix: ClassVar[str] = "perch"
     taxonomy = TAXONOMY_V3_0
+    package: ClassVar[ModelPackage] = ModelPackage(
+        info=ModelInfo(
+            name="Perch 2.0",
+            info_url="https://huggingface.co/justinchuby/Perch-onnx",
+            licence="Apache 2.0",
+        ),
+        artifacts=_artifacts,
+        prepare=prepare_v3_0_labels,
+    )
 
     def _model_classes(self) -> AbstractSet[str]:
         """Perch's own classes.

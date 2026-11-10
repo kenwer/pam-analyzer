@@ -23,7 +23,9 @@ import pytest
 
 from pam_analyzer.domain import AnalysisSettings, Campaign, FilterMode
 from pam_analyzer.infrastructure.base_analysis_runner import BaseAnalysisRunner, ParsedRow
+from pam_analyzer.infrastructure.model_store import ModelPackage
 from pam_analyzer.infrastructure.species_names import canonical
+from tests.conftest import FAKE_MODEL_INFO
 
 # The model's own axis is wider than the one it borrows for geo and locales,
 # which is exactly PerchRunner's situation.
@@ -75,6 +77,7 @@ class _AxisStubRunner(BaseAnalysisRunner):
     model_key = "Stub-1.0"
     log_prefix = "stub"
     taxonomy = _FakeTaxonomy()  # type: ignore[assignment]
+    package = ModelPackage(FAKE_MODEL_INFO, lambda: ())
 
     def __init__(self, rows: list[str]) -> None:
         self._rows = rows

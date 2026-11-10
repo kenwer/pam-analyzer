@@ -46,6 +46,7 @@ from ..domain import (
     Campaign,
     CancelledError,
     Detection,
+    ModelInfo,
     paths,
     week_from_path,
 )
@@ -53,6 +54,7 @@ from ..domain import detection_schema as schema
 from ..domain.analysis_run_result import AnalysisRunResult, CampaignRunResult, RunStatus
 from ..domain.audio_import import WEEK_YEAR_ROUND, format_recording_time
 from ..domain.detection_store import write_detections_csv
+from . import model_store
 from ._analysis_helpers import (
     RunGlobalProgress,
     build_progress_callback,
@@ -63,6 +65,8 @@ from ._analysis_helpers import (
 )
 from .audio_import import recording_time_of
 from .birdnet_lib import TaxonomyServices, normalize_lang_code
+from .http_download import DownloadError
+from .model_store import ModelPackage
 from .species_names import canonical_set
 
 
@@ -128,6 +132,30 @@ class BaseAnalysisRunner(ABC):
     model_key: ClassVar[str]
     log_prefix: ClassVar[str]
     taxonomy: ClassVar[TaxonomyServices]  # The label axis, geo filter and locale set of the model this runner loads
+    package: ClassVar[ModelPackage]  # The files this engine downloads on its first run
+
+    @property
+    def model_info(self) -> ModelInfo:
+        return self.package.info
+
+    def missing_download_bytes(self) -> int:
+        """Bytes install_model() has to download, 0 when everything is in place."""
+        return model_store.missing_bytes(self.package.artifacts())
+
+    def install_model(self, progress: Callable[[int, int], None], cancelled: Callable[[], bool]) -> None:
+        """Download this engine's missing files.
+
+        Raises DownloadCancelled, or DownloadError with a message for the user.
+        """
+        try:
+            model_store.install(self.package, progress, cancelled)
+        except DownloadError as exc:
+            # str(): a record holding exc would keep its traceback, and the caller's worker, alive
+            logging.warning("%s: download failed: %s", self.log_prefix, str(exc))
+            raise DownloadError(
+                f"Downloading {self.model_info.name} failed: {str(exc).rstrip('.')}. "
+                "Check the internet connection and try again."
+            ) from exc
 
     def count_audio_files(self, campaign_dir: Path) -> int:
         return count_audio_files(campaign_dir)

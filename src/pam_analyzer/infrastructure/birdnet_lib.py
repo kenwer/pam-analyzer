@@ -34,6 +34,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import cache, lru_cache
 
+from .model_store import Artifact
 from .species_names import canonical, canonical_set
 
 # FP32 over FP16: onnxruntime's CPU provider upcasts FP16 per-op, so the
@@ -253,3 +254,65 @@ class TaxonomyServices:
 
 TAXONOMY_V2_4 = TaxonomyServices(ACOUSTIC_V2_4)
 TAXONOMY_V3_0 = TaxonomyServices(ACOUSTIC_V3_0)
+
+
+def _v3_0_artifact(kind: str) -> Artifact:
+    """BirdNET v3.0's acoustic or geo weights, pinned by the lib, at the path the lib looks in."""
+    from birdnet.utils.local_data import get_model_path
+
+    if kind == "acoustic":
+        from birdnet.acoustic.models.v3_0.onnx import models
+    else:
+        from birdnet.geo.models.v3_0.onnx import models
+    info = models[MODEL_PRECISION]
+    return Artifact(
+        id=f"birdnet-3.0-{kind}",
+        url=info.dl_url,
+        size=info.file_size,
+        sha256=info.sha256,
+        dest=get_model_path(kind, ACOUSTIC_V3_0, "onnx", MODEL_PRECISION, content_tag=info.content_tag),
+        stale_glob=f"model-{MODEL_PRECISION}*.onnx",
+    )
+
+
+def v3_0_geo_artifact() -> Artifact:
+    """BirdNET v3.0's geo model, also the location filter of Perch runs."""
+    return _v3_0_artifact("geo")
+
+
+def v3_0_label_artifacts() -> tuple[Artifact, ...]:
+    """The raw label files and the taxonomy the v3.0 locale files are generated from.
+
+    Downloaded to the paths the lib reads, so prepare_v3_0_labels() finds
+    them verified in place and fetches nothing itself. _labels_input() is
+    private birdnet API, pinned by test_v3_0_label_inputs_download_to_the_lib_paths.
+    """
+    from birdnet.acoustic.models.v3_0.onnx import AcousticOnnxDownloaderV3_0
+    from birdnet.geo.models.v3_0.onnx import GeoOnnxDownloaderV3_0
+    from birdnet.utils.taxonomy_v3 import get_taxonomy_v3_input
+
+    inputs = {
+        "birdnet-3.0-acoustic-labels": AcousticOnnxDownloaderV3_0._labels_input(),  # noqa: SLF001
+        "birdnet-3.0-geo-labels": GeoOnnxDownloaderV3_0._labels_input(),  # noqa: SLF001
+        "birdnet-3.0-taxonomy": get_taxonomy_v3_input(),
+    }
+    return tuple(
+        Artifact(id=key, url=i.url, size=i.size, sha256=i.sha256, dest=i.path) for key, i in inputs.items()
+    )
+
+
+def v3_0_artifacts() -> tuple[Artifact, ...]:
+    """Everything a BirdNET v3.0 run reads: both models and their label inputs."""
+    return (_v3_0_artifact("acoustic"), v3_0_geo_artifact(), *v3_0_label_artifacts())
+
+
+def prepare_v3_0_labels() -> None:
+    """Generate the per-locale label files of both v3.0 models from their downloaded inputs.
+
+    Returns at once when the lib's manifest says the files are current.
+    """
+    from birdnet.acoustic.models.v3_0.onnx import AcousticOnnxDownloaderV3_0
+    from birdnet.geo.models.v3_0.onnx import GeoOnnxDownloaderV3_0
+
+    AcousticOnnxDownloaderV3_0.ensure_labels_available()
+    GeoOnnxDownloaderV3_0.ensure_labels_available()

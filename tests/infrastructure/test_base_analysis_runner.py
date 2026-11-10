@@ -9,18 +9,27 @@ outcome, instead of discarding them.
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from pam_analyzer.domain import (
     AnalysisProgressSnapshot,
     AnalysisSettings,
     Campaign,
     FilterMode,
+    ModelInfo,
     RunStatus,
 )
 from pam_analyzer.domain.analysis_run_result import CampaignRunResult
 from pam_analyzer.infrastructure.base_analysis_runner import BaseAnalysisRunner, _SegmentRanker
+from pam_analyzer.infrastructure.http_download import DownloadError
+from pam_analyzer.infrastructure.model_store import Artifact, ModelPackage
+from tests.infrastructure.conftest import Route
+
+_STUB_INFO = ModelInfo("Stub 1.0", "https://example.org", "CC0")
 
 
 class _CountingProgress:
@@ -53,11 +62,16 @@ class _StubRunner(BaseAnalysisRunner):
     model_key = "Stub-1.0"
     log_prefix = "stub"
 
-    def __init__(self, fail_on: str | None = None) -> None:
+    def __init__(self, fail_on: str | None = None, artifacts: tuple[Artifact, ...] = ()) -> None:
         self.ran: list[str] = []
+        self.events: list[str] = []
         self._fail_on = fail_on
+        self.loaded = False
+        self.package = ModelPackage(_STUB_INFO, lambda: artifacts, lambda: self.events.append("prepare"))
 
     def _load_model(self) -> Any:
+        self.loaded = True
+        self.events.append("load")
         return object()
 
     def _open_predict_session(self, *args: Any, **kwargs: Any) -> Any:  # pragma: no cover
@@ -172,3 +186,48 @@ def test_the_same_species_ranks_again_in_the_next_segment() -> None:
 
     assert ranker.rank_for(("a.flac", 0.0), "Thinornis dubius") == 1
     assert ranker.rank_for(("a.flac", 3.0), "Thinornis dubius") == 1
+
+
+_WEIGHTS = bytes(range(256)) * 8_000
+
+
+def _served_artifact(server, tmp_path: Path, path: str = "/w.onnx") -> Artifact:
+    server.routes[path] = Route(_WEIGHTS)
+    return Artifact(
+        id="stub-weights",
+        url=server.url(path),
+        size=len(_WEIGHTS),
+        sha256=hashlib.sha256(_WEIGHTS).hexdigest(),
+        dest=tmp_path / "models" / "w.onnx",
+    )
+
+
+def test_install_model_downloads_and_prepares_without_loading(tmp_path: Path, local_http_server) -> None:
+    artifact = _served_artifact(local_http_server, tmp_path)
+    runner = _StubRunner(artifacts=(artifact,))
+    assert runner.missing_download_bytes() == len(_WEIGHTS)
+    calls: list[tuple[int, int]] = []
+    runner.install_model(lambda done, total: calls.append((done, total)), lambda: False)
+    assert runner.missing_download_bytes() == 0
+    assert calls[-1] == (len(_WEIGHTS), len(_WEIGHTS))
+    assert runner.events == ["prepare"]
+
+
+def test_failed_install_names_the_engine(tmp_path: Path, local_http_server) -> None:
+    artifact = _served_artifact(local_http_server, tmp_path)
+    local_http_server.routes["/w.onnx"] = Route(b"", status=503)
+    with pytest.raises(DownloadError, match=r"^Downloading Stub 1\.0 failed: .*503.*\. Check the internet"):
+        _StubRunner(artifacts=(artifact,)).install_model(lambda *_: None, lambda: False)
+
+
+def test_run_does_not_download(tmp_path: Path, local_http_server) -> None:
+    """The worker installs the model first, so run() goes straight to loading it."""
+    runner = _StubRunner(artifacts=(_served_artifact(local_http_server, tmp_path),))
+    result = _run(runner, _campaigns(tmp_path, ["a"]), _CountingProgress())
+    assert result.status is RunStatus.COMPLETED
+    assert runner.events == ["load"]
+    assert local_http_server.requests == []
+
+
+def test_model_info_comes_from_the_package() -> None:
+    assert _StubRunner().model_info is _STUB_INFO

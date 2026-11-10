@@ -7,7 +7,7 @@ the protocol structurally (duck typing).
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
@@ -63,6 +63,11 @@ class AnalysisRunner(Protocol):
     # repo can route edits back to the right file.
     model_key: str
 
+    @property
+    def model_info(self) -> ModelInfo: ...
+
+    def missing_download_bytes(self) -> int: ...
+    def install_model(self, progress: Callable[[int, int], None], cancelled: Callable[[], bool]) -> None: ...
     def count_audio_files(self, campaign_dir: Path) -> int: ...
     def available_locales(self) -> list[str]: ...
 

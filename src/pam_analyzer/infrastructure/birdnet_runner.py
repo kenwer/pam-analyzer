@@ -21,9 +21,15 @@ from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Any, ClassVar
 
-from ..domain import AnalysisSettings
+from ..domain import AnalysisSettings, ModelInfo
 from .base_analysis_runner import BaseAnalysisRunner, ParsedRow
-from .birdnet_lib import MODEL_PRECISION, TAXONOMY_V3_0
+from .birdnet_lib import (
+    MODEL_PRECISION,
+    TAXONOMY_V3_0,
+    prepare_v3_0_labels,
+    v3_0_artifacts,
+)
+from .model_store import ModelPackage
 from .species_names import canonical
 
 # Hardcoded rather than derived from the library because this string is part of
@@ -49,6 +55,15 @@ class BirdnetRunner(BaseAnalysisRunner):
     model_key: ClassVar[str] = MODEL_KEY
     log_prefix: ClassVar[str] = "birdnet"
     taxonomy = TAXONOMY_V3_0
+    package: ClassVar[ModelPackage] = ModelPackage(
+        info=ModelInfo(
+            name="BirdNET v3.0 preview 3.1",
+            info_url="https://zenodo.org/records/20703646",
+            licence="CC BY-NC-SA 4.0",
+        ),
+        artifacts=v3_0_artifacts,
+        prepare=prepare_v3_0_labels,
+    )
 
     def _load_model(self) -> Any:
         """Load BirdNET v3.0 on the ONNX backend.

@@ -14,7 +14,6 @@ survive the pickling the inference pipeline puts it through.
 from __future__ import annotations
 
 import pickle
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -126,14 +125,9 @@ def test_model_path_sits_beside_the_libs_own_perch_download() -> None:
 
 
 def test_missing_weights_report_how_to_fetch_them() -> None:
-    """Running from source without the download should say what to run.
-
-    The weights are a 413 MB third-party artifact rather than something the
-    build converts, so the failure has to name the fetch step instead of
-    surfacing as a bare onnxruntime load error.
-    """
+    """A missing file says how to get it instead of a bare onnxruntime load error."""
     missing = perch_onnx.model_path().with_name("definitely-absent.onnx")
-    with pytest.raises(FileNotFoundError, match="fetch_perch_onnx"):
+    with pytest.raises(FileNotFoundError, match="Run the engine once while online"):
         perch_onnx.require_weights(missing)
 
 
@@ -176,21 +170,3 @@ def test_inference_is_deterministic() -> None:
     rng = np.random.default_rng(1)
     window = rng.standard_normal((1, SEGMENT_SAMPLES), dtype=np.float32) * 0.1
     assert np.array_equal(_predict(backend, window), _predict(backend, window))
-
-
-def test_fetch_script_and_app_agree_on_the_model_path() -> None:
-    """The fetch script writes exactly where the app looks.
-
-    scripts/fetch_perch_onnx.py runs on its own interpreter and cannot import
-    this package, so it rebuilds the path from birdnet's app data folder. That
-    duplication is only safe while the two stay identical, and a mismatch would
-    surface as a missing-weights error after an apparently successful fetch.
-    """
-    source = (
-        Path(__file__).parent.parent.parent / "scripts" / "fetch_perch_onnx.py"
-    ).read_text(encoding="utf-8")
-
-    app_path = perch_onnx.model_path()
-    tail = app_path.relative_to(app_path.parents[3])
-    quoted = " / ".join(f'"{part}"' for part in tail.parts)
-    assert f"get_birdnet_app_data_folder() / {quoted}" in source

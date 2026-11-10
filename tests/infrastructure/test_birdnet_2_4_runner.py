@@ -9,8 +9,7 @@ rewritten to whichever axis the project chose.
 
 The _parse_row cases run fast because that hook takes its label maps as
 arguments and never touches the model. The end-to-end case is marked slow
-because it loads the converted v2.4 ONNX weights, which the build produces
-via scripts/convert_birdnet_2_4_onnx.py.
+because it loads the v2.4 ONNX weights that birdnet_2_4_keras_onnx builds.
 """
 
 from __future__ import annotations

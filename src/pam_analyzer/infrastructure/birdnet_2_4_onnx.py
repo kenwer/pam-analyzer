@@ -23,8 +23,8 @@ directly, skips the '.onnx' suffix check, and skips the `check_validity`
 subprocess spawn. Nothing in the lib branches on the `is_custom_model` flag it
 sets.
 
-The weights come from scripts/convert_birdnet_2_4_onnx.py, which converts
-upstream's SavedModel and writes into the same BIRDNET_APP_DATA layout the lib
+The weights come from birdnet_2_4_convert, which builds them on this machine
+from upstream's Keras weights and writes into the same BIRDNET_APP_DATA layout the lib
 uses for its own downloads. Labels are read from the onnx directory rather than
 the tf one so that resolving a species name never triggers the 51 MB TFLite
 download this engine no longer uses.
@@ -71,10 +71,8 @@ GEO_INPUT_FEATURES = 3
 GEO_YEAR_ROUND_WEEK_INPUTS = (-1.0,)
 
 _MISSING_MODEL_HINT = (
-    "BirdNET v2.4 ONNX weights are missing at {path}.\n"
-    "They are produced from upstream's SavedModel by:\n"
-    "    uv run --script scripts/convert_birdnet_2_4_onnx.py\n"
-    "Frozen builds convert during packaging, so this only affects running from source."
+    "BirdNET v2.4 ONNX weights are missing at {path}. "
+    "Run the engine once while online to download them."
 )
 
 

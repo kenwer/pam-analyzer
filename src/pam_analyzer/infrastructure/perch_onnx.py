@@ -45,6 +45,7 @@ from birdnet import MODEL_PRECISION_FP32, AcousticModelPerchV2
 from birdnet.core.backends import OnnxBackend, VersionedAcousticBackendProtocol
 from birdnet.utils.local_data import get_birdnet_app_data_folder
 
+from .model_store import Artifact
 from .onnx_telemetry import disable_in_workers
 
 # Output positions in the converted graph. The export declares, in order:
@@ -63,11 +64,16 @@ _LABELS_HEADER = "inat2024_fsd50k"
 
 _LABELS_FILE = "perch_v2_labels.csv"
 
+# An immutable commit, not 'main', so the bytes cannot change under the app
+_HF_REPO = "justinchuby/Perch-onnx"
+_HF_COMMIT = "da88bf8c37c0b3068fc706fe509f633b9fbd28c1"
+_HF_FILENAME = "perch_v2_no_dft.onnx"
+_WEIGHTS_SHA256 = "4dcf71c18a147198545944bb5149697e89e3ad2e16637fa8f0edf6d13035a017"
+_WEIGHTS_SIZE = 413_350_933
+
 _MISSING_MODEL_HINT = (
-    "Perch v2 ONNX weights are missing at {path}.\n"
-    "They are a third-party export rather than something the build converts:\n"
-    "    uv run --script scripts/fetch_perch_onnx.py\n"
-    "Frozen builds fetch during packaging, so this only affects running from source."
+    "Perch v2 ONNX weights are missing at {path}. "
+    "Run the engine once while online to download them."
 )
 
 
@@ -134,6 +140,17 @@ def model_path() -> Path:
     SavedModel the lib would download for its pb backend.
     """
     return get_birdnet_app_data_folder() / "acoustic-models" / "perch-v2" / "onnx" / "model-fp32.onnx"
+
+
+def perch_artifact() -> Artifact:
+    """The Perch v2 ONNX export, pinned by commit and checksum."""
+    return Artifact(
+        id="perch-2.0-acoustic",
+        url=f"https://huggingface.co/{_HF_REPO}/resolve/{_HF_COMMIT}/{_HF_FILENAME}",
+        size=_WEIGHTS_SIZE,
+        sha256=_WEIGHTS_SHA256,
+        dest=model_path(),
+    )
 
 
 def require_weights(path: Path) -> Path:
