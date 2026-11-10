@@ -10,7 +10,6 @@ import os
 import plistlib
 import shutil
 import subprocess
-import sys
 import tempfile
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping
@@ -335,27 +334,12 @@ def _check_bundle(app: Path, version: str) -> None:
         raise UpdateError(f"The downloaded app is version {found}, expected {version}.")
 
 
-def relaunch_env(environ: Mapping[str, str], bundle_dir: Path) -> dict[str, str]:
-    """The environment for the new version, without a model path inside bundle_dir.
-
-    app/__main__.py points BIRDNET_APP_DATA into this version's bundle, on
-    Linux the AppImage mount that vanishes when this process exits. A path the
-    user set elsewhere stays.
-    """
-    env = dict(environ)
-    model_path = env.get("BIRDNET_APP_DATA")
-    if model_path and Path(model_path).is_relative_to(bundle_dir):
-        del env["BIRDNET_APP_DATA"]
-    return env
-
-
 def _launch_detached(command: list[str]) -> None:
     """Start command so that it outlives this process."""
     kwargs: dict = {
         "stdin": subprocess.DEVNULL,
         "stdout": subprocess.DEVNULL,
         "stderr": subprocess.DEVNULL,
-        "env": relaunch_env(os.environ, Path(sys.executable).parent),
     }
     if os.name == "nt":
         kwargs["creationflags"] = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP

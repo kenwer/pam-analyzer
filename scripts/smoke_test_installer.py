@@ -6,8 +6,8 @@
 """Install a release installer on a clean CI runner and check the app starts.
 
 The app is started headless (QT_QPA_PLATFORM=offscreen) with debug logging
-and counts as started once its log shows BIRDNET_APP_DATA pointing at the
-bundled models and the process is still alive.
+and counts as started once its log shows the BIRDNET_APP_DATA startup line
+and the process is still alive.
 
 Windows also runs the update as the app will: with the app still running, it
 starts the installer silently with /RELAUNCH. The installer must wait for the
@@ -29,8 +29,7 @@ from pathlib import Path
 APP_NAME = 'PAM Analyzer'
 FILE_NAME = 'PAM-Analyzer'
 STARTUP_TIMEOUT_S = 120
-# How long the app must stay up after its log shows the models were found
-STAY_ALIVE_S = 10
+STAY_ALIVE_S = 10  # How long the app must stay up after its startup log line
 
 
 def log_file() -> Path:
@@ -102,8 +101,6 @@ def wait_until_started(offset: int, proc: subprocess.Popen | None = None) -> Non
                 f.seek(offset)
                 line = next((ln.strip() for ln in f if 'BIRDNET_APP_DATA=' in ln), None)
     print(f'  {line}', flush=True)
-    if not line.replace('\\', '/').endswith('birdnet-models/birdnet-app-data'):
-        raise SystemExit('The app did not point BIRDNET_APP_DATA at its bundled models')
     time.sleep(STAY_ALIVE_S)
     if proc is not None and proc.poll() is not None:
         raise SystemExit(f'App exited with code {proc.returncode} shortly after starting')
@@ -121,7 +118,7 @@ def check_log_clean(offset: int) -> None:
 
 
 def check_starts(exe: Path) -> None:
-    """Start exe headless and wait until its log shows the bundled models, then stop it."""
+    """Start exe headless and wait until its log shows it started, then stop it."""
     offset = log_offset()
     proc = start_app(exe)
     try:

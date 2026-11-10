@@ -8,7 +8,7 @@ helpers that need the Detection schema live in detection_schema instead.
 import sys
 from pathlib import Path
 
-from platformdirs import user_log_dir
+from platformdirs import user_data_dir, user_log_dir
 
 AUDIO_EXTENSIONS: frozenset[str] = frozenset({
     ".wav", ".flac", ".mp3", ".ogg", ".m4a", ".wma", ".aiff", ".aif"
@@ -17,6 +17,15 @@ AUDIO_EXTENSIONS: frozenset[str] = frozenset({
 
 def log_dir() -> Path:
     return Path(user_log_dir("PAM Analyzer", appauthor=False))
+
+
+def model_dir() -> Path:
+    """Where the compiled app keeps downloaded models, outside the install so updates keep them.
+
+    Local, not roaming, on Windows: gigabytes of models do not belong in a
+    synced profile. The Windows uninstaller deletes this folder by its path.
+    """
+    return Path(user_data_dir("PAM Analyzer", appauthor=False)) / "models"
 
 
 def contract_user_path(path_str: str) -> str:

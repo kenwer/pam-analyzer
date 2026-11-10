@@ -322,20 +322,6 @@ def test_rejected_bundle_is_not_left_where_it_could_be_installed(tmp_path: Path)
     assert sorted(p.name for p in target.version_dir(update).iterdir()) == ["x.dmg"]
 
 
-def test_relaunch_drops_a_model_path_inside_the_old_bundle() -> None:
-    from pam_analyzer.infrastructure.update.install import relaunch_env
-
-    env = relaunch_env({"BIRDNET_APP_DATA": "/tmp/.mount_old/birdnet-models/x", "HOME": "/h"}, Path("/tmp/.mount_old"))
-    assert env == {"HOME": "/h"}
-
-
-def test_relaunch_keeps_a_model_path_the_user_set() -> None:
-    from pam_analyzer.infrastructure.update.install import relaunch_env
-
-    env = relaunch_env({"BIRDNET_APP_DATA": "/data/models"}, Path("/tmp/.mount_old"))
-    assert env == {"BIRDNET_APP_DATA": "/data/models"}
-
-
 def test_a_failed_swap_leaves_a_note_for_the_next_session(tmp_path: Path) -> None:
     app = _bundle(tmp_path / "PAM-Analyzer.app", "old")
     target = MacOSAppInstall(app, tmp_path / "stage")

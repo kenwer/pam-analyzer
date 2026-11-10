@@ -44,7 +44,6 @@ OutputDir={#OutputDir}
 OutputBaseFilename={#OutputBaseFilename}
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-; The bundled models barely compress, so maximum effort buys little time
 Compression=lzma2/normal
 SolidCompression=yes
 WizardStyle=modern
@@ -52,6 +51,11 @@ WizardStyle=modern
 [InstallDelete]
 ; The folder holds only the app, so an update leaves exactly the new version
 Type: filesandordirs; Name: "{app}\*"
+
+[UninstallDelete]
+; Models download to the folder of domain.paths.model_dir(), which updates keep
+Type: filesandordirs; Name: "{localappdata}\PAM Analyzer\models"
+Type: dirifempty; Name: "{localappdata}\PAM Analyzer"
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs

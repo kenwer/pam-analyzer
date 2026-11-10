@@ -5,32 +5,18 @@
 # ///
 """Build the PAM Analyzer installer using Nuitka.
 
-Creates an isolated venv, installs the project and Nuitka into it,
-pre-downloads every model the app needs at runtime into a build-local
-cache directory, then compiles the app with that cache bundled next to
-the binary, then wraps the result in the platform's installer: an Inno
-Setup setup.exe on Windows, a DMG on macOS, an AppImage on Linux. The installer
+Creates an isolated venv, installs the project and Nuitka into it, compiles
+the app, then wraps the result in the platform's installer: an Inno Setup
+setup.exe on Windows, a DMG on macOS, an AppImage on Linux. The installer
 lands in dist/ under the release asset name the in-app updater looks for.
 
-One environment variable controls where the model files land during the
-download phase:
-
-- BIRDNET_APP_DATA -> acoustic + geo weights for both shipped engines (both
-  on ONNX), plus the per-locale label files. Honored by the birdnet>=1.1
-  library. v3.0 downloads a vendor build. v2.4 has no upstream ONNX export
-  and is converted here by convert_birdnet_2_4_onnx.py.
-
-That directory sits inside the MODEL_CACHE root and ships as a single
---include-data-dir entry. At runtime app/__main__.py points the same env var
-at the bundled location next to the binary, so the compiled app never touches
-the user's home directory or the network for model loading.
+No model weights ship in the bundle. Each engine downloads its files on its
+first run (infrastructure/model_store.py).
 
 Usage:
     uv run --script scripts/build.py
-    uv run --script scripts/build.py --prewarm-only  # only warm MODEL_CACHE, then exit
 """
 
-import argparse
 import hashlib
 import os
 import platform
@@ -38,7 +24,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import textwrap
 import time
 import urllib.request
 from pathlib import Path
@@ -66,11 +51,6 @@ APPIMAGETOOL_SHA256 = {
     'x86_64': 'ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0',
     'aarch64': 'f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158',
 }
-
-# All bundled model assets live under this single root. Reused across
-# builds; delete this directory to force a fresh download.
-MODEL_CACHE = DIST_DIR / '.birdnet-models'
-BIRDNET_APP_DATA_CACHE = MODEL_CACHE / 'birdnet-app-data'
 
 # Modules to pull in explicitly via --include-module, so the Qt libraries
 # backing map_picker.qml ship even though no Python code imports them.
@@ -102,8 +82,7 @@ DATA: tuple[tuple[Path, str], ...] = (
         ROOT_DIR / 'src' / 'pam_analyzer' / 'infrastructure' / 'data' / 'species_aliases.tsv',
         'pam_analyzer/infrastructure/data/species_aliases.tsv',
     ),
-    # perch_onnx.labels() reads this the same way. REQUIRED_MODEL_FILES checks
-    # the model cache, a different tree, so nothing else catches its absence.
+    # perch_onnx.labels() reads this the same way.
     (
         ROOT_DIR / 'src' / 'pam_analyzer' / 'infrastructure' / 'data' / 'perch_v2_labels.csv',
         'pam_analyzer/infrastructure/data/perch_v2_labels.csv',
@@ -164,158 +143,8 @@ def _fetch_appimagetool() -> Path:
     return tool.parent
 
 
-# Single prewarm script: load every model the app reaches for, so the
-# downloads happen here (with retry-on-failure) rather than on first user
-# click. BIRDNET_APP_DATA points at the build cache, so files land in a known
-# location ready for PyInstaller bundling. The precision must match
-# birdnet_lib._PRECISION or the bundle holds weights the app never asks for.
-MODEL_PREWARM = textwrap.dedent("""
-    import sys
-    import birdnet
-    from birdnet.utils.local_data import get_lang_dir
-
-    # Only v3.0 downloads a vendor build. The v2.4 pair has no upstream ONNX
-    # export and is produced by convert_birdnet_2_4_onnx.py, which runs before
-    # this script and writes into the same cache.
-    for kind, version, backend, kwargs in (
-        ('acoustic', '3.0', 'onnx', {}),
-        ('geo', '3.0', 'onnx', {}),
-    ):
-        print(f'Pre-downloading birdnet {kind} v{version} {backend} (en_us)...', file=sys.stderr)
-        birdnet.load(kind, version, backend, lang='en_us', precision='fp32', **kwargs)
-
-    # Loading one locale generates the label files for every locale, so the
-    # bundled app can switch species language offline. Asserted against the
-    # lib's own language set because a partial label set is invisible here
-    # and only surfaces as a download on an end user's machine. The two
-    # engines ship different language sets, so each is checked against its
-    # own version's list.
-    for kind, version, backend, languages in (
-        ('acoustic', '3.0', 'onnx', birdnet.VALID_MODEL_LANGUAGES_V3_0),
-        ('geo', '3.0', 'onnx', birdnet.VALID_MODEL_LANGUAGES_V3_0),
-        ('acoustic', '2.4', 'onnx', birdnet.VALID_MODEL_LANGUAGES_V2_4),
-        ('geo', '2.4', 'onnx', birdnet.VALID_MODEL_LANGUAGES_V2_4),
-    ):
-        lang_dir = get_lang_dir(kind, version, backend)
-        missing = sorted(
-            lang for lang in languages
-            if not (lang_dir / (lang + '.txt')).is_file()
-        )
-        if missing:
-            raise SystemExit(f'{kind} v{version} labels missing for: {missing}')
-    print('All models cached.')
-""").strip()
-
-
 def run(cmd: list, env: dict | None = None) -> None:
     subprocess.run(cmd, check=True, env=env)
-
-
-def _convert_v2_4_models(download_env: dict) -> None:
-    """Produce the v2.4 ONNX weights, which no upstream release ships.
-
-    Runs before MODEL_PREWARM because the prewarm script asserts the v2.4
-    label files exist, and this is what installs them.
-
-    Invoked with `uv run --script` so it resolves the PEP 723 header at the top
-    of the conversion script: TensorFlow and tf2onnx on their own interpreter,
-    reachable from neither the project venv nor the build venv. Being a
-    separate environment is the point, since the app must never install
-    TensorFlow.
-
-    No retry loop wraps this. The script skips work when its output is already
-    current, so a failure here is a real conversion failure rather than a
-    flaky download, and the download it does make is retried inside birdnet.
-    """
-    print('  Converting BirdNET v2.4 to onnx (downloads the SavedModel on a cold cache)')
-    run(
-        ['uv', 'run', '--script', str(PACKAGING_DIR / 'convert_birdnet_2_4_onnx.py')],
-        env=download_env,
-    )
-
-
-def _fetch_perch_model(download_env: dict) -> None:
-    """Fetch the Perch v2 ONNX weights, which no upstream release ships either.
-
-    Unlike v2.4 this cannot be converted here. Perch's SavedModel is a jax2tf
-    export whose graph sits inside XlaCallModule ops, which tf2onnx cannot walk,
-    so the app depends on a published third-party export pinned by commit and
-    checksum. The script verifies before installing and skips when the file is
-    already current.
-    """
-    print('  Fetching Perch v2 onnx (413 MB on a cold cache)')
-    run(
-        ['uv', 'run', '--script', str(PACKAGING_DIR / 'fetch_perch_onnx.py')],
-        env=download_env,
-    )
-
-
-def _prewarm_models(download_env: dict, uv_run_prefix: list) -> None:
-    """Download every model into MODEL_CACHE, with retry on transient failures.
-
-    Always runs the prewarm script. birdnet decides freshness offline, from
-    the byte size and sha256 constants the installed version pins, so a warm
-    run finishes in about a second and a model whose pinned release changed
-    is re-fetched. A coarse "cache directory is non-empty" skip used to live
-    here, but it could ship a stale bundle.
-
-    uv_run_prefix selects which venv runs the download: the isolated build
-    venv (['uv', 'run', '--no-project'], with VIRTUAL_ENV/UV_PROJECT_ENVIRONMENT
-    set in download_env) for packaging, or the regular project venv
-    (['uv', 'run']) for CI's --prewarm-only, which only needs the models on
-    disk to cache them and has no isolated venv to point at.
-    """
-    BIRDNET_APP_DATA_CACHE.mkdir(parents=True, exist_ok=True)
-
-    _convert_v2_4_models(download_env)
-    _fetch_perch_model(download_env)
-
-    print('  Pre-downloading model checkpoints (BirdNET acoustic + geo, v3.0 onnx)')
-    max_attempts = 3
-    for attempt in range(1, max_attempts + 1):
-        try:
-            run(
-                [*uv_run_prefix, 'python', '-c', MODEL_PREWARM],
-                env=download_env,
-            )
-            break
-        except subprocess.CalledProcessError:
-            if attempt == max_attempts:
-                raise
-            print(f'  Download failed (attempt {attempt}/{max_attempts}), retrying...')
-    print(f'  Cached models to {MODEL_CACHE}')
-
-
-# Model files that must survive into the finished bundle, relative to
-# BIRDNET_APP_DATA_CACHE. The per-locale label files are checked by the
-# prewarm script instead, which can compare them against the lib's own
-# language set. Glob patterns: the lib names its checksum-verified v3.0
-# downloads model-fp32-<sha256 prefix>.onnx.
-REQUIRED_MODEL_FILES: tuple[str, ...] = (
-    'acoustic-models/v3.0/onnx/model-fp32*.onnx',
-    'geo-models/v3.0/onnx/model-fp32*.onnx',
-    'acoustic-models/v2.4/onnx/model-fp32.onnx',
-    'geo-models/v2.4/onnx/model-fp32.onnx',
-    # Perch has no geo model of its own and reuses v3.0's for the allow-list.
-    'acoustic-models/perch-v2/onnx/model-fp32.onnx',
-)
-
-
-def _resolve_model_file(pattern: str) -> str:
-    """The one cached file matching pattern, relative to BIRDNET_APP_DATA_CACHE.
-
-    A model update leaves the previous release's file beside the new one, and
-    Nuitka bundles the whole cache, so a second match is a stale copy that
-    would ship.
-    """
-    found = sorted(BIRDNET_APP_DATA_CACHE.glob(pattern))
-    if len(found) != 1:
-        raise SystemExit(
-            f'Expected exactly one model file matching {pattern} in '
-            f'{BIRDNET_APP_DATA_CACHE}, found {[p.name for p in found]}. '
-            'Delete the stale ones and rebuild.'
-        )
-    return found[0].relative_to(BIRDNET_APP_DATA_CACHE).as_posix()
 
 
 def _create_dmg(app: Path, dmg: Path) -> None:
@@ -387,67 +216,21 @@ def _create_windows_installer(dist: Path, installer: Path, icon: Path, app_versi
 
 
 def _verify_bundle(app_root: Path) -> None:
-    """Fail the build if the bundled data did not make it into the output.
-
-    A compiled app whose models are missing still starts and still runs: it
-    just re-downloads model files on the user's first Analyze click, with the
-    lib's progress bar going to a stderr that a GUI user won't see. So it is
-    checked here.
+    """Fail the build if the bundled data files did not make it into the output.
 
     app_root is the tree the installer wraps: the macOS .app, or the .dist
     folder on Windows/Linux.
     """
-    expected = {
-        rel: (BIRDNET_APP_DATA_CACHE / rel).stat().st_size
-        for rel in map(_resolve_model_file, REQUIRED_MODEL_FILES)
-    }
-    payload = sum(expected.values())
-
-    for rel, size in expected.items():
-        found = list(app_root.glob(f'**/birdnet-models/birdnet-app-data/{rel}'))
-        if not found:
-            raise SystemExit(
-                f'{rel} is missing from the bundle. The model tree did not survive '
-                'Nuitka. Check the --include-data-dir entry for MODEL_CACHE.'
-            )
-        actual = found[0].stat().st_size
-        if actual != size:
-            raise SystemExit(
-                f'{rel} is {actual} bytes in the bundle, expected {size}. '
-                'The bundled copy is truncated or stale.'
-            )
-
     for _src, dest in DATA:
         if not list(app_root.glob(f'**/{dest}')):
             raise SystemExit(
                 f'{dest} is missing from the bundle. Check its --include-data-files entry.'
             )
 
-    print(f'  Verified bundle: {payload / 1e6:.0f} MB of models, {len(DATA)} data files')
+    print(f'  Verified bundle: {len(DATA)} data files')
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        '--prewarm-only',
-        action='store_true',
-        help=(
-            'Only pre-download models into MODEL_CACHE using the project venv, then exit. '
-            'Used by the prewarm-models CI workflow to fill the cache that the test and '
-            'build jobs restore, so they never trigger a bare, un-retried download.'
-        ),
-    )
-    args = parser.parse_args()
-
-    if args.prewarm_only:
-        DIST_DIR.mkdir(parents=True, exist_ok=True)
-        download_env = {
-            **os.environ,
-            'BIRDNET_APP_DATA': str(BIRDNET_APP_DATA_CACHE),
-        }
-        _prewarm_models(download_env, ['uv', 'run'])
-        return
-
     is_mac = sys.platform == 'darwin'
     is_win = sys.platform == 'win32'
     python = VENV_DIR / ('Scripts/python.exe' if is_win else 'bin/python')
@@ -494,12 +277,6 @@ def main() -> None:
     # that tree, since it compiles the sources rather than an installed copy.
     run(['uv', 'run', '--no-project', 'python', str(PACKAGING_DIR / 'compile_ui.py')], env=build_env)
     run(['uv', 'run', '--no-project', 'python', str(PACKAGING_DIR / 'compile_qrc.py')], env=build_env)
-
-    download_env = {
-        **build_env,
-        'BIRDNET_APP_DATA': str(BIRDNET_APP_DATA_CACHE),
-    }
-    _prewarm_models(download_env, ['uv', 'run', '--no-project'])
 
     print('  Generating app icon')
     BUILD_DIR.mkdir(parents=True, exist_ok=True)
@@ -585,9 +362,6 @@ def main() -> None:
         f'--output-filename={binary_name}',
     ]
     cmd += [f'--include-module={module}' for module in MODULES]
-    # The model tree lands next to the binary, where app/__main__.py points
-    # BIRDNET_APP_DATA at startup.
-    cmd.append(f'--include-data-dir={MODEL_CACHE}=birdnet-models')
     cmd += [f'--include-data-files={src}={dest}' for src, dest in DATA]
     if is_mac:
         cmd += [

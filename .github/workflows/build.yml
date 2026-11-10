@@ -13,25 +13,22 @@ on:
     branches: [ "master" ]
     paths:
       - 'scripts/build.py'
-      - 'scripts/convert_birdnet_2_4_onnx.py'
-      - 'scripts/fetch_perch_onnx.py'
       - 'scripts/smoke_test_installer.py'
       - 'pyproject.toml'
       - 'uv.lock'
       - '.github/workflows/build.yml'
-      - '.github/workflows/prewarm-models.yml'
-      - '.github/actions/**'
+      - '.github/actions/setup-env/**'
+      - '.github/actions/build-dist/**'
 
 permissions:
   contents: read
 
+# The Test workflow runs the suite on every push to master and on pull
+# requests, so a release is built from a tested commit. The bundle carries no
+# models, so nothing here needs the models cache.
 jobs:
-  models:
-    uses: ./.github/workflows/prewarm-models.yml
-
   build:
     name: Build (${{ matrix.name }})
-    needs: models
     runs-on: ${{ matrix.os }}
     timeout-minutes: 150
     strategy:
@@ -67,14 +64,6 @@ jobs:
 
       - name: Setup environment
         uses: ./.github/actions/setup-env
-        with:
-          models-cache-key: ${{ needs.models.outputs.cache-key }}
-
-      - name: Run tests
-        # On pull_request the Test workflow already ran them on this commit.
-        if: github.event_name != 'pull_request'
-        timeout-minutes: 15
-        uses: ./.github/actions/run-tests
 
       - name: Build distributable
         uses: ./.github/actions/build-dist

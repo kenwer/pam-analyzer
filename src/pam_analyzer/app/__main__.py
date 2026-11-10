@@ -6,38 +6,27 @@ import sys
 import threading
 from pathlib import Path
 
-
-def _configure_frozen_model_paths() -> None:
-    """Point the birdnet lib at the bundled model cache.
-
-    The build stages the birdnet-models/ tree next to the compiled binary.
-    BIRDNET_APP_DATA has to be set before the first model load, or the frozen
-    app will try to write to the user's home directory and re-download. birdnet
-    and the app read it on every lookup, so an earlier `import birdnet` does not
-    matter.
-
-    setdefault() rather than [] = so a user can still override the variable
-    from the shell for development or one-off builds.
-
-    No-op when not running frozen, so dev runs still use the per-user
-    cache and stay independent of the build artifact.
-    """
-    # Nuitka sets neither sys.frozen nor sys._MEIPASS. It defines __compiled__
-    # in the globals of every compiled module, and sys.executable points at a
-    # python stub beside the binary whose parent holds the payload, inside a
-    # macOS .app too.
-    if "__compiled__" not in globals():
-        return
-    bundled = Path(sys.executable).parent / "birdnet-models"
-    os.environ.setdefault("BIRDNET_APP_DATA", str(bundled / "birdnet-app-data"))
-
-
-_configure_frozen_model_paths()
-
 # Disable onnxruntime telemetry on macOS and Linux
 # Windows is covered by infrastructure/onnx_telemetry, which also reaches the workers
 os.environ.setdefault("ORT_DISABLE_TELEMETRY", "1")
 
+from ..domain import paths  # noqa: E402
+
+
+def _configure_frozen_model_dir() -> None:
+    """Point the birdnet lib at the app's own model folder.
+
+    The lib's default is a "birdnet" folder shared with any other birdnet
+    install, and in the roaming profile on Windows. setdefault() so a user
+    can still override it from the shell. Source runs keep the lib default,
+    which the dev scripts fill.
+    """
+    # Nuitka defines __compiled__ in the globals of every compiled module
+    if "__compiled__" in globals():
+        os.environ.setdefault("BIRDNET_APP_DATA", str(paths.model_dir()))
+
+
+_configure_frozen_model_dir()
 
 import shiboken6  # noqa: E402
 from PySide6.QtCore import QTimer  # noqa: E402
@@ -45,7 +34,7 @@ from PySide6.QtGui import QIcon  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from .. import __version__  # noqa: E402
-from ..domain import logging_setup, paths  # noqa: E402
+from ..domain import logging_setup  # noqa: E402
 from ..infrastructure import (  # noqa: E402
     AudioImporter,
     Birdnet24Runner,
