@@ -3,6 +3,7 @@ from .analysis import (
     AnalysisProgressSnapshot,
     AnalysisRunner,
     CancelledError,
+    ModelInfo,
     shared_locales,
 )
 from .analysis_run_result import AnalysisRunResult, CampaignRunResult, RunStatus
@@ -73,6 +74,7 @@ __all__ = [
     "DEFAULT_SPECIES_LANG",
     "MAX_OVERLAP_S",
     "LatLon",
+    "ModelInfo",
     "SpreadKey",
     "Project",
     "ResolvedSpeciesFilter",

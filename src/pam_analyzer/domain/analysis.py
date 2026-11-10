@@ -19,6 +19,15 @@ if TYPE_CHECKING:
     from .campaign import Campaign
 
 
+@dataclass(frozen=True, slots=True)
+class ModelInfo:
+    """Static facts about one engine's model, shown under the model combo."""
+
+    name: str
+    info_url: str
+    licence: str
+
+
 class CancelledError(Exception):
     """Raised by AnalysisRunner when progress.is_cancelled() flips to True."""
 
