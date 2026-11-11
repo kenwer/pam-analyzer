@@ -243,6 +243,9 @@ def _create_dmg(app: Path, dmg: Path) -> None:
     headless runner, at the cost of the styled window. The app is moved into
     a staging folder and back, since copying it would cost 1.6 GB.
 
+    ULMO (LZMA) makes the DMG about 30% smaller than ULFO (LZFSE). It needs
+    macOS 10.15, below the macOS 11 the app itself requires.
+
     GitHub's macOS runners intermittently fail hdiutil with "Resource busy"
     (actions/runner-images#7522), hence the retries.
     """
@@ -256,7 +259,7 @@ def _create_dmg(app: Path, dmg: Path) -> None:
         (stage / 'Applications').symlink_to('/Applications')
         cmd = [
             'hdiutil', 'create', '-volname', APP_NAME, '-srcfolder', str(stage),
-            '-fs', 'HFS+', '-format', 'ULFO', '-ov', str(dmg),
+            '-fs', 'HFS+', '-format', 'ULMO', '-ov', str(dmg),
         ]
         max_attempts = 5
         for attempt in range(1, max_attempts + 1):
