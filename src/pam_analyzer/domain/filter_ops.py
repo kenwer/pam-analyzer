@@ -704,19 +704,6 @@ _MENU_BY_KIND: dict[ColumnKind, tuple[FilterOp, ...]] = {
 # for callers that route these ops to an editor popup.
 DATETIME_OPS: frozenset[FilterOp] = frozenset(_DATE_MENU)
 
-# Ops that compare numerically on NUMERIC columns.
-NUMERIC_COMPARE_OPS: frozenset[FilterOp] = frozenset(
-    {
-        FilterOp.EQUALS,
-        FilterOp.NOT_EQUALS,
-        FilterOp.GREATER_THAN,
-        FilterOp.GREATER_THAN_OR_EQUAL,
-        FilterOp.LESS_THAN,
-        FilterOp.LESS_THAN_OR_EQUAL,
-        FilterOp.IN_RANGE,
-    }
-)
-
 
 def operators_for(kind: ColumnKind) -> tuple[FilterOp, ...]:
     return _MENU_BY_KIND[kind]

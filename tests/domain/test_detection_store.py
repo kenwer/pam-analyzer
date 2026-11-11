@@ -36,27 +36,6 @@ def _write_raw(folder: Path, rows: list[str], header: str = _HEADER) -> Path:
     return path
 
 
-def _csv_module_read(path: Path) -> list[Detection]:
-    """The csv-module reader this replaces, kept as the parsing oracle."""
-    with open(path, encoding="utf-8") as f:
-        rows = list(csv.DictReader(f))
-    out = []
-    for row in rows:
-        d = schema.detection_from_row(row)
-        if d.file and not Path(d.file).is_absolute():
-            d.file = f"{path.parent.name}/{d.file}"
-        out.append(d)
-    return out
-
-
-def test_read_matches_csv_module_reader(tmp_path: Path) -> None:
-    path = _write_raw(tmp_path / "east", _ROWS)
-    frame, fieldnames = read_detections_csv(path)
-    assert fieldnames == _HEADER.split(",")
-    records = [schema.detection_from_record(r) for r in frame.iter_rows(named=True)]
-    assert records == _csv_module_read(path)
-
-
 def test_read_types_numeric_columns(tmp_path: Path) -> None:
     frame, _ = read_detections_csv(_write_raw(tmp_path / "east", _ROWS))
     assert frame.schema["Confidence"] == pl.Float64
@@ -200,9 +179,9 @@ def test_set_annotation_round_trip(tmp_path: Path, model_key: str) -> None:
     store = DetectionStore.load_for_campaign(folder)
     store.set_annotation(0, "Verified", "true")
     store.set_annotation(0, "Comment", "edited")
-    assert store.dirty_count == 1
+    assert len(store._dirty) == 1
     assert store.save_dirty() == 1
-    assert store.dirty_count == 0
+    assert len(store._dirty) == 0
     reloaded = DetectionStore.load_for_campaign(folder).detection(0)
     assert reloaded.verified is VerifiedState.TRUE
     assert reloaded.comment == "edited"
@@ -214,7 +193,7 @@ def test_set_annotation_rejects_read_only_column_and_bad_value(tmp_path: Path, m
         store.set_annotation(0, "Species", "Crow")
     with pytest.raises(ValueError):
         store.set_annotation(0, "Verified", "maybe")
-    assert store.dirty_count == 0
+    assert len(store._dirty) == 0
 
 
 def test_set_annotations_edits_many_rows_at_once(tmp_path: Path, model_key: str) -> None:
@@ -222,7 +201,7 @@ def test_set_annotations_edits_many_rows_at_once(tmp_path: Path, model_key: str)
     store = DetectionStore.load_for_campaign(folder)
     store.set_annotations([0, 2], "Verified", "true")
     assert store.frame["Verified"].to_list() == ["true", "", "true"]
-    assert store.dirty_count == 2
+    assert len(store._dirty) == 2
     assert store.save_dirty() == 2
     assert [d.verified for d in _rows(DetectionStore.load_for_campaign(folder))] == [
         VerifiedState.TRUE,
@@ -237,7 +216,7 @@ def test_set_annotations_rejects_bad_input_without_editing(tmp_path: Path, model
         store.set_annotations([0], "Species", "Crow")
     with pytest.raises(ValueError):
         store.set_annotations([0], "Verified", "maybe")
-    assert store.dirty_count == 0
+    assert len(store._dirty) == 0
 
 
 def test_edit_does_not_change_an_earlier_frame(tmp_path: Path, model_key: str) -> None:
@@ -279,7 +258,7 @@ def test_failed_save_keeps_rows_dirty(tmp_path: Path, model_key: str, monkeypatc
     monkeypatch.setattr(detection_store_module, "write_detections_frame", _unplugged)
     with pytest.raises(OSError):
         store.save_dirty()
-    assert store.dirty_count == 1
+    assert len(store._dirty) == 1
 
     monkeypatch.undo()
     assert store.save_dirty() == 1

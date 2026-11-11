@@ -47,7 +47,6 @@ class AudioPlayerPanel(QWidget):
         self._end_time: float = 0.0
         self._pad_before_s: float = 0.0
         self._pad_after_s: float = 0.0
-        self._info: str = ""
 
         self._stop_timer = QTimer(self)
         self._stop_timer.setSingleShot(True)
@@ -197,7 +196,6 @@ class AudioPlayerPanel(QWidget):
         self._current_file = file_path
         self._start_time = start_time
         self._end_time = end_time
-        self._info = info
         self.setVisible(True)
         self._stop_timer.stop()
         self._bounded = auto_play

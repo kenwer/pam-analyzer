@@ -155,15 +155,6 @@ def test_card_queue_seen_across_offers():
     assert q.pop() is None
 
 
-def test_card_queue_clear_seen_allows_requeue():
-    q = CardQueue()
-    q.offer([_card("A")])
-    q.pop()
-    q.clear_seen()
-    q.offer([_card("A")])
-    assert q.pop() == _card("A")
-
-
 def test_card_queue_reset():
     q = CardQueue()
     q.offer([_card("A"), _card("B")])

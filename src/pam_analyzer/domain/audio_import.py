@@ -39,7 +39,6 @@ class FileConflict:
     src_mtime: float
     dst_size: int
     dst_mtime: float
-    dst_path: Path
 
 
 @dataclass(frozen=True)
@@ -53,7 +52,6 @@ class ImportProgress:
     card: DetectedCard
     files_done: int
     files_total: int
-    bytes_done: int
     elapsed: float
 
 
@@ -222,10 +220,6 @@ class CardQueue:
     def pop(self) -> DetectedCard | None:
         """Remove and return the next card, or None if the queue is empty."""
         return self._queue.pop(0) if self._queue else None
-
-    def clear_seen(self) -> None:
-        """Allow previously-seen cards to be re-offered (e.g. when campaign changes)."""
-        self._seen.clear()
 
     def reset(self) -> None:
         """Clear both queue and seen set (e.g. on watch session start)."""

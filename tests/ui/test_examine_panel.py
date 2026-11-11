@@ -360,7 +360,7 @@ def test_edit_verified_marks_row_dirty(panel: ExaminePanel) -> None:
     col = COLUMNS_BY_NAME["Verified"]
     idx = panel._model.index(0, col)
     assert panel._model.setData(idx, "true")
-    assert panel._detections.dirty_count == 1
+    assert len(panel._detections._dirty) == 1
     assert panel._model.detection_at(0).verified.value == "true"
 
 
@@ -380,7 +380,7 @@ def test_autosave_debounces_and_persists(qtbot, panel: ExaminePanel, project) ->
     qtbot.waitUntil(lambda: "true" in csv_path.read_text(encoding="utf-8"), timeout=2000)
 
     # The autosave consumed the pending edits.
-    assert panel._detections.dirty_count == 0
+    assert len(panel._detections._dirty) == 0
 
 
 def test_autosave_preserves_unedited_rows(qtbot, panel: ExaminePanel, project) -> None:
@@ -774,11 +774,11 @@ def test_filter_inputs_visible_when_mounted_in_hidden_tab(
     # Find the rightmost non-suppressed, non-hidden column and assert its filter is visible.
     rightmost = None
     for col in range(col_count - 1, -1, -1):
-        if not detection_table._table.isColumnHidden(col) and filter_row.is_filter_visible(col):
+        if not detection_table._table.isColumnHidden(col) and filter_row._slots[col].edit.isVisible():
             rightmost = col
             break
     assert rightmost is not None, "No visible, non-suppressed column found"
-    assert filter_row.is_filter_visible(rightmost), (
+    assert filter_row._slots[rightmost].edit.isVisible(), (
         f"Filter input for column {rightmost} is not visible after switching to a previously-hidden tab"
     )
 
@@ -854,7 +854,7 @@ def test_not_blank_filter_can_be_switched_back_from_the_funnel(qtbot, panel: Exa
     qtbot.mouseClick(slot.button, Qt.MouseButton.LeftButton)
     QCoreApplication.processEvents()
 
-    assert filter_row.column_op(col) is original_op
+    assert filter_row._slots[col].op is original_op
     assert slot.edit.isEnabled()
     assert panel._model.rowCount() == 6
 
@@ -864,7 +864,7 @@ def test_hiding_a_column_resets_its_blank_filter(panel: ExaminePanel) -> None:
     filter_row = detection_table._filter_row
     col = panel._model.index_of("Comment")
     slot = filter_row._slots[col]
-    original_op = filter_row.column_op(col)
+    original_op = filter_row._slots[col].op
 
     filter_row.set_filter(col, "", FilterOp.NOT_BLANK)
     assert panel._model.rowCount() == 0
@@ -873,7 +873,7 @@ def test_hiding_a_column_resets_its_blank_filter(panel: ExaminePanel) -> None:
     detection_table._toggle_column(col, True)
 
     assert panel._model.rowCount() == 6
-    assert filter_row.column_op(col) is original_op
+    assert filter_row._slots[col].op is original_op
     assert slot.edit.isEnabled()
     QCoreApplication.processEvents()
 
@@ -882,7 +882,7 @@ def test_picking_the_checked_not_blank_again_lifts_the_filter(panel: ExaminePane
     filter_row = panel.ui.detections_table._filter_row
     col = panel._model.index_of("Comment")
     slot = filter_row._slots[col]
-    original_op = filter_row.column_op(col)
+    original_op = filter_row._slots[col].op
 
     def _pick_not_blank() -> None:
         menu = QApplication.activePopupWidget()
@@ -893,12 +893,12 @@ def test_picking_the_checked_not_blank_again_lifts_the_filter(panel: ExaminePane
 
     QTimer.singleShot(0, _pick_not_blank)
     filter_row._show_op_menu(col)
-    assert filter_row.column_op(col) is FilterOp.NOT_BLANK
+    assert filter_row._slots[col].op is FilterOp.NOT_BLANK
     assert panel._model.rowCount() == 0
 
     QTimer.singleShot(0, _pick_not_blank)
     filter_row._show_op_menu(col)
-    assert filter_row.column_op(col) is original_op
+    assert filter_row._slots[col].op is original_op
     assert slot.edit.isEnabled()
     assert not slot.button._active
     assert panel._model.rowCount() == 6
@@ -992,7 +992,7 @@ def test_funnel_menu_is_one_of_flow(panel: ExaminePanel) -> None:
     QCoreApplication.processEvents()
 
     assert filter_row._slots[col].edit.text() == "MSD-1"
-    assert filter_row.column_op(col) is FilterOp.IS_ANY_OF
+    assert filter_row._slots[col].op is FilterOp.IS_ANY_OF
     rows = _visible(panel)
     assert rows and all(r.aru == "MSD-1" for r in rows)
 
@@ -1292,7 +1292,7 @@ def test_context_menu_filters_by_the_clicked_value(panel: ExaminePanel, monkeypa
     filter_row = panel.ui.detections_table._filter_row
     # The filter row shows the filter, so the user can see and edit it.
     assert filter_row._slots[col].edit.text() == "MSD-2"
-    assert filter_row.column_op(col) is FilterOp.EQUALS
+    assert filter_row._slots[col].op is FilterOp.EQUALS
     QCoreApplication.processEvents()
 
 
@@ -1303,7 +1303,7 @@ def test_context_menu_filters_a_blank_cell_with_the_blank_operator(panel: Examin
     _menu_action(_row_menu(panel, 1, "Comment"), "Filter by This Value").trigger()
 
     assert panel._model.rowCount() == 5
-    assert panel.ui.detections_table._filter_row.column_op(comment) is FilterOp.BLANK
+    assert panel.ui.detections_table._filter_row._slots[comment].op is FilterOp.BLANK
     QCoreApplication.processEvents()
 
 
@@ -1319,7 +1319,7 @@ def test_context_menu_clears_all_filters(panel: ExaminePanel, monkeypatch) -> No
     assert panel._model.rowCount() == 6
     filter_row = panel.ui.detections_table._filter_row
     assert filter_row._slots[panel._model.index_of("ARU")].edit.text() == ""
-    assert filter_row.column_op(panel._model.index_of("Species")) is FilterOp.CONTAINS
+    assert filter_row._slots[panel._model.index_of("Species")].op is FilterOp.CONTAINS
     QCoreApplication.processEvents()
 
 
@@ -1423,7 +1423,7 @@ def test_marking_several_rows_emits_one_data_change(panel: ExaminePanel, monkeyp
 
     assert changes == [(0, verified, 3, verified)]
     assert [d.verified.value for d in _visible(panel)][:4] == ["true", "", "true", "true"]
-    assert panel._detections.dirty_count == 3
+    assert len(panel._detections._dirty) == 3
 
 
 def test_model_set_annotation_rejects_bad_input(panel: ExaminePanel) -> None:
@@ -1431,7 +1431,7 @@ def test_model_set_annotation_rejects_bad_input(panel: ExaminePanel) -> None:
     assert not panel._model.set_annotation([0, 1], "Species", "Crow")
     assert not panel._model.set_annotation([], "Verified", "true")
     assert not panel._model.set_annotation([0, 99], "Verified", "true")
-    assert panel._detections.dirty_count == 0
+    assert len(panel._detections._dirty) == 0
 
 
 def test_selected_rows_after_select_all_does_not_query_every_cell(qtbot, panel: ExaminePanel, monkeypatch) -> None:

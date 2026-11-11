@@ -311,18 +311,6 @@ class HeaderFilterRow(QObject):
                 self._suppressed.add(col)
             self._sync()
 
-    def is_filter_visible(self, col: int) -> bool:
-        """Return whether the filter input for *col* is currently visible."""
-        if not (0 <= col < len(self._slots)):
-            return False
-        return col not in self._suppressed and self._slots[col].edit.isVisible()
-
-    def column_op(self, col: int) -> FilterOp | None:
-        """Return the active operator for *col*, or ``None`` if out of range."""
-        if 0 <= col < len(self._slots):
-            return self._slots[col].op
-        return None
-
     # slot construction
     def _build_slot(self, col: int, kind: ColumnKind) -> _FilterCell:
         slot = _FilterCell(self._header, kind, self._button_size)

@@ -34,9 +34,6 @@ class ComboDelegate(QStyledItemDelegate):
         super().__init__(parent)
         self._choices_provider = choices_provider
 
-    def setChoicesProvider(self, provider) -> None:  # noqa: N802 (Qt-style)
-        self._choices_provider = provider
-
     def createEditor(
         self,
         parent: QWidget,

@@ -170,40 +170,12 @@ def write_fieldnames(locales: Iterable[str] = ()) -> list[str]:
     return [*names[:species_pos], *(locale_column(loc) for loc in locales), *names[species_pos:]]
 
 
-def _format_number(value: float) -> str:
-    """Render integers without a trailing .0; floats stay as float reprs."""
-    if value == int(value):
-        return str(int(value))
-    return repr(value)
-
-
-def _format_cell(column: ColumnSpec, d: Detection) -> str:
-    value = column.get(d)
-    if column.numeric:
-        return "" if value is None else _format_number(value)
-    return str(value)
-
-
-def detection_from_row(row: dict[str, str]) -> Detection:
-    """Build a Detection from one CSV row; unknown columns land in extra."""
-    kwargs: dict[str, Any] = {c.attr: c.parse(row.get(c.name, "")) for c in COLUMNS}
-    kwargs["extra"] = {k: v for k, v in row.items() if k not in CORE_FIELDS}
-    return Detection(**kwargs)
-
-
-def detection_to_row(d: Detection) -> dict[str, str]:
-    """Serialize a Detection to CSV string values, extra columns included."""
-    row: dict[str, str] = dict(d.extra)
-    row.update({c.name: _format_cell(c, d) for c in COLUMNS})
-    return row
-
-
 def detection_from_record(record: Mapping[str, Any]) -> Detection:
     """Build a Detection from one typed frame row (numeric cells already floats).
 
     Null text cells become "", and null NUMERIC_DEFAULT_ZERO cells become 0.0,
-    matching what detection_from_row produces for blank cells. Null extras
-    (a column only other files have) are left out of extra.
+    matching how read_detections_csv parses blank cells. Null extras (a
+    column only other files have) are left out of extra.
     """
     kwargs: dict[str, Any] = {}
     for c in COLUMNS:

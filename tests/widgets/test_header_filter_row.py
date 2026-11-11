@@ -127,7 +127,7 @@ def test_clear_button_resets_text_and_operator_and_applies_at_once(shown_row: He
 
     assert emitted == [(0, "", FilterOp.CONTAINS)]
     assert slot.edit.text() == ""
-    assert shown_row.column_op(0) is FilterOp.CONTAINS
+    assert shown_row._slots[0].op is FilterOp.CONTAINS
     assert slot.clear.isHidden()
 
 
@@ -139,7 +139,7 @@ def test_clear_button_lifts_a_blank_filter_that_disabled_the_input(shown_row: He
     slot.clear.click()
 
     assert slot.edit.isEnabled()
-    assert shown_row.column_op(1) is FilterOp.CONTAINS
+    assert shown_row._slots[1].op is FilterOp.CONTAINS
 
 
 def test_escape_in_the_input_clears_its_filter(qtbot, shown_row: HeaderFilterRow) -> None:

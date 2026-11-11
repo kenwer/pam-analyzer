@@ -174,7 +174,6 @@ class MainWindow(QMainWindow):
         # triggered, not toggled: it fires only on user activation, so the
         # setChecked above cannot write the setting straight back.
         group.triggered.connect(self._on_log_level_chosen)
-        self._log_level_group = group
 
     def _wire_state(self) -> None:
         self._app_state.statusMessage.connect(lambda msg: self.ui.status_bar.showMessage(msg, 5000))

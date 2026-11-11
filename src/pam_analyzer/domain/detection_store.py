@@ -5,8 +5,6 @@ it, filters and sorts on it, edits land in it, and saving writes slices of
 it back to the CSV each row came from. A row id is a row's position in the
 frame. It is stable for the store's lifetime because rows are never added,
 removed or reordered, but a new store numbers its rows from 0 again.
-
-Reading parses cells the way detection_schema.detection_from_row does.
 """
 
 import os
@@ -182,10 +180,6 @@ class DetectionStore:
     @property
     def row_count(self) -> int:
         return self._frame.height
-
-    @property
-    def dirty_count(self) -> int:
-        return len(self._dirty)
 
     def detection(self, row_id: int) -> Detection:
         """A snapshot of one row. Changing it does not change the store."""

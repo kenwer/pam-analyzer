@@ -191,13 +191,6 @@ class SpectrogramWidget(QWidget):
         self.setCursor(Qt.CursorShape.SizeHorCursor)
         self.setMouseTracking(True)
 
-    def set_colormap(self, colormap: Colormap) -> None:
-        """Change the colormap and re-render if audio is already loaded."""
-        if self._colormap != colormap:
-            self._colormap = colormap
-            if self._audio_path:
-                self._submit_render()
-
     def set_audio(
         self,
         file_path: str,

@@ -84,47 +84,6 @@ class TestWriteFieldnames:
         assert names[-3:] == list(schema.ANNOTATION_COLUMNS)
 
 
-class TestRowRoundTrip:
-    def test_round_trip_preserves_fields_and_extras(self):
-        d = _sample_detection()
-        row = schema.detection_to_row(d)
-        back = schema.detection_from_row(row)
-        assert back.campaign == d.campaign
-        assert back.confidence == d.confidence
-        assert back.week == d.week
-        assert back.verified is VerifiedState.TRUE
-        assert back.comment == "clear song"
-        assert back.extra == {"Species_de": "Amsel"}
-        # Every column, not just the spot checks above.
-        assert {c.name: c.get(back) for c in schema.COLUMNS} == {
-            c.name: c.get(d) for c in schema.COLUMNS
-        }
-
-    def test_integers_written_without_trailing_zero(self):
-        row = schema.detection_to_row(_sample_detection())
-        assert row["Week"] == "8"
-        assert row["Start_Time"] == "12"
-        assert row["Rank"] == "1"
-        assert row["Confidence"] == "0.8534"
-
-    def test_optional_fields_written_empty_and_read_as_none(self):
-        d = _sample_detection()
-        d.week = None
-        d.rank = None
-        d.lat = None
-        d.lon = None
-        d.min_conf = None
-        row = schema.detection_to_row(d)
-        assert row["Week"] == "" and row["Rank"] == "" and row["Lat"] == ""
-        back = schema.detection_from_row(row)
-        assert back.week is None and back.rank is None and back.lat is None
-
-    def test_unknown_columns_land_in_extra(self):
-        row = {"Campaign": "C", "Species": "X", "Some_Future_Column": "42"}
-        d = schema.detection_from_row(row)
-        assert d.extra == {"Some_Future_Column": "42"}
-
-
 class TestFilenamePattern:
     def test_build_and_parse_are_inverse(self):
         # A key the app no longer writes, on purpose: round-tripping any key

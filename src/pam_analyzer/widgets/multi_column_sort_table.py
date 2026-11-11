@@ -300,11 +300,6 @@ class MultiColumnSortTable(QTableView):
         self._priority = list(priority)
         self._apply_sort()
 
-    def clearSort(self) -> None:
-        """Remove all sort keys and restore the table to its natural row order."""
-        self._priority = []
-        self._apply_sort()
-
     def mapToSourceRow(self, proxy_row: int) -> int:
         """Return the source-model row index for a row in the view."""
         src_idx = self._proxy.mapToSource(self._proxy.index(proxy_row, 0))

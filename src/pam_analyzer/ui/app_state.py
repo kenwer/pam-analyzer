@@ -65,16 +65,8 @@ class AppState(QObject):
         return list(self._campaigns)
 
     @property
-    def current_campaign(self) -> Campaign | None:
-        return self._current_campaign
-
-    @property
     def analysis_inventory(self) -> AnalysisInventory | None:
         return self._analysis_inventory
-
-    @property
-    def import_results(self) -> list[CardImportResult]:
-        return list(self._import_results)
 
     @property
     def audio_inventory(self) -> AudioInventory:

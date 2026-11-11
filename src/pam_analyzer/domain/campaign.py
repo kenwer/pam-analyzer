@@ -124,12 +124,6 @@ class Campaign:
             if p.is_file() and p.suffix.lower() in paths.AUDIO_EXTENSIONS
         )
 
-    @staticmethod
-    def name_error(name: str, taken_names: Iterable[str] = ()) -> str | None:
-        """Why the (already stripped) name cannot be used as a campaign folder
-        name, or None if it can. See the module-level campaign_name_error."""
-        return campaign_name_error(name, taken_names)
-
 
 # Names Windows refuses or silently alters. Enforced on every platform so a
 # project folder stays portable between macOS and Windows machines.

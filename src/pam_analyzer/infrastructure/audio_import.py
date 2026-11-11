@@ -418,7 +418,6 @@ class AudioImporter:
                         src_mtime=src_stat.st_mtime,
                         dst_size=dst_stat.st_size,
                         dst_mtime=dst_stat.st_mtime,
-                        dst_path=dst,
                     )
                 )
         return ConflictReport(conflicts=tuple(conflicts), identical=tuple(identical))
@@ -463,7 +462,6 @@ class AudioImporter:
                     card=card,
                     files_done=files_copied + files_skipped + files_empty,
                     files_total=len(files),
-                    bytes_done=bytes_copied,
                     elapsed=time.monotonic() - start,
                 )
             )

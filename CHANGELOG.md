@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+### Changed
+- [Dev] Remove unused internal code.
+
 ## [0.10.0] - 2026-11-11
 ### Added
 - Help menu option to toggle the update check at startup.

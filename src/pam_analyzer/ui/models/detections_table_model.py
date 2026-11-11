@@ -151,15 +151,6 @@ class DetectionsTableModel(QAbstractTableModel):
         self._apply_sort()
         self.endResetModel()
 
-    def numeric_column_indices(self) -> set[int]:
-        """Indices of currently-visible numeric columns.
-
-        Computed from self._columns so the filter row's number-vs-text
-        operator menu stays correct after extras (which are always text)
-        shift the static columns.
-        """
-        return {i for i, c in enumerate(self._columns) if c.numeric}
-
     def column_kinds(self) -> dict[int, ColumnKind]:
         """Kind per current column index, driving each filter slot's op menu.
 
@@ -442,10 +433,3 @@ class DetectionsTableModel(QAbstractTableModel):
         columns = [self._store.frame.get_column(n).gather(self._visible) for n in col_names]
         keys = pl.DataFrame(columns).with_columns(pl.Series("__idx", self._visible))
         self._visible = keys.sort(col_names, descending=descending, nulls_last=True)["__idx"].to_list()
-
-
-def _sort_key(value: Any) -> tuple[int, Any]:  # type: ignore[reportUnusedFunction]
-    """Return a key that sorts None last and groups numbers/strings sensibly."""
-    if value is None or value == "":
-        return (1, "")
-    return (0, value)
