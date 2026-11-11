@@ -160,6 +160,35 @@ def run(cmd: list, env: dict | None = None) -> None:
     subprocess.run(cmd, check=True, env=env)
 
 
+# Thin 64-bit and fat (universal) Mach-O headers, as the first four bytes on disk
+_MACHO_MAGICS = (b'\xcf\xfa\xed\xfe', b'\xca\xfe\xba\xbe')
+
+
+def _strip_macos_bundle(app: Path) -> None:
+    """Strip local symbols from every Mach-O file in app, then re-sign it.
+
+    The wheels ship their extensions unstripped, which adds about 88 MB,
+    39 MB of it in the polars runtime alone. strip -x keeps the global
+    symbols that dlopen and the Python C API resolve. Stripping invalidates
+    the signature Nuitka wrote, so the bundle is re-signed ad hoc with the
+    flags Nuitka uses.
+    """
+    machos = []
+    for path in app.rglob('*'):
+        if path.is_file() and not path.is_symlink():
+            with path.open('rb') as f:
+                if f.read(4) in _MACHO_MAGICS:
+                    machos.append(path)
+    before = sum(p.stat().st_size for p in machos)
+    # Captured, since strip warns once per file that the signature becomes invalid
+    result = subprocess.run(['strip', '-x', *machos], capture_output=True, text=True)
+    if result.returncode:
+        raise SystemExit(f'strip failed:\n{result.stderr}')
+    after = sum(p.stat().st_size for p in machos)
+    print(f'  Stripped {len(machos)} Mach-O files: {(before - after) // 2**20} MB saved')
+    run(['codesign', '--force', '--deep', '--sign', '-', str(app)])
+
+
 def _create_dmg(app: Path, dmg: Path) -> None:
     """Pack app into dmg next to an Applications link, for drag-to-install.
 
@@ -492,6 +521,9 @@ def main(argv: list[str] | None = None) -> None:
     _run_nuitka(icon, app_version, installer, build_env)
     if not app_tree.is_dir():
         raise SystemExit(f'Expected {app_tree}, not found')
+    if sys.platform == 'darwin':
+        print('  Stripping symbols')
+        _strip_macos_bundle(app_tree)
 
     if stage == 'app':
         print('  Verifying bundled data files')
