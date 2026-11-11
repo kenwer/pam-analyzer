@@ -59,15 +59,30 @@ APPIMAGETOOL_SHA256 = {
 # Modules to pull in explicitly via --include-module, so the Qt libraries
 # backing map_picker.qml ship even though no Python code imports them.
 # These are the Python modules behind the QML file's own import lines
-# (QtQuick, QtQuick.Controls, QtLocation, QtPositioning). The QML namespace
-# names are not importable module names, and Nuitka rejects them.
+# (QtQuick, QtLocation, QtPositioning). The QML namespace names are not
+# importable module names, and Nuitka rejects them.
 MODULES: tuple[str, ...] = (
     'PySide6.QtQml',
     'PySide6.QtQuick',
-    'PySide6.QtQuickControls2',
     'PySide6.QtQuickWidgets',
     'PySide6.QtLocation',
     'PySide6.QtPositioning',
+)
+
+# The QML modules map_picker.qml loads, as paths below PySide6's qml folder.
+# --include-qt-plugins=qml copies the whole folder, and every QML plugin in it
+# drags in its Qt libraries, about 90 MB of Qt3D, Quick3D, Controls styles,
+# VirtualKeyboard and the like. Everything not listed here is left out.
+# Qt/labs/animation is imported by QtLocation's MapView.qml.
+QML_MODULES: tuple[str, ...] = (
+    'QtQml',
+    'QtQml/Models',
+    'QtQml/WorkerScript',
+    'QtQuick',
+    'QtQuick/Window',
+    'QtLocation',
+    'QtPositioning',
+    'Qt/labs/animation',
 )
 
 # Extra data files to bundle via --include-data-files.
@@ -101,6 +116,38 @@ def _app_version(python: Path) -> str:
         check=True, capture_output=True, text=True,
     )
     return result.stdout.strip()
+
+
+def _qml_exclusions(python: Path) -> tuple[Path, list[str]]:
+    """PySide6's qml folder and the folders below it that hold none of QML_MODULES.
+
+    Asks Qt for the folder, since the wheels put it at PySide6/qml on
+    Windows and at PySide6/Qt/qml elsewhere.
+    """
+    result = subprocess.run(
+        [
+            str(python), '-c',
+            'from PySide6.QtCore import QLibraryInfo as L; print(L.path(L.LibraryPath.QmlImportsPath))',
+        ],
+        check=True, capture_output=True, text=True,
+    )
+    qml_dir = Path(result.stdout.strip())
+    missing = [m for m in QML_MODULES if not (qml_dir / m).is_dir()]
+    if missing:
+        raise SystemExit(f'QML modules not found below {qml_dir}: {", ".join(missing)}')
+    ancestors = {parent.as_posix() for m in QML_MODULES for parent in Path(m).parents} - {'.'}
+    excluded = []
+
+    def walk(folder: Path) -> None:
+        for child in sorted(p for p in folder.iterdir() if p.is_dir()):
+            relative = child.relative_to(qml_dir).as_posix()
+            if relative in QML_MODULES or relative in ancestors:
+                walk(child)
+            else:
+                excluded.append(relative)
+
+    walk(qml_dir)
+    return qml_dir, excluded
 
 
 def _numeric_version(app_version: str) -> str:
@@ -439,6 +486,14 @@ def _run_nuitka(icon: Path, app_version: str, installer: Path, build_env: dict[s
         f'--output-filename={binary_name}',
     ]
     cmd += [f'--include-module={module}' for module in MODULES]
+    # Nuitka bundles PySide6's qml folder at PySide6/qml on every platform.
+    # The plugin stops the left-out QML plugins from adding the Qt libraries
+    # they link, which Nuitka would otherwise still bundle.
+    qml_dir, qml_excluded = _qml_exclusions(_venv_python())
+    for folder in qml_excluded:
+        cmd += [f'--noinclude-data-files=PySide6/qml/{folder}/*', f'--noinclude-dlls=PySide6/qml/{folder}/*']
+    cmd.append(f'--user-plugin={PACKAGING_DIR / "nuitka_qml_plugin.py"}')
+    build_env['PAM_QML_EXCLUDED'] = os.pathsep.join(str(qml_dir / folder) for folder in qml_excluded)
     cmd += [f'--include-data-files={src}={dest}' for src, dest in DATA]
     if is_mac:
         cmd += [
