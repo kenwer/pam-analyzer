@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.14"
 # dependencies = []
 # ///
 """Install a release installer on a clean CI runner and check the app starts.
@@ -18,13 +18,16 @@ Usage:
     uv run --script scripts/smoke_test_installer.py dist/PAM-Analyzer-windows-x86_64-setup.exe
 """
 
+import contextlib
 import os
 import signal
 import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Iterator
 from pathlib import Path
+from typing import BinaryIO
 
 APP_NAME = 'PAM Analyzer'
 FILE_NAME = 'PAM-Analyzer'
@@ -64,12 +67,37 @@ def log_offset() -> int:
     return log.stat().st_size if log.exists() else 0
 
 
-def start_app(exe: Path) -> subprocess.Popen:
+def start_app(exe: Path, output: BinaryIO) -> subprocess.Popen:
     print(f'Starting {exe}', flush=True)
+    streams = {'stdout': output, 'stderr': subprocess.STDOUT}
     # A new process group, so stopping it also stops the AppImage runtime's child
     if sys.platform == 'win32':
-        return subprocess.Popen([str(exe)], env=APP_ENV, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
-    return subprocess.Popen([str(exe)], env=APP_ENV, start_new_session=True)
+        return subprocess.Popen([str(exe)], env=APP_ENV, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP, **streams)
+    return subprocess.Popen([str(exe)], env=APP_ENV, start_new_session=True, **streams)
+
+
+@contextlib.contextmanager
+def running_app(exe: Path) -> Iterator[subprocess.Popen]:
+    """Start exe headless, stop it on exit, and print its console output if the block fails.
+
+    A crash during startup imports happens before logging is set up, so only
+    the console output shows its traceback. The Windows exe is a GUI subsystem
+    program and writes to no stream CI sees unless it gets redirected handles.
+    A file rather than a pipe, so DEBUG output can never fill it and block the app.
+    """
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        output = Path(tmp) / 'app-output.txt'
+        with output.open('wb') as f:
+            proc = start_app(exe, f)
+        try:
+            yield proc
+        except BaseException:
+            stop_app(proc)
+            text = output.read_text(encoding='utf-8', errors='replace').strip()
+            print(f'App console output:\n{text or "(empty)"}', file=sys.stderr, flush=True)
+            raise
+        finally:
+            stop_app(proc)
 
 
 def stop_app(proc: subprocess.Popen) -> None:
@@ -120,11 +148,8 @@ def check_log_clean(offset: int) -> None:
 def check_starts(exe: Path) -> None:
     """Start exe headless and wait until its log shows it started, then stop it."""
     offset = log_offset()
-    proc = start_app(exe)
-    try:
+    with running_app(exe) as proc:
         wait_until_started(offset, proc)
-    finally:
-        stop_app(proc)
     check_log_clean(offset)
 
 
@@ -141,8 +166,7 @@ def smoke_windows(installer: Path) -> None:
 
     # The update as the app runs it: Setup starts while the app still runs
     offset = log_offset()
-    app = start_app(exe)
-    try:
+    with running_app(exe) as app:
         wait_until_started(offset, app)
         stale = instdir / 'stale-from-previous-version.txt'
         stale.write_text('should not survive an update')
@@ -154,8 +178,6 @@ def smoke_windows(installer: Path) -> None:
             raise SystemExit(f'Setup exited with code {setup.returncode} instead of waiting for the app')
         print('  Setup is waiting for the app', flush=True)
         relaunch_offset = log_offset()
-    finally:
-        stop_app(app)
     if setup.wait(timeout=900) != 0:
         raise SystemExit(f'Update setup exited with code {setup.returncode}')
     if stale.exists():
