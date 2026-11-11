@@ -10,6 +10,12 @@ from pathlib import Path
 # Windows is covered by infrastructure/onnx_telemetry, which also reaches the workers
 os.environ.setdefault("ORT_DISABLE_TELEMETRY", "1")
 
+# PySide6 before ..domain pulls in polars, or the frozen build recurses in PySide's import hook
+import shiboken6  # noqa: E402
+from PySide6.QtCore import QTimer  # noqa: E402
+from PySide6.QtGui import QAction, QIcon  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
+
 from ..domain import paths  # noqa: E402
 
 
@@ -27,11 +33,6 @@ def _configure_frozen_model_dir() -> None:
 
 
 _configure_frozen_model_dir()
-
-import shiboken6  # noqa: E402
-from PySide6.QtCore import QTimer  # noqa: E402
-from PySide6.QtGui import QAction, QIcon  # noqa: E402
-from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from .. import __version__  # noqa: E402
 from ..domain import logging_setup  # noqa: E402

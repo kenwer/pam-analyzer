@@ -1,7 +1,7 @@
-"""Startup guards in the entry module, each checked in a subprocess.
+"""Startup guards in the entry modules, each checked in a subprocess.
 
-Both failure modes end the process outright, so neither can be observed from
-inside the test process.
+The failure modes either end the process outright or depend on a fresh
+import state, so none can be observed from inside the test process.
 """
 
 import subprocess
@@ -63,6 +63,35 @@ def test_entry_module_is_inert_when_reexecuted_as_a_spawn_worker():
     assert "INERT" in result.stdout, (
         f"entry module ran its launch path when re-executed as a worker.\n"
         f"exit={result.returncode}\nstdout={result.stdout}\nstderr={result.stderr}"
+    )
+
+
+def test_app_module_loads_pyside_before_polars():
+    """PySide6 is imported before polars starts loading.
+
+    PySide's import hook inspects each module once, and polars' module
+    __getattr__ imports again while that check runs. CPython guards the
+    re-entry, but Nuitka-compiled code does not, so a frozen build that loaded
+    polars first dies with RecursionError at startup. A source run never
+    shows it. Run in a subprocess for a fresh sys.modules.
+    """
+    result = _run_script(
+        """
+        import sys
+
+        class Watch:
+            def find_spec(self, name, path=None, target=None):
+                if name == "polars":
+                    print("PYSIDE_FIRST" if "PySide6.QtCore" in sys.modules else "POLARS_FIRST")
+                    sys.meta_path.remove(self)
+
+        sys.meta_path.insert(0, Watch())
+        import pam_analyzer.app.__main__
+        """
+    )
+    assert result.returncode == 0, f"import failed.\nstdout={result.stdout}\nstderr={result.stderr}"
+    assert "PYSIDE_FIRST" in result.stdout, (
+        f"polars started loading before PySide6.QtCore.\nstdout={result.stdout}"
     )
 
 
