@@ -93,7 +93,7 @@ def attach_updater(window: MainWindow, settings: AppSettings, compiled: bool) ->
     # triggered, not toggled, so the setChecked above writes nothing back
     startup_check.triggered.connect(store)
     window.ui.menu_help.insertAction(window.ui.action_about, startup_check)
-    window.ui.status_bar.addPermanentWidget(updater.status_link)
+    window.ui.status_bar.addPermanentWidget(updater.status_button)
     return updater
 
 

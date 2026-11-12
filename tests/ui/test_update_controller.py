@@ -1,6 +1,5 @@
 """UpdateController against fake feed and install functions on real worker threads."""
 
-import re
 from collections.abc import Callable
 from pathlib import Path
 
@@ -60,10 +59,6 @@ def _link(toasts, index: int, label: str) -> Callable[[], None]:
     return dict(toasts[index][3].get("links", ()))[label]
 
 
-def _link_text(controller: UpdateController) -> str:
-    return re.sub(r"<[^>]+>", "", controller.status_link.text())
-
-
 def _record_dialogs(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     opened: list[str] = []
 
@@ -102,7 +97,7 @@ def test_startup_check_failure_shows_nothing(qtbot, window, monkeypatch, toasts)
     controller.check()
     qtbot.waitUntil(lambda: controller.state is UpdateState.IDLE)
     assert toasts == []
-    assert controller.status_link.isHidden()
+    assert controller.status_button.isHidden()
 
 
 def test_startup_check_with_update_shows_link_menu_text_and_toast(qtbot, window, monkeypatch, toasts, tmp_path) -> None:
@@ -111,8 +106,8 @@ def test_startup_check_with_update_shows_link_menu_text_and_toast(qtbot, window,
     controller = _controller(window, linux_install(tmp_path))
     controller.check()
     qtbot.waitUntil(lambda: controller.state is UpdateState.AVAILABLE and bool(toasts))
-    assert not controller.status_link.isHidden()
-    assert _link_text(controller) == "Update to 0.9.0"
+    assert not controller.status_button.isHidden()
+    assert controller.status_button.text() == "Update to 0.9.0"
     assert controller.action.text() == "Update to 0.9.0..."
     assert [(kind, title, text) for kind, title, text, _kw in toasts] == [
         ("information", "Update available", "PAM Analyzer 0.9.0 is available.")
@@ -130,12 +125,12 @@ def test_whats_new_link_opens_the_update_dialog(qtbot, window, monkeypatch, toas
     assert opened == ["0.9.0"]
 
 
-def test_clicking_the_status_link_opens_the_update_dialog(window, monkeypatch) -> None:
+def test_clicking_the_status_button_opens_the_update_dialog(window, monkeypatch) -> None:
     opened = _record_dialogs(monkeypatch)
     controller = _controller(window, None)
     controller._update = UPDATE
     controller._set_state(UpdateState.AVAILABLE)
-    controller.status_link.linkActivated.emit("#")
+    controller.status_button.click()
     assert opened == ["0.9.0"]
 
 
@@ -163,7 +158,7 @@ def test_staged_payload_from_last_session_goes_straight_to_ready(qtbot, window, 
     controller = _controller(window, linux_install(tmp_path))
     controller.check()
     qtbot.waitUntil(lambda: controller.state is UpdateState.READY)
-    assert _link_text(controller) == "Install and relaunch"
+    assert controller.status_button.text() == "Install and relaunch"
     # Announced as ready only, never first as merely available
     assert _titles(toasts) == ["Update ready"]
     applied: list = []
@@ -315,12 +310,12 @@ def test_restart_waits_for_other_instances_on_windows(window, monkeypatch, toast
     assert [(kind, title) for kind, title, _text, _kw in toasts] == [("error", "PAM Analyzer is open twice")]
 
 
-def test_attach_updater_places_the_action_and_link(window, monkeypatch) -> None:
+def test_attach_updater_places_the_action_and_button(window, monkeypatch) -> None:
     controller = attach_updater(window, AppSettings(), compiled=False)
     texts = [a.text() for a in window.ui.menu_help.actions()]
     assert texts.index("Check for Updates...") < texts.index(STARTUP_CHECK_TEXT)
     assert texts.index(STARTUP_CHECK_TEXT) < texts.index(window.ui.action_about.text())
-    assert controller.status_link.parent() is window.ui.status_bar
+    assert controller.status_button.parent() is window.ui.status_bar
     assert controller.block_reason() == NO_INSTALL_REASON
 
 

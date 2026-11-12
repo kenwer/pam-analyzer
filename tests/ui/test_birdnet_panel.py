@@ -506,10 +506,10 @@ def test_download_link_downloads_in_the_background(qtbot, missing_panel: BirdNet
     missing_panel._model_status.downloadRequested.emit()
     qtbot.waitUntil(lambda: _status(missing_panel) == "Downloading model 3 / 10 MB", timeout=5000)
     assert missing_panel.ui.model_combo.isEnabled()
-    assert ">Cancel</a>" in missing_panel._model_status.action_label.text()
+    assert missing_panel._model_status.action_button.text() == "Cancel"
     missing_panel._runner.release.set()
     qtbot.waitUntil(lambda: _status(missing_panel) == "", timeout=5000)
-    assert missing_panel._model_status.action_label.isHidden()
+    assert missing_panel._model_status.action_button.isHidden()
 
 
 def test_switching_engines_keeps_each_download_running(qtbot, missing_panel: BirdNetPanel):
@@ -542,7 +542,7 @@ def test_failed_download_toasts_and_offers_the_link_again(qtbot, missing_panel: 
     assert title == "Model download failed"
     assert "503" in text
     assert _status(missing_panel) == "Model not downloaded (5 MB)"
-    assert ">Download now</a>" in missing_panel._model_status.action_label.text()
+    assert missing_panel._model_status.action_button.text() == "Download now"
 
 
 def test_run_takes_over_a_background_download(qtbot, missing_panel: BirdNetPanel):

@@ -2,8 +2,8 @@
 
 import math
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QProgressBar, QWidget
+from PySide6.QtCore import Signal, SignalInstance
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QProgressBar, QPushButton, QWidget
 
 _MB = 1024 * 1024
 
@@ -22,10 +22,10 @@ class ModelStatusWidget(QWidget):
         super().__init__(parent)
         self.status_label = QLabel()
         self.status_label.setStyleSheet("color: palette(placeholder-text);")
-        self.action_label = QLabel()
-        self.action_label.setTextFormat(Qt.TextFormat.RichText)
-        self.action_label.linkActivated.connect(self._on_link)
-        self.action_label.hide()
+        self.action_button = QPushButton()
+        self.action_button.clicked.connect(self._on_action)
+        self.action_button.hide()
+        self._action: SignalInstance | None = None
         self.progress_bar = QProgressBar()
         self.progress_bar.setTextVisible(False)
         self.progress_bar.setMaximumHeight(6)
@@ -36,13 +36,13 @@ class ModelStatusWidget(QWidget):
         row.setContentsMargins(0, 0, 0, 0)
         row.addWidget(self.status_label)
         row.addWidget(self.progress_bar)
-        row.addWidget(self.action_label)
+        row.addWidget(self.action_button)
         row.addStretch()
 
     def show_model(self, missing_bytes: int) -> None:
         if missing_bytes > 0:
             self.status_label.setText(f"Model not downloaded ({to_mb(missing_bytes)} MB)")
-            self._set_action("download", "Download now")
+            self._set_action(self.downloadRequested, "Download now")
         else:
             self.status_label.clear()  # an installed model needs no mention
             self._set_action(None)
@@ -53,15 +53,16 @@ class ModelStatusWidget(QWidget):
         done_mb, total_mb = to_mb(done), to_mb(total)
         # No total yet: queued behind another engine's install
         self.status_label.setText(f"Downloading model {done_mb} / {total_mb} MB" if total else "Waiting to download")
-        self._set_action("cancel", "Cancel")
+        self._set_action(self.cancelRequested, "Cancel")
         self.progress_bar.setRange(0, max(total_mb, 1))
         self.progress_bar.setValue(min(done_mb, total_mb))
         self.progress_bar.show()
 
-    def _set_action(self, href: str | None, text: str = "") -> None:
-        self.action_label.setVisible(href is not None)
-        if href is not None:
-            self.action_label.setText(f'<a href="{href}">{text}</a>')
+    def _set_action(self, signal: SignalInstance | None, text: str = "") -> None:
+        self._action = signal
+        self.action_button.setText(text)
+        self.action_button.setVisible(signal is not None)
 
-    def _on_link(self, href: str) -> None:
-        (self.downloadRequested if href == "download" else self.cancelRequested).emit()
+    def _on_action(self) -> None:
+        if self._action is not None:
+            self._action.emit()

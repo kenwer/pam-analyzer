@@ -32,28 +32,28 @@ def test_show_model_hides_progress_again(qtbot) -> None:
     assert w.progress_bar.isHidden()
 
 
-def test_not_downloaded_offers_a_download_link(qtbot) -> None:
+def test_not_downloaded_offers_a_download_button(qtbot) -> None:
     w = _widget(qtbot)
     w.show_model(430_000_000)
-    assert not w.action_label.isHidden()
-    assert ">Download now</a>" in w.action_label.text()
+    assert not w.action_button.isHidden()
+    assert w.action_button.text() == "Download now"
     with qtbot.waitSignal(w.downloadRequested, timeout=1000):
-        w.action_label.linkActivated.emit("download")
+        w.action_button.click()
 
 
-def test_downloaded_offers_no_link(qtbot) -> None:
+def test_downloaded_offers_no_button(qtbot) -> None:
     w = _widget(qtbot)
     w.show_model(0)
     assert w.status_label.text() == ""
-    assert w.action_label.isHidden()
+    assert w.action_button.isHidden()
 
 
 def test_background_download_offers_cancel(qtbot) -> None:
     w = _widget(qtbot)
     w.show_download(1, 2)
-    assert ">Cancel</a>" in w.action_label.text()
+    assert w.action_button.text() == "Cancel"
     with qtbot.waitSignal(w.cancelRequested, timeout=1000):
-        w.action_label.linkActivated.emit("cancel")
+        w.action_button.click()
 
 
 def test_download_without_a_total_is_waiting_its_turn(qtbot) -> None:
@@ -61,4 +61,4 @@ def test_download_without_a_total_is_waiting_its_turn(qtbot) -> None:
     w = _widget(qtbot)
     w.show_download(0, 0)
     assert w.status_label.text() == "Waiting to download"
-    assert ">Cancel</a>" in w.action_label.text()
+    assert w.action_button.text() == "Cancel"

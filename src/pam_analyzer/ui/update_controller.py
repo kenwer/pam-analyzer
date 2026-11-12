@@ -9,9 +9,9 @@ import logging
 from enum import Enum, auto
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Qt, QUrl, SignalInstance, Slot
+from PySide6.QtCore import QObject, QUrl, SignalInstance, Slot
 from PySide6.QtGui import QAction, QDesktopServices
-from PySide6.QtWidgets import QLabel, QMessageBox, QWidget
+from PySide6.QtWidgets import QApplication, QMessageBox, QToolButton, QWidget
 
 from ..infrastructure.update.feed import Update
 from ..infrastructure.update.install import AppInstall, required_space
@@ -58,11 +58,11 @@ class UpdateController(QObject):
         self.action = QAction("Check for Updates...", window)
         self.action.triggered.connect(self._activate)
         # Parented, so it never shows as a window of its own before being placed
-        self.status_link = QLabel(window)
-        self.status_link.setTextFormat(Qt.TextFormat.RichText)
-        self.status_link.setContentsMargins(4, 0, 4, 0)
-        self.status_link.linkActivated.connect(self._activate)
-        self.status_link.hide()
+        # A QPushButton's macOS bezel would nearly double the status bar's height
+        self.status_button = QToolButton(window)
+        self.status_button.setFont(QApplication.font())  # QToolButton defaults to a 10pt font on macOS
+        self.status_button.clicked.connect(self._activate)
+        self.status_button.hide()
 
     @property
     def state(self) -> UpdateState:
@@ -190,7 +190,7 @@ class UpdateController(QObject):
     @Slot(object, object)
     def _on_progress(self, done: int, total: int) -> None:
         if self._state is UpdateState.DOWNLOADING and total:
-            self._set_link_text(f"Downloading {self._version}: {100 * done // total}%")
+            self._set_status_text(f"Downloading {self._version}: {100 * done // total}%")
 
     @Slot(object)
     def _on_downloaded(self, payload: Path) -> None:
@@ -213,7 +213,7 @@ class UpdateController(QObject):
         self._set_state(UpdateState.AVAILABLE)
 
     def _activate(self) -> None:
-        """The menu action or the status bar link was clicked."""
+        """The menu action or the status bar button was clicked."""
         if self._state is UpdateState.AVAILABLE:
             self.show_dialog()
         elif self._state is UpdateState.READY:
@@ -225,10 +225,9 @@ class UpdateController(QObject):
         else:
             self.check(manual=True)
 
-    def _set_link_text(self, text: str) -> None:
-        # The href is unused, linkActivated only needs an anchor to click
-        self.status_link.setText(f'<a href="#">{text}</a>' if text else "")
-        self.status_link.setVisible(bool(text))
+    def _set_status_text(self, text: str) -> None:
+        self.status_button.setText(text)
+        self.status_button.setVisible(bool(text))
 
     def _set_state(self, state: UpdateState) -> None:
         self._state = state
@@ -238,7 +237,7 @@ class UpdateController(QObject):
             UpdateState.DOWNLOADING: (f"Downloading {version}...", "Downloading Update..."),
             UpdateState.READY: ("Install and relaunch", "Install and Relaunch"),
         }
-        link_text, action_text = texts.get(state, ("", "Check for Updates..."))
-        self._set_link_text(link_text)
+        status_text, action_text = texts.get(state, ("", "Check for Updates..."))
+        self._set_status_text(status_text)
         self.action.setText(action_text)
         self.action.setEnabled(state not in (UpdateState.CHECKING, UpdateState.DOWNLOADING))

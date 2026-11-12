@@ -9,6 +9,7 @@
   - The keyboard shortcuts list shows only the keys for the platform the app runs on.
   - The keyboard shortcuts moved from `SHORTCUTS.md` into the README.
 - Clicking the "Campaigns" header on the Campaigns panel shows the overview of all campaigns.
+- Downloading a model and updating the app use buttons, and links only open web pages or folders.
 - [Dev] Remove unused internal code.
 - [Dev] Cleanup the test suite and drop low-signal tests.
 ### Fixed
