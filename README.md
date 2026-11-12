@@ -5,7 +5,6 @@ Automated bird species detection from acoustic recordings.
 
 - [About](#about)
 - [Download](#download)
-  - [Code signing policy](#code-signing-policy)
 - [Features](#features)
 - [Usage](#usage)
   - [Migrating legacy projects](#migrating-legacy-projects)
@@ -52,12 +51,6 @@ Installers are available for the following platforms:
 * Linux (aarch64): [PAM-Analyzer-linux-aarch64.AppImage](https://github.com/kenwer/pam-analyzer/releases/latest/download/PAM-Analyzer-linux-aarch64.AppImage)
 
 Note: On any supported OS you can also easily run PAM Analyzer from source using `uv run poe run`
-
-### Code signing policy
-Free code signing for the Windows installer and app provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
-
-* Committers and reviewers: [Ken Werner](https://github.com/kenwer)
-* Approvers: [Ken Werner](https://github.com/kenwer)
 
 
 ## Features
