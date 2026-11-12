@@ -11,6 +11,7 @@
 - [Dev] Remove unused internal code.
 - [Dev] Cleanup the test suite and drop low-signal tests.
 ### Fixed
+- Opening a project shows the Campaigns panel overview instead of a campaign's details.
 - The Analyze panel no longer overcounts detections whose comment spans several lines.
 
 ## [0.10.0] - 2026-11-11

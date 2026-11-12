@@ -92,7 +92,7 @@ class CampaignsPanel(QWidget):
 
         # campaign_list is a DeselectableListView (promoted in the .ui): clicking
         # empty space clears the selection, which returns to the overview via
-        # _on_selection_cleared.
+        # _on_selection_changed.
         self.ui.campaign_list.setModel(self._model)
         self.ui.campaign_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
 
@@ -109,8 +109,7 @@ class CampaignsPanel(QWidget):
 
         self.ui.new_button.clicked.connect(self._on_new)
         selection = self.ui.campaign_list.selectionModel()
-        selection.currentChanged.connect(self._on_selection_changed)
-        selection.selectionChanged.connect(self._on_selection_cleared)
+        selection.selectionChanged.connect(self._on_selection_changed)
         self.ui.campaign_list.customContextMenuRequested.connect(self._on_context_menu)
         self.ui.campaign_list.clicked.connect(self._on_list_clicked)
 
@@ -134,11 +133,13 @@ class CampaignsPanel(QWidget):
 
     # AppState reactions
 
-    def _on_project_changed(self, project: object) -> None:
-        if project is None:
-            self._campaigns = []
-            self._model.removeRows(0, self._model.rowCount())
-            self._show_overview()
+    def _on_project_changed(self, _project: object) -> None:
+        # projectChanged precedes campaignsChanged, so the list still holds the
+        # previous project's campaigns. Drop them and land on the overview,
+        # which the campaignsChanged refresh then fills in.
+        self._campaigns = []
+        self._model.removeRows(0, self._model.rowCount())
+        self._return_to_overview()
 
     def _rebuild_list(self, campaigns: list[Campaign]) -> None:
         self._campaigns = campaigns
@@ -150,6 +151,13 @@ class CampaignsPanel(QWidget):
         """Enter the empty page, first refreshing its all-campaigns overview."""
         self._detail.set_overview(self._overview_entries())
         self._detail.show_empty()
+
+    def _return_to_overview(self) -> None:
+        """Deselect the list and show the overview, building it only once."""
+        if self.ui.campaign_list.selectionModel().hasSelection():
+            self.ui.campaign_list.clearSelection()  # routes through _on_selection_changed
+        else:
+            self._show_overview()
 
     def _refresh_overview_if_visible(self, *_args) -> None:
         # Connected to campaignsChanged (list) and audioInventoryChanged (object);
@@ -234,34 +242,33 @@ class CampaignsPanel(QWidget):
         self.ui.campaign_list.clearSelection()
         self._detail.open_new(self._existing_names())
 
-    def _on_selection_changed(self, current, previous) -> None:
+    def _on_selection_changed(self, _selected, deselected) -> None:
+        # Driven by the selection, not currentChanged: when the list gains focus
+        # Qt makes the first row current without selecting it, and that must not
+        # open the campaign over the overview.
         if self._reverting_selection:
             return
-        new_campaign = self._campaign_at(current)
-        if new_campaign is not None and self._detail.is_busy():
+        campaign = self._selected_campaign()
+        if campaign is None:
+            self._show_overview()
+            return
+        if self._detail.is_busy():
             if not self._confirm_stop_watching():
-                self._reverting_selection = True
-                try:
-                    self.ui.campaign_list.setCurrentIndex(previous)
-                finally:
-                    self._reverting_selection = False
+                self._revert_selection(deselected)
                 return
             self._detail.request_shutdown()
+        self._open_view(campaign)
 
-        # The empty-selection case (returning to the overview) is handled by
-        # _on_selection_cleared, so here we only open the now-current campaign.
-        if new_campaign is not None:
-            self._open_view(new_campaign)
-
-    def _on_selection_cleared(self, _selected, _deselected) -> None:
-        # Deselecting a campaign returns to the overview. currentChanged doesn't
-        # fire when the selection is merely cleared (the current item stays put),
-        # so this is the single place that reacts to "nothing selected". Guarded
-        # against the synthetic re-select the busy-switch revert performs.
-        if self._reverting_selection:
-            return
-        if not self.ui.campaign_list.selectionModel().hasSelection():
-            self._show_overview()
+    def _revert_selection(self, deselected) -> None:
+        previous = deselected.indexes()
+        self._reverting_selection = True
+        try:
+            if previous:
+                self.ui.campaign_list.setCurrentIndex(previous[0])
+            else:
+                self.ui.campaign_list.clearSelection()
+        finally:
+            self._reverting_selection = False
 
     def _open_view(self, campaign: Campaign) -> None:
         self._detail.open_view(
@@ -328,8 +335,7 @@ class CampaignsPanel(QWidget):
             # The filesystem can hand back a differently spelled folder name
             # (e.g. HFS+ drives store Unicode names in NFD form). The create
             # succeeded, so close the form and fall back to the overview.
-            self.ui.campaign_list.clearSelection()
-            self._show_overview()
+            self._return_to_overview()
 
     def _on_update_requested(
         self,
@@ -348,8 +354,7 @@ class CampaignsPanel(QWidget):
             QMessageBox.warning(self, "Rename failed", str(exc))
             return
         if not self._select_by_name(new_name):
-            self.ui.campaign_list.clearSelection()
-            self._show_overview()
+            self._return_to_overview()
 
     def _on_delete_requested(self, campaign: Campaign) -> None:
         self._app_state.delete_campaign(campaign)
@@ -359,14 +364,13 @@ class CampaignsPanel(QWidget):
         # Cancel closes the detail view and deselects the list item,
         # returning to the overview. Re-clicking the same item re-opens
         # the view page via _on_list_clicked.
-        self.ui.campaign_list.clearSelection()
-        self._show_overview()
+        self._return_to_overview()
 
     def _on_list_clicked(self, index) -> None:
         # Re-open the view page when the user clicks on an already-selected
         # item (currentChanged doesn't fire in that case). A Ctrl/Cmd+click
         # that deselects the item leaves it unselected, so skip and let
-        # _on_selection_cleared keep the overview shown.
+        # _on_selection_changed keep the overview shown.
         if not self.ui.campaign_list.selectionModel().isSelected(index):
             return
         campaign = self._campaign_at(index)
@@ -434,7 +438,7 @@ class CampaignsPanel(QWidget):
     def _on_escape(self) -> None:
         # Only from a campaign's read-only details; leave editing/confirm and
         # the already-shown overview untouched. Clearing the selection routes
-        # back to the overview via _on_selection_cleared.
+        # back to the overview via _on_selection_changed.
         if self._detail.is_showing_view():
             self.ui.campaign_list.clearSelection()
 

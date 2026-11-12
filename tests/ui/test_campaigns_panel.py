@@ -702,6 +702,35 @@ def test_escape_ignored_while_editing(qtbot, panel: CampaignsPanel):
     assert panel._detail.ui.stack.currentWidget() is panel._detail.ui.form_page
 
 
+def test_list_focus_keeps_overview(qtbot, panel: CampaignsPanel):
+    """Focusing the list makes the first row current without selecting it, which must not open it."""
+    panel.show()
+    panel.activateWindow()
+    panel.ui.campaign_list.setFocus(Qt.FocusReason.TabFocusReason)
+    qtbot.waitUntil(lambda: panel.ui.campaign_list.currentIndex().isValid(), timeout=1000)
+    assert not panel.ui.campaign_list.selectionModel().hasSelection()
+    assert panel._detail.ui.stack.currentWidget() is panel._detail.ui.empty_page
+
+
+def test_loading_another_project_shows_overview(
+    qtbot, panel: CampaignsPanel, state: AppState, load_project, tmp_path: Path
+):
+    """A project load lands on the overview even if a campaign of the previous project was open."""
+    panel.ui.campaign_list.setCurrentIndex(panel._model.index(0, 0))
+    assert panel._detail.ui.stack.currentWidget() is panel._detail.ui.view_page
+
+    other = tmp_path / "other"
+    other.mkdir()
+    Project(folder=other).save()
+    _add_campaign(Project(folder=other), "gamma")
+    load_project(state, other)
+
+    assert panel._model.item(0).text() == "gamma"
+    assert not panel.ui.campaign_list.selectionModel().hasSelection()
+    assert panel._detail.ui.stack.currentWidget() is panel._detail.ui.empty_page
+    qtbot.waitUntil(lambda: "gamma" in panel._detail.ui.overview_label.text(), timeout=1000)
+
+
 def test_overview_includes_campaign_without_audio(panel: CampaignsPanel):
     """A campaign with no imported audio still appears, flagged as empty."""
     text = panel._detail.ui.overview_label.text()
