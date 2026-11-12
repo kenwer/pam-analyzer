@@ -10,6 +10,8 @@
   - The keyboard shortcuts moved from `SHORTCUTS.md` into the README.
 - [Dev] Remove unused internal code.
 - [Dev] Cleanup the test suite and drop low-signal tests.
+### Fixed
+- The Analyze panel no longer overcounts detections whose comment spans several lines.
 
 ## [0.10.0] - 2026-11-11
 ### Added

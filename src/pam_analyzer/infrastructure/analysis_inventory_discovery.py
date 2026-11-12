@@ -8,6 +8,8 @@ not a run event, so it carries no outcome.
 
 from pathlib import Path
 
+import polars as pl
+
 from ..domain import AnalysisInventory, AnalysisInventoryEntry, paths
 from ..domain import detection_schema as schema
 
@@ -54,10 +56,15 @@ def _optional(path: Path) -> Path | None:
 
 
 def _count_csv_rows(path: Path) -> int:
-    """Count data rows (excludes header). Streaming so it works on big CSVs."""
+    """Count data rows (excludes header) as read_detections_csv parses them.
+
+    A comment edited in the Examine grid can hold newlines inside a quoted
+    field, so counting physical lines would overstate the detections.
+    """
     try:
-        with open(path, "rb") as f:
-            total = sum(1 for _ in f)
-    except OSError:
+        if path.stat().st_size == 0:
+            return 0
+        frame = pl.scan_csv(path, infer_schema=False, truncate_ragged_lines=True)
+        return frame.select(pl.len()).collect().item()
+    except (OSError, pl.exceptions.PolarsError):
         return 0
-    return max(0, total - 1)
