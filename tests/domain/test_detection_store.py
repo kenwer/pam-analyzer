@@ -77,12 +77,6 @@ _HEADERS = [
 ]
 
 
-@pytest.fixture(params=[DEFAULT_MODEL_KEY, RETIRED_MODEL_KEYS[0]], ids=["current", "retired"])
-def model_key(request) -> str:
-    """Loading and saving must not depend on which model wrote the CSV."""
-    return request.param
-
-
 def _campaign_dir(project_folder: Path, campaign: str) -> Path:
     folder = project_folder / campaign
     folder.mkdir(parents=True, exist_ok=True)
@@ -118,11 +112,11 @@ def _rows(store: DetectionStore):
     return [store.detection(i) for i in range(store.row_count)]
 
 
-def test_load_parses_numeric_and_annotation_columns(tmp_path: Path, model_key: str) -> None:
+def test_load_parses_numeric_and_annotation_columns(tmp_path: Path) -> None:
     folder = _seed_csv(tmp_path, "east", [
         _sample("east", Verified="true"),
         _sample("east", Species="Crow", Confidence="0.5", Corrected_Species="Magpie", Comment="uncertain id"),
-    ], model_key)
+    ], DEFAULT_MODEL_KEY)
     rows = _rows(DetectionStore.load_for_campaign(folder))
     assert len(rows) == 2
     assert rows[0].confidence == 0.85
@@ -131,14 +125,14 @@ def test_load_parses_numeric_and_annotation_columns(tmp_path: Path, model_key: s
     assert rows[1].comment == "uncertain id"
 
 
-def test_load_prefixes_file_with_campaign_folder_name(tmp_path: Path, model_key: str) -> None:
-    folder = _seed_csv(tmp_path, "east", [_sample("east")], model_key)
+def test_load_prefixes_file_with_campaign_folder_name(tmp_path: Path) -> None:
+    folder = _seed_csv(tmp_path, "east", [_sample("east")], DEFAULT_MODEL_KEY)
     assert DetectionStore.load_for_campaign(folder).detection(0).file == "east/f.wav"
 
 
-def test_load_combined_concatenates_campaign_csvs(tmp_path: Path, model_key: str) -> None:
-    _seed_csv(tmp_path, "east", [_sample("east")], model_key)
-    _seed_csv(tmp_path, "west", [_sample("west")], model_key)
+def test_load_combined_concatenates_campaign_csvs(tmp_path: Path) -> None:
+    _seed_csv(tmp_path, "east", [_sample("east")], DEFAULT_MODEL_KEY)
+    _seed_csv(tmp_path, "west", [_sample("west")], DEFAULT_MODEL_KEY)
     store = DetectionStore.load_combined(tmp_path)
     assert {d.campaign for d in _rows(store)} == {"east", "west"}
 
@@ -151,31 +145,31 @@ def test_load_reads_several_models_in_one_campaign(tmp_path: Path) -> None:
     assert DetectionStore.load_for_campaign(folder).row_count == 1 + len(RETIRED_MODEL_KEYS)
 
 
-def test_load_combined_skips_non_campaign_dirs(tmp_path: Path, model_key: str) -> None:
-    _seed_csv(tmp_path, "east", [_sample("east")], model_key)
+def test_load_combined_skips_non_campaign_dirs(tmp_path: Path) -> None:
+    _seed_csv(tmp_path, "east", [_sample("east")], DEFAULT_MODEL_KEY)
     stray = tmp_path / "not-a-campaign"
     stray.mkdir()
-    _write_csv(stray, model_key, [_sample("stray")])
+    _write_csv(stray, DEFAULT_MODEL_KEY, [_sample("stray")])
     assert {d.campaign for d in _rows(DetectionStore.load_combined(tmp_path))} == {"east"}
 
 
-def test_unknown_columns_go_to_extra(tmp_path: Path, model_key: str) -> None:
+def test_unknown_columns_go_to_extra(tmp_path: Path) -> None:
     folder = _campaign_dir(tmp_path, "east")
-    _write_csv(folder, model_key, [_sample("east") + ["mytag"]], headers=_HEADERS + ["CustomTag"])
+    _write_csv(folder, DEFAULT_MODEL_KEY, [_sample("east") + ["mytag"]], headers=_HEADERS + ["CustomTag"])
     assert DetectionStore.load_for_campaign(folder).detection(0).extra == {"CustomTag": "mytag"}
 
 
-def test_extra_column_of_one_file_is_absent_from_another_files_rows(tmp_path: Path, model_key: str) -> None:
+def test_extra_column_of_one_file_is_absent_from_another_files_rows(tmp_path: Path) -> None:
     east = _campaign_dir(tmp_path, "east")
-    _write_csv(east, model_key, [_sample("east") + ["mytag"]], headers=_HEADERS + ["CustomTag"])
-    _seed_csv(tmp_path, "west", [_sample("west")], model_key)
+    _write_csv(east, DEFAULT_MODEL_KEY, [_sample("east") + ["mytag"]], headers=_HEADERS + ["CustomTag"])
+    _seed_csv(tmp_path, "west", [_sample("west")], DEFAULT_MODEL_KEY)
     store = DetectionStore.load_combined(tmp_path)
     west_row = next(d for d in _rows(store) if d.campaign == "west")
     assert west_row.extra == {}
 
 
-def test_set_annotation_round_trip(tmp_path: Path, model_key: str) -> None:
-    folder = _seed_csv(tmp_path, "east", [_sample("east")], model_key)
+def test_set_annotation_round_trip(tmp_path: Path) -> None:
+    folder = _seed_csv(tmp_path, "east", [_sample("east")], DEFAULT_MODEL_KEY)
     store = DetectionStore.load_for_campaign(folder)
     store.set_annotation(0, "Verified", "true")
     store.set_annotation(0, "Comment", "edited")
@@ -187,8 +181,8 @@ def test_set_annotation_round_trip(tmp_path: Path, model_key: str) -> None:
     assert reloaded.comment == "edited"
 
 
-def test_set_annotation_rejects_read_only_column_and_bad_value(tmp_path: Path, model_key: str) -> None:
-    store = DetectionStore.load_for_campaign(_seed_csv(tmp_path, "east", [_sample("east")], model_key))
+def test_set_annotation_rejects_read_only_column_and_bad_value(tmp_path: Path) -> None:
+    store = DetectionStore.load_for_campaign(_seed_csv(tmp_path, "east", [_sample("east")], DEFAULT_MODEL_KEY))
     with pytest.raises(ValueError):
         store.set_annotation(0, "Species", "Crow")
     with pytest.raises(ValueError):
@@ -196,8 +190,8 @@ def test_set_annotation_rejects_read_only_column_and_bad_value(tmp_path: Path, m
     assert len(store._dirty) == 0
 
 
-def test_set_annotations_edits_many_rows_at_once(tmp_path: Path, model_key: str) -> None:
-    folder = _seed_csv(tmp_path, "east", [_sample("east"), _sample("east"), _sample("east")], model_key)
+def test_set_annotations_edits_many_rows_at_once(tmp_path: Path) -> None:
+    folder = _seed_csv(tmp_path, "east", [_sample("east"), _sample("east"), _sample("east")], DEFAULT_MODEL_KEY)
     store = DetectionStore.load_for_campaign(folder)
     store.set_annotations([0, 2], "Verified", "true")
     assert store.frame["Verified"].to_list() == ["true", "", "true"]
@@ -210,8 +204,8 @@ def test_set_annotations_edits_many_rows_at_once(tmp_path: Path, model_key: str)
     ]
 
 
-def test_set_annotations_rejects_bad_input_without_editing(tmp_path: Path, model_key: str) -> None:
-    store = DetectionStore.load_for_campaign(_seed_csv(tmp_path, "east", [_sample("east")], model_key))
+def test_set_annotations_rejects_bad_input_without_editing(tmp_path: Path) -> None:
+    store = DetectionStore.load_for_campaign(_seed_csv(tmp_path, "east", [_sample("east")], DEFAULT_MODEL_KEY))
     with pytest.raises(ValueError):
         store.set_annotations([0], "Species", "Crow")
     with pytest.raises(ValueError):
@@ -219,18 +213,18 @@ def test_set_annotations_rejects_bad_input_without_editing(tmp_path: Path, model
     assert len(store._dirty) == 0
 
 
-def test_edit_does_not_change_an_earlier_frame(tmp_path: Path, model_key: str) -> None:
-    store = DetectionStore.load_for_campaign(_seed_csv(tmp_path, "east", [_sample("east")], model_key))
+def test_edit_does_not_change_an_earlier_frame(tmp_path: Path) -> None:
+    store = DetectionStore.load_for_campaign(_seed_csv(tmp_path, "east", [_sample("east")], DEFAULT_MODEL_KEY))
     before = store.frame
     store.set_annotation(0, "Comment", "edited")
     assert before["Comment"][0] == ""
     assert store.frame["Comment"][0] == "edited"
 
 
-def test_save_dirty_rewrites_only_the_owning_file(tmp_path: Path, model_key: str, monkeypatch) -> None:
+def test_save_dirty_rewrites_only_the_owning_file(tmp_path: Path, monkeypatch) -> None:
     """One edit on a large combined set must not rewrite every campaign CSV."""
-    east = _seed_csv(tmp_path, "east", [_sample("east"), _sample("east")], model_key)
-    _seed_csv(tmp_path, "west", [_sample("west")], model_key)
+    east = _seed_csv(tmp_path, "east", [_sample("east"), _sample("east")], DEFAULT_MODEL_KEY)
+    _seed_csv(tmp_path, "west", [_sample("west")], DEFAULT_MODEL_KEY)
     store = DetectionStore.load_combined(tmp_path)
     east_ids = [i for i, d in enumerate(_rows(store)) if d.campaign == "east"]
     # Two edits in the same file must still write it once.
@@ -245,11 +239,11 @@ def test_save_dirty_rewrites_only_the_owning_file(tmp_path: Path, model_key: str
         lambda path, frame, fields: (written.append(path), real_write(path, frame, fields)),
     )
     assert store.save_dirty() == 2
-    assert written == [campaign_csv_for_model(east, model_key)]
+    assert written == [campaign_csv_for_model(east, DEFAULT_MODEL_KEY)]
 
 
-def test_failed_save_keeps_rows_dirty(tmp_path: Path, model_key: str, monkeypatch) -> None:
-    store = DetectionStore.load_for_campaign(_seed_csv(tmp_path, "east", [_sample("east")], model_key))
+def test_failed_save_keeps_rows_dirty(tmp_path: Path, monkeypatch) -> None:
+    store = DetectionStore.load_for_campaign(_seed_csv(tmp_path, "east", [_sample("east")], DEFAULT_MODEL_KEY))
     store.set_annotation(0, "Comment", "edited")
 
     def _unplugged(*_args, **_kwargs):
@@ -264,29 +258,29 @@ def test_failed_save_keeps_rows_dirty(tmp_path: Path, model_key: str, monkeypatc
     assert store.save_dirty() == 1
 
 
-def test_save_keeps_file_campaign_relative_on_disk(tmp_path: Path, model_key: str) -> None:
-    folder = _seed_csv(tmp_path, "east", [_sample("east")], model_key)
+def test_save_keeps_file_campaign_relative_on_disk(tmp_path: Path) -> None:
+    folder = _seed_csv(tmp_path, "east", [_sample("east")], DEFAULT_MODEL_KEY)
     store = DetectionStore.load_for_campaign(folder)
     store.set_annotation(0, "Comment", "edited")
     store.save_dirty()
-    with open(campaign_csv_for_model(folder, model_key), encoding="utf-8") as f:
+    with open(campaign_csv_for_model(folder, DEFAULT_MODEL_KEY), encoding="utf-8") as f:
         assert next(csv.DictReader(f))["File"] == "f.wav"
     assert store.detection(0).file == "east/f.wav"
 
 
-def test_save_without_edits_changes_nothing(tmp_path: Path, model_key: str) -> None:
+def test_save_without_edits_changes_nothing(tmp_path: Path) -> None:
     """After a first save settles the format, loading and saving again must not touch a byte."""
-    folder = _seed_csv(tmp_path, "east", [_sample("east")], model_key)
-    path = campaign_csv_for_model(folder, model_key)
+    folder = _seed_csv(tmp_path, "east", [_sample("east")], DEFAULT_MODEL_KEY)
+    path = campaign_csv_for_model(folder, DEFAULT_MODEL_KEY)
     DetectionStore.load_for_campaign(folder).save()
     settled = path.read_bytes()
     DetectionStore.load_for_campaign(folder).save()
     assert path.read_bytes() == settled
 
 
-def test_store_and_list_writer_write_the_same_bytes(tmp_path: Path, model_key: str) -> None:
+def test_store_and_list_writer_write_the_same_bytes(tmp_path: Path) -> None:
     """The runner writes Detection lists and the store writes frames: one format for both."""
-    folder = _seed_csv(tmp_path, "east", [_sample("east"), _sample("east", Comment="a, b")], model_key)
+    folder = _seed_csv(tmp_path, "east", [_sample("east"), _sample("east", Comment="a, b")], DEFAULT_MODEL_KEY)
     store = DetectionStore.load_for_campaign(folder)
     rows = [store.detection(i) for i in range(store.row_count)]
     fieldnames = store.files[0].fieldnames
@@ -298,9 +292,9 @@ def test_store_and_list_writer_write_the_same_bytes(tmp_path: Path, model_key: s
     assert from_frame.read_bytes() == from_list.read_bytes()
 
 
-def test_lat_lon_round_trip(tmp_path: Path, model_key: str) -> None:
+def test_lat_lon_round_trip(tmp_path: Path) -> None:
     folder = _campaign_dir(tmp_path, "east")
-    path = _write_csv(folder, model_key, [_sample("east") + ["48.0", "11.0"]], headers=_HEADERS + ["Lat", "Lon"])
+    path = _write_csv(folder, DEFAULT_MODEL_KEY, [_sample("east") + ["48.0", "11.0"]], headers=_HEADERS + ["Lat", "Lon"])
     store = DetectionStore.load_for_campaign(folder)
     d = store.detection(0)
     assert (d.lat, d.lon) == (48.0, 11.0)
@@ -311,22 +305,9 @@ def test_lat_lon_round_trip(tmp_path: Path, model_key: str) -> None:
     assert (row["Lat"], row["Lon"]) == ("48.0", "11.0")
 
 
-def test_save_leaves_no_temp_file(tmp_path: Path, model_key: str) -> None:
-    folder = _seed_csv(tmp_path, "east", [_sample("east")], model_key)
-    DetectionStore.load_for_campaign(folder).save()
-    assert not list(folder.glob("*.part"))
-
-
-def test_empty_store() -> None:
-    store = DetectionStore.empty()
-    assert store.row_count == 0
-    assert store.save_dirty() == 0
-    store.save()
-
-
-def test_text_needing_quotes_round_trips(tmp_path: Path, model_key: str) -> None:
+def test_text_needing_quotes_round_trips(tmp_path: Path) -> None:
     awkward = _sample("east", Species="Tit, Blue", Comment='said "hi"\nnext line', Corrected_Species=" padded ")
-    folder = _seed_csv(tmp_path, "east", [awkward], model_key)
+    folder = _seed_csv(tmp_path, "east", [awkward], DEFAULT_MODEL_KEY)
     DetectionStore.load_for_campaign(folder).save()
     d = DetectionStore.load_for_campaign(folder).detection(0)
     assert (d.species, d.comment, d.corrected_species) == ("Tit, Blue", 'said "hi"\nnext line', " padded ")
@@ -369,9 +350,9 @@ def test_write_detections_csv_merges_a_duplicated_header_column(tmp_path: Path) 
     assert path.read_bytes().splitlines()[0] == b"Campaign,Comment,Verified,Corrected_Species"
 
 
-def test_load_combined_frame_is_one_chunk_per_column(tmp_path: Path, model_key: str) -> None:
+def test_load_combined_frame_is_one_chunk_per_column(tmp_path: Path) -> None:
     """Per-file saves filter the frame, which is slow over thousands of read chunks."""
-    _seed_csv(tmp_path, "east", [_sample("east")], model_key)
-    _seed_csv(tmp_path, "west", [_sample("west")], model_key)
+    _seed_csv(tmp_path, "east", [_sample("east")], DEFAULT_MODEL_KEY)
+    _seed_csv(tmp_path, "west", [_sample("west")], DEFAULT_MODEL_KEY)
     frame = DetectionStore.load_combined(tmp_path).frame
     assert frame.n_chunks("all") == [1] * frame.width

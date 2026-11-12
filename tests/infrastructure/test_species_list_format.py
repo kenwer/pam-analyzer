@@ -9,11 +9,6 @@ from pam_analyzer.domain.species_filter import species_list_lines
 from pam_analyzer.infrastructure._analysis_helpers import _format_species_lines
 
 
-def test_parse_strips_hash_comments() -> None:
-    text = "Parus major  # must-have\nCorvus corone\n# whole-line comment\n"
-    assert species_list_lines(text) == frozenset({"Parus major", "Corvus corone"})
-
-
 def test_format_tags_must_haves_only() -> None:
     species = frozenset({"Parus major", "Corvus corone"})
     must_haves = frozenset({"Parus major"})

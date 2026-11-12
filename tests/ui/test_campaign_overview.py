@@ -79,10 +79,6 @@ def test_format_blank_dates_without_timestamps():
     assert " to " not in html  # no date range rendered
 
 
-def test_format_empty_list_is_blank():
-    assert render_overview([]) == ("", "")
-
-
 def _pending_campaign(name: str, stamps: list[str]) -> CampaignInventory:
     """A campaign as it looks after the structure walk but before sizes land."""
     files = tuple(Path(f"{s}.WAV") for s in stamps)

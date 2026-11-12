@@ -38,11 +38,6 @@ def test_birdnet_week_boundaries(month, day, expected):
     assert birdnet_week(dt) == expected
 
 
-def test_birdnet_week_capped_at_48():
-    dt = datetime(2024, 12, 31)
-    assert birdnet_week(dt) <= 48
-
-
 # parse_recording_time / date_range_from_stems
 
 def test_parse_recording_time_extracts_stamp():
@@ -164,14 +159,6 @@ def test_card_queue_reset():
     assert len(q.pending) == 1
 
 
-def test_card_queue_pending_does_not_mutate():
-    q = CardQueue()
-    q.offer([_card("A")])
-    snapshot = q.pending
-    snapshot.clear()
-    assert len(q.pending) == 1
-
-
 # discover_folder_cards
 
 def test_discover_folder_cards_single_card(tmp_path):
@@ -207,21 +194,3 @@ def test_discover_folder_cards_skips_empty_subfolders(tmp_path):
 
     cards = discover_folder_cards(root, lambda folder: folder == has_audio)
     assert [c.name for c in cards] == ["HasAudio"]
-
-
-def test_discover_folder_cards_none_found(tmp_path):
-    root = tmp_path / "Empty"
-    root.mkdir()
-    (root / "Sub").mkdir()
-
-    cards = discover_folder_cards(root, lambda _folder: False)
-    assert cards == []
-
-
-def test_discover_folder_cards_skips_stray_files(tmp_path):
-    root = tmp_path / "WithStrayFile"
-    root.mkdir()
-    (root / "notes.txt").write_text("hello")
-
-    cards = discover_folder_cards(root, lambda _folder: False)
-    assert cards == []

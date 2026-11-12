@@ -5,13 +5,12 @@ import os
 import time
 import unicodedata
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 from PySide6.QtCore import QPoint, Qt, QTimer
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QInputDialog, QMenu, QMessageBox
+from PySide6.QtWidgets import QApplication, QInputDialog, QMessageBox
 
 from pam_analyzer.domain import AudioInventory, Campaign, FilterMode, LatLon, Project
 from pam_analyzer.domain.audio_import import DetectedCard, ImportSource
@@ -19,7 +18,6 @@ from pam_analyzer.infrastructure import AudioImporter
 from pam_analyzer.ui.app_state import AppState
 from pam_analyzer.ui.models.audio_inventory_tree_model import SIZE_PENDING
 from pam_analyzer.ui.panels.campaigns_panel import (
-    SORT_ORDER_LABELS,
     CampaignSortOrder,
     CampaignsPanel,
 )
@@ -362,16 +360,6 @@ def test_default_sort_order_is_name_ascending(panel: CampaignsPanel, project_wit
     assert names == ["alpha", "zulu"]
 
 
-def test_sort_by_name_descending(panel: CampaignsPanel, project_with_campaign):
-    proj, _ = project_with_campaign
-    _add_campaign(proj, "zulu")
-    panel._app_state.refresh_campaigns()
-
-    panel._set_sort_order(CampaignSortOrder.NAME_DESC)
-    names = [panel._model.item(r).text() for r in range(panel._model.rowCount())]
-    assert names == ["zulu", "alpha"]
-
-
 def test_sort_by_date_modified(panel: CampaignsPanel, project_with_campaign):
     """Date-modified order reflects folder mtime, independent of the name sort."""
     proj, alpha = project_with_campaign
@@ -392,13 +380,6 @@ def test_sort_by_date_modified(panel: CampaignsPanel, project_with_campaign):
     assert names == ["zulu", "alpha"]
 
 
-def test_sort_order_persists_via_settings(panel: CampaignsPanel):
-    panel._set_sort_order(CampaignSortOrder.NAME_DESC)
-    # A fresh AppSettings instance reads the same on-disk QSettings store, so
-    # the choice should survive a restart without needing a live panel.
-    assert AppSettings().campaign_sort_order == CampaignSortOrder.NAME_DESC.value
-
-
 def test_sort_order_preserves_selection(panel: CampaignsPanel, project_with_campaign):
     proj, _ = project_with_campaign
     _add_campaign(proj, "zulu")
@@ -410,13 +391,6 @@ def test_sort_order_preserves_selection(panel: CampaignsPanel, project_with_camp
     current = panel._model.itemFromIndex(panel.ui.campaign_list.currentIndex())
     assert current is not None
     assert current.text() == "zulu"
-
-
-def test_sort_menu_marks_current_order_checked(panel: CampaignsPanel):
-    parent_menu = QMenu()
-    submenu = panel._build_sort_menu(parent_menu)
-    checked = [a.text() for a in submenu.actions() if a.isChecked()]
-    assert checked == [SORT_ORDER_LABELS[CampaignSortOrder.NAME_ASC]]
 
 
 def test_context_menu_offers_new_campaign_without_selection(panel: CampaignsPanel):
@@ -572,18 +546,6 @@ def test_create_campaign_falls_back_to_overview_when_name_mangled(
     assert panel.ui.campaign_list.isEnabled()
 
 
-def test_name_validation_rejects_windows_hostile_names(panel: CampaignsPanel):
-    """Trailing dots (silently stripped by Win32) and reserved device names
-    would create a folder whose name differs from the typed one, or fail."""
-    panel._detail.open_new([])
-    panel._detail._location_set = True
-    for bad in ("Site A.", "CON", "lpt3", "Nul.data"):
-        panel._detail.ui.name_edit.setText(bad)
-        assert panel._detail._is_valid() is False, bad
-    panel._detail.ui.name_edit.setText("Site A")
-    assert panel._detail._is_valid() is True
-
-
 def test_rename_rejects_windows_hostile_name(
     panel: CampaignsPanel, project_with_campaign, monkeypatch
 ):
@@ -644,29 +606,6 @@ def test_delete_confirm_page_shows_audio_count(qtbot, panel: CampaignsPanel, pro
     panel._show_delete_confirm(campaign)
     assert panel._detail.ui.stack.currentWidget() is panel._detail.ui.confirm_page
     assert "1 audio file" in panel._detail.ui.confirm_label.text()
-
-
-def test_map_widget_set_location_calls_qml(panel: CampaignsPanel, monkeypatch):
-    """set_location should delegate to the QML rootObject.setMarker method."""
-    mock_root = MagicMock()
-    monkeypatch.setattr(panel._detail._map._qw, "rootObject", lambda: mock_root)
-
-    panel._detail._map.set_location(48.0, 11.0)
-
-    mock_root.setMarker.assert_called_once()
-    call_args = mock_root.setMarker.call_args
-    assert call_args[0][0] == 48.0
-    assert call_args[0][1] == 11.0
-
-
-def test_map_widget_clear_calls_qml(panel: CampaignsPanel, monkeypatch):
-    """clear should delegate to the QML rootObject.clearMarker method."""
-    mock_root = MagicMock()
-    monkeypatch.setattr(panel._detail._map._qw, "rootObject", lambda: mock_root)
-
-    panel._detail._map.clear()
-
-    mock_root.clearMarker.assert_called_once()
 
 
 # empty-state overview

@@ -81,11 +81,6 @@ def test_unknown_platform_has_no_asset() -> None:
 def test_fetch_returns_the_release(local_http_server: FakeServer) -> None:
     local_http_server.routes["/latest"] = Route(json.dumps(release()).encode(), content_type="application/json")
     assert fetch_latest_release(local_http_server.url("/latest"))["tag_name"] == "v0.9.0"
-
-
-def test_fetch_sends_user_agent(local_http_server: FakeServer) -> None:
-    local_http_server.routes["/latest"] = Route(b"{}", content_type="application/json")
-    fetch_latest_release(local_http_server.url("/latest"))
     assert local_http_server.requests[0]["User-Agent"] == USER_AGENT
 
 

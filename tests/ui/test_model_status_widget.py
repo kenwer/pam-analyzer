@@ -16,12 +16,6 @@ def test_shows_not_downloaded_with_size(qtbot) -> None:
     assert w.progress_bar.isHidden()
 
 
-def test_shows_downloaded(qtbot) -> None:
-    w = _widget(qtbot)
-    w.show_model(0)
-    assert w.status_label.text() == ""
-
-
 def test_show_download_reveals_progress(qtbot) -> None:
     w = _widget(qtbot)
     w.show_model(430_000_000)
@@ -50,6 +44,7 @@ def test_not_downloaded_offers_a_download_link(qtbot) -> None:
 def test_downloaded_offers_no_link(qtbot) -> None:
     w = _widget(qtbot)
     w.show_model(0)
+    assert w.status_label.text() == ""
     assert w.action_label.isHidden()
 
 

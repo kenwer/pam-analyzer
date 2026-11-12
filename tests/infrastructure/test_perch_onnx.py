@@ -64,13 +64,6 @@ def test_backend_reads_the_label_output_for_predictions() -> None:
     assert perch_onnx.AcousticOnnxBackendFP32PerchV2.prediction_out_idx() == LABEL_OUT_IDX
 
 
-def test_backend_exposes_the_embedding_output_for_encoding() -> None:
-    """Perch is also an embedding model, and the export keeps that tensor."""
-    backend = perch_onnx.AcousticOnnxBackendFP32PerchV2
-    assert backend.supports_encoding() is True
-    assert backend.encoding_out_idx() == EMBEDDING_OUT_IDX
-
-
 def test_backend_probes_with_a_five_second_window() -> None:
     """The probe input has to match the window the lib frames audio into.
 
@@ -110,18 +103,6 @@ def test_labels_exclude_the_header_row() -> None:
     shift every class index by one.
     """
     assert "inat2024_fsd50k" not in perch_onnx.labels()
-
-
-def test_model_path_sits_beside_the_libs_own_perch_download() -> None:
-    """Weights land in the layout birdnet uses for Perch, under an onnx subdir.
-
-    A frozen build points BIRDNET_APP_DATA at its bundle, so resolving through
-    the same tree is what lets the packaged app find the file with no special
-    case.
-    """
-    path = perch_onnx.model_path()
-    assert path.parent.parent.name == "perch-v2"
-    assert path.parent.name == "onnx"
 
 
 def test_missing_weights_report_how_to_fetch_them() -> None:

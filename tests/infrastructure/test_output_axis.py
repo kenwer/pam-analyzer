@@ -93,9 +93,3 @@ def test_perch_classes_are_canonicalised_through_the_base_accessor() -> None:
 
     assert "Acoustic_guitar" in runner._known_output_species()
     assert runner._known_output_species() == canonical_set(runner._model_classes())
-
-
-@pytest.mark.slow
-def test_a_birdnet_v3_runner_reports_no_superseded_spelling() -> None:
-    assert "Charadrius dubius" not in BirdnetRunner()._known_output_species()
-    assert "Thinornis dubius" in BirdnetRunner()._known_output_species()

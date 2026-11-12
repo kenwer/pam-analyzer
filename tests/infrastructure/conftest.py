@@ -78,7 +78,8 @@ def local_http_server() -> Iterator[FakeServer]:
     state = FakeServer()
     httpd = _QuietServer(("127.0.0.1", 0), _handler(state))
     state.port = httpd.server_address[1]
-    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    # shutdown() waits up to one poll interval, and the default 0.5 s added that to every test
+    thread = threading.Thread(target=httpd.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     thread.start()
     try:
         yield state

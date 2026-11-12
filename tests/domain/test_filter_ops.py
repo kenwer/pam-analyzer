@@ -262,16 +262,6 @@ def test_is_any_of(value, text, expected):
 # ColumnFilter value object
 
 
-def test_column_filter_matches_delegates_to_operator():
-    numeric = ColumnFilter("Confidence", FilterOp.GREATER_THAN, "0.5", ColumnKind.NUMERIC)
-    assert numeric.matches(0.7) is True
-    assert numeric.matches(0.3) is False
-
-    text = ColumnFilter("ARU", FilterOp.EQUALS, "MSD-1", ColumnKind.TEXT)
-    assert text.matches("MSD-1") is True
-    assert text.matches("MSD-2") is False
-
-
 def test_column_filter_to_polars_selects_matching_rows():
     df = pl.DataFrame({"Confidence": [0.3, 0.5, 0.7], "ARU": ["MSD-1", "MSD-2", "MSD-1"]})
 

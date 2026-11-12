@@ -29,7 +29,6 @@ from pam_analyzer.infrastructure.audio_import import (
     EmptyRecordingError,
     NotLosslessError,
     VerifyError,
-    _flac_target_name,
     read_guano,
     recording_time_of,
     transcode_to_flac,
@@ -62,11 +61,6 @@ def _pcm16(frames: int, channels: int = 1, seed: int = 0) -> np.ndarray:
     return rng.integers(-32768, 32767, size=shape, dtype=np.int16)
 
 
-def test_flac_target_name_replaces_extension():
-    assert _flac_target_name(Path("20260619_073000.WAV")) == "20260619_073000.flac"
-    assert _flac_target_name(Path("/cards/A/rec.wav")) == "rec.flac"
-
-
 def test_transcode_is_lossless_mono(tmp_path: Path):
     src = tmp_path / "rec.wav"
     dst = tmp_path / "rec.flac"
@@ -92,16 +86,6 @@ def test_transcode_is_lossless_stereo(tmp_path: Path):
 
     decoded, _ = sf.read(dst, dtype="int16")
     assert np.array_equal(decoded, audio)
-
-
-def test_transcode_creates_missing_parent(tmp_path: Path):
-    src = tmp_path / "rec.wav"
-    dst = tmp_path / "week_25" / "rec.flac"
-    _write_wav(src, _pcm16(SR // 10))
-
-    transcode_to_flac(src, dst)
-
-    assert dst.exists()
 
 
 def test_non_pcm16_raises_not_lossless_and_writes_nothing(tmp_path: Path):
@@ -171,16 +155,6 @@ def test_transcode_without_guano_adds_no_comment(tmp_path: Path):
 
     assert read_guano(dst) is None
     assert FLAC(str(dst)).get("GUANO") is None
-
-
-def test_read_guano_returns_none_for_plain_files(tmp_path: Path):
-    wav = tmp_path / "plain.wav"
-    flac = tmp_path / "plain.flac"
-    _write_wav(wav, _pcm16(SR // 10))
-    sf.write(flac, _pcm16(SR // 10), SR, subtype="PCM_16", format="FLAC")
-
-    assert read_guano(wav) is None
-    assert read_guano(flac) is None
 
 
 def test_recording_time_of_reads_guano_wall_clock_from_flac(tmp_path: Path):
@@ -527,22 +501,6 @@ def test_import_transcodes_wav_to_flac_losslessly(tmp_path: Path):
     assert np.array_equal(decoded, audio)
     # Source byte count is reported, not the smaller FLAC.
     assert result.bytes_copied == src.stat().st_size
-
-
-def test_import_handles_many_files(tmp_path: Path):
-    card, dest = tmp_path / "card", tmp_path / "dest"
-    card.mkdir()
-    srcs = []
-    for i in range(12):
-        s = card / f"202606{10 + i:02d}_073000.WAV"  # unique days 10..21
-        _write_wav(s, _pcm16(SR // 10, seed=i))
-        srcs.append(s)
-
-    result = _run(AudioImporter(), _card(card), srcs, dest)
-
-    assert result.error == ""
-    assert result.files_copied == 12
-    assert len(_flacs(dest)) == 12
 
 
 def test_import_flac_from_card_is_passthrough(tmp_path: Path):

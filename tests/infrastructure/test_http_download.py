@@ -21,7 +21,7 @@ def test_download_file_writes_verified_file(tmp_path: Path, local_http_server) -
 def test_download_file_mismatch_raises_download_error(tmp_path: Path, local_http_server) -> None:
     local_http_server.routes["/m.onnx"] = Route(BLOB)
     dest = tmp_path / "m.onnx"
-    with pytest.raises(DownloadError):
+    with pytest.raises(DownloadError, match="127.0.0.1"):
         download_file(local_http_server.url("/m.onnx"), len(BLOB), "0" * 64, dest, no_progress, never)
     assert not dest.exists()
     assert not dest.with_name("m.onnx.part").exists()
@@ -36,11 +36,6 @@ def test_download_file_cancel_keeps_part(tmp_path: Path, local_http_server) -> N
 
 
 def test_download_file_http_404_raises_download_error(tmp_path: Path, local_http_server) -> None:
-    with pytest.raises(DownloadError):
-        download_file(local_http_server.url("/missing"), 10, DIGEST, tmp_path / "m.onnx", no_progress, never)
-
-
-def test_download_error_names_the_host(tmp_path: Path, local_http_server) -> None:
     with pytest.raises(DownloadError, match="127.0.0.1"):
         download_file(local_http_server.url("/missing"), 10, DIGEST, tmp_path / "m.onnx", no_progress, never)
 
@@ -48,12 +43,6 @@ def test_download_error_names_the_host(tmp_path: Path, local_http_server) -> Non
 def test_unreachable_host_is_named(tmp_path: Path) -> None:
     with pytest.raises(DownloadError, match="nonexistent.invalid"):
         download_file("http://nonexistent.invalid/m.onnx", 10, DIGEST, tmp_path / "m.onnx", no_progress, never)
-
-
-def test_checksum_error_names_the_host(tmp_path: Path, local_http_server) -> None:
-    local_http_server.routes["/m.onnx"] = Route(BLOB)
-    with pytest.raises(DownloadError, match="127.0.0.1"):
-        download_file(local_http_server.url("/m.onnx"), len(BLOB), "0" * 64, tmp_path / "m.onnx", no_progress, never)
 
 
 def _get(server, dest: Path, progress=no_progress) -> None:

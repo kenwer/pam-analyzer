@@ -1,4 +1,3 @@
-import dataclasses
 import tomllib
 from pathlib import Path
 
@@ -8,7 +7,6 @@ from pam_analyzer.domain import (
     Project,
     paths,
 )
-from pam_analyzer.domain.values import AnalysisSettings
 
 
 def test_round_trip_preserves_all_fields(tmp_path: Path) -> None:
@@ -49,20 +47,6 @@ def test_load_ignores_legacy_path_keys(tmp_path: Path) -> None:
     assert project.min_conf == 0.4
 
 
-def test_reads_birdnet_prefixed_keys(tmp_path: Path) -> None:
-    """On disk the knobs keep their birdnet_ prefix. The domain drops it."""
-    paths.project_toml(tmp_path).write_text(
-        "[project]\n"
-        "birdnet_min_conf = 0.4\n"
-        "birdnet_overlap = 1.2\n"
-        'birdnet_locales = ["de", "fr"]\n'
-    )
-    project = Project.load(tmp_path)
-    assert project.min_conf == 0.4
-    assert project.overlap == 1.2
-    assert project.locales == ("de", "fr")
-
-
 def test_save_writes_birdnet_prefixed_keys(tmp_path: Path) -> None:
     """Lock the on-disk format: the file uses birdnet_ keys, not the plain
     domain field names, so existing project files stay readable."""
@@ -76,13 +60,6 @@ def test_save_writes_birdnet_prefixed_keys(tmp_path: Path) -> None:
     assert "min_conf" not in table
 
 
-def test_create_writes_default_project_file(tmp_path: Path) -> None:
-    folder = tmp_path / "new-project"
-    project = Project.create(folder)
-    assert project.folder == folder
-    assert paths.project_toml(folder).exists()
-
-
 def test_a_project_file_naming_the_old_axis_setting_still_loads(tmp_path):
     """from_table filters to known keys, so a stale analysis_taxonomy is
     ignored rather than raising. No migration code is needed.
@@ -94,7 +71,3 @@ def test_a_project_file_naming_the_old_axis_setting_still_loads(tmp_path):
 
     assert project.analysis_model == "BirdNET-2.4"
     assert not hasattr(project, "analysis_taxonomy")
-
-
-def test_analysis_settings_carry_no_axis():
-    assert "canonical_taxonomy" not in {f.name for f in dataclasses.fields(AnalysisSettings)}

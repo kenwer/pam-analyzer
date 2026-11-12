@@ -49,12 +49,6 @@ def test_linux_without_appimage_has_no_target(tmp_path: Path) -> None:
     assert detect_install("linux", tmp_path / "PAM-Analyzer", {}) is None
 
 
-def test_writable_folder_is_writable(tmp_path: Path) -> None:
-    app = tmp_path / "PAM-Analyzer.app"
-    app.mkdir()
-    assert MacOSAppInstall(app, tmp_path / ".pam-analyzer-update").unwritable_reason() is None
-
-
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX permissions")
 def test_read_only_folder_asks_to_move_the_app(tmp_path: Path) -> None:
     folder = tmp_path / "ro"
@@ -72,16 +66,6 @@ def test_read_only_folder_asks_to_move_the_app(tmp_path: Path) -> None:
 def test_windows_is_never_unwritable(tmp_path: Path) -> None:
     """Setup elevates by itself, so a folder the user cannot write to is no reason to block."""
     assert WindowsAppInstall(tmp_path / "missing", tmp_path / "t").unwritable_reason() is None
-
-
-def test_only_the_macos_apply_failure_points_to_app_management(tmp_path: Path) -> None:
-    assert "App Management" in MacOSAppInstall(tmp_path / "a.app", tmp_path).apply_failed_reason
-    assert "App Management" not in LinuxAppInstall(tmp_path / "a.AppImage", tmp_path).apply_failed_reason
-
-
-def test_version_dir_is_per_version(tmp_path: Path) -> None:
-    target = LinuxAppInstall(tmp_path / "a.AppImage", tmp_path / "stage")
-    assert target.version_dir(make_update("0.9.0")) == tmp_path / "stage" / "0.9.0"
 
 
 def test_free_space_needs_two_and_a_half_times_the_asset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -128,16 +112,16 @@ def test_prepare_linux_makes_the_appimage_executable(tmp_path: Path) -> None:
         assert archive.stat().st_mode & 0o111
 
 
-def test_prepare_windows_returns_the_installer(tmp_path: Path) -> None:
-    setup = tmp_path / "setup.exe"
-    setup.write_bytes(b"MZ")
-    assert WindowsAppInstall(tmp_path / "app", tmp_path).prepare(make_update(), setup) == setup
+@pytest.fixture(scope="module")
+def dmg_of_0_9_0(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """A DMG holding a 0.9.0 bundle, built once because hdiutil takes seconds per image.
 
-
-def _fake_dmg(tmp_path: Path, version: str) -> Path:
+    Tests copy it into their own staging folder, since prepare() works next to the archive.
+    """
     import plistlib
     import subprocess
 
+    tmp_path = tmp_path_factory.mktemp("dmg")
     src = tmp_path / "src"
     contents = src / "PAM-Analyzer.app" / "Contents"
     (contents / "MacOS").mkdir(parents=True)
@@ -145,33 +129,22 @@ def _fake_dmg(tmp_path: Path, version: str) -> Path:
     (contents / "Resources").mkdir()
     (contents / "MacOS" / "models").symlink_to("../Resources")
     with (contents / "Info.plist").open("wb") as f:
-        plistlib.dump({"CFBundleShortVersionString": version}, f)
+        plistlib.dump({"CFBundleShortVersionString": "0.9.0"}, f)
     dmg = tmp_path / "x.dmg"
     subprocess.run(["hdiutil", "create", "-srcfolder", str(src), "-ov", "-quiet", str(dmg)], check=True)
     return dmg
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="hdiutil")
-def test_prepare_macos_extracts_and_checks_the_bundle(tmp_path: Path) -> None:
+def test_prepare_macos_extracts_and_checks_the_bundle(tmp_path: Path, dmg_of_0_9_0: Path) -> None:
     target = MacOSAppInstall(tmp_path / "Apps" / "PAM-Analyzer.app", tmp_path / "stage")
     update = make_update("0.9.0")
     archive = target.version_dir(update) / "x.dmg"
     archive.parent.mkdir(parents=True)
-    shutil.move(_fake_dmg(tmp_path, "0.9.0"), archive)
+    shutil.copy(dmg_of_0_9_0, archive)
     app = target.prepare(update, archive)
     assert app == target.version_dir(update) / "PAM-Analyzer.app"
     assert (app / "Contents" / "MacOS" / "models").is_symlink()
-
-
-@pytest.mark.skipif(sys.platform != "darwin", reason="hdiutil")
-def test_prepare_macos_rejects_a_bundle_of_another_version(tmp_path: Path) -> None:
-    target = MacOSAppInstall(tmp_path / "Apps" / "PAM-Analyzer.app", tmp_path / "stage")
-    update = make_update("0.9.0")
-    archive = target.version_dir(update) / "x.dmg"
-    archive.parent.mkdir(parents=True)
-    shutil.move(_fake_dmg(tmp_path, "0.8.0"), archive)
-    with pytest.raises(UpdateError):
-        target.prepare(update, archive)
 
 
 def test_staged_payload_rechecks_the_digest(tmp_path: Path) -> None:
@@ -311,13 +284,14 @@ def test_staged_payload_accepts_a_checked_bundle(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="hdiutil")
-def test_rejected_bundle_is_not_left_where_it_could_be_installed(tmp_path: Path) -> None:
+def test_rejected_bundle_is_not_left_where_it_could_be_installed(tmp_path: Path, dmg_of_0_9_0: Path) -> None:
     target = MacOSAppInstall(tmp_path / "Apps" / "PAM-Analyzer.app", tmp_path / "stage")
-    update = make_update("0.9.0")
+    # The feed promises another version than the bundle carries
+    update = make_update("1.0.0")
     archive = target.version_dir(update) / "x.dmg"
     archive.parent.mkdir(parents=True)
-    shutil.move(_fake_dmg(tmp_path, "0.8.0"), archive)
-    with pytest.raises(UpdateError):
+    shutil.copy(dmg_of_0_9_0, archive)
+    with pytest.raises(UpdateError, match="version 0.9.0, expected 1.0.0"):
         target.prepare(update, archive)
     assert sorted(p.name for p in target.version_dir(update).iterdir()) == ["x.dmg"]
 

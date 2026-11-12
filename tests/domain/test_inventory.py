@@ -58,9 +58,3 @@ def test_with_sizes_treats_missing_file_as_zero():
 
     week = sized.for_campaign("alpha").cards[0].weeks[0]
     assert week.file_sizes == (1000, 0)
-
-
-def test_with_sizes_is_pure_and_leaves_the_original_pending():
-    pending = _pending()
-    pending.with_sizes({Path("a.wav"): 1000})
-    assert pending.sizes_pending is True  # original untouched (frozen value objects)

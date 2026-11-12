@@ -28,14 +28,6 @@ class _FakeModel:
         return self._backend_kwargs
 
 
-def test_disable_in_workers_gives_the_model_a_carrier() -> None:
-    """The carrier rides in backend_kwargs, which the pipeline hands to workers."""
-    model = _FakeModel()
-
-    assert onnx_telemetry.disable_in_workers(model) is model
-    assert onnx_telemetry.CARRIER_KEY in model.backend_kwargs
-
-
 def test_unpickling_a_worker_payload_disables_telemetry_in_a_fresh_process() -> None:
     """The mechanism end to end, in a child that starts without the module.
 

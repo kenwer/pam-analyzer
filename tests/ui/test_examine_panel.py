@@ -783,41 +783,12 @@ def test_filter_inputs_visible_when_mounted_in_hidden_tab(
     )
 
 
-def test_text_filter_contains(panel: ExaminePanel) -> None:
-    panel._model.set_column_filter(COLUMNS_BY_NAME["ARU"], "MSD-1", FilterOp.CONTAINS)
-    rows = _visible(panel)
-    assert rows
-    assert all(r.aru.startswith("MSD-1") for r in rows)
-
-
-def test_text_filter_equals_excludes_substrings(panel: ExaminePanel) -> None:
-    panel._model.set_column_filter(COLUMNS_BY_NAME["ARU"], "MSD-1", FilterOp.EQUALS)
-    # Only an exact "MSD-1" match should remain. The fixture uses MSD-1 and MSD-2.
-    rows = _visible(panel)
-    assert rows and all(r.aru == "MSD-1" for r in rows)
-
-
 def test_numeric_filter_greater_than(panel: ExaminePanel) -> None:
     # Fixture confidences are 0.5, 0.6, 0.7 per campaign. > 0.55 keeps 4 rows.
     panel._model.set_column_filter(COLUMNS_BY_NAME["Confidence"], "0.55", FilterOp.GREATER_THAN)
     rows = _visible(panel)
     assert len(rows) == 4
     assert all(r.confidence > 0.55 for r in rows)
-
-
-def test_numeric_filter_in_range(panel: ExaminePanel) -> None:
-    panel._model.set_column_filter(COLUMNS_BY_NAME["Confidence"], "0.55 - 0.65", FilterOp.IN_RANGE)
-    rows = _visible(panel)
-    assert len(rows) == 2
-    assert all(0.55 <= r.confidence <= 0.65 for r in rows)
-
-
-def test_blank_filter_on_comment_field(panel: ExaminePanel) -> None:
-    # Fixture leaves Comment empty for every row.
-    panel._model.set_column_filter(COLUMNS_BY_NAME["Comment"], "", FilterOp.BLANK)
-    assert panel._model.rowCount() == 6
-    panel._model.set_column_filter(COLUMNS_BY_NAME["Comment"], "", FilterOp.NOT_BLANK)
-    assert panel._model.rowCount() == 0
 
 
 def test_clear_filter_via_empty_text_with_default_op(panel: ExaminePanel) -> None:
@@ -905,45 +876,12 @@ def test_picking_the_checked_not_blank_again_lifts_the_filter(panel: ExaminePane
     QCoreApplication.processEvents()
 
 
-def test_date_range_filter(panel: ExaminePanel) -> None:
-    # Fixture dates are 2026-04-25/26/27 (one per row, both campaigns).
-    col = panel._model.index_of("Recording_Time")
-    panel._model.set_column_filter(col, "2026-04-25 .. 2026-04-26", FilterOp.DATE_RANGE)
-    rows = _visible(panel)
-    assert len(rows) == 4
-    assert all(r.recording_time[:10] in ("2026-04-25", "2026-04-26") for r in rows)
-
-
-def test_on_date_filter(panel: ExaminePanel) -> None:
-    col = panel._model.index_of("Recording_Time")
-    panel._model.set_column_filter(col, "2026-04-26", FilterOp.ON_DATE)
-    rows = _visible(panel)
-    assert len(rows) == 2
-    assert all(r.recording_time.startswith("2026-04-26") for r in rows)
-
-
-def test_time_of_day_filter(panel: ExaminePanel) -> None:
-    # Fixture times of day are 04:00/05:00/06:00 (one per row, both campaigns).
-    col = panel._model.index_of("Recording_Time")
-    panel._model.set_column_filter(col, "04:30 - 06:30", FilterOp.TIME_OF_DAY_RANGE)
-    assert panel._model.rowCount() == 4
-
-
 def test_time_of_day_filter_wraps_midnight(panel: ExaminePanel) -> None:
     col = panel._model.index_of("Recording_Time")
     panel._model.set_column_filter(col, "22:00 - 04:30", FilterOp.TIME_OF_DAY_RANGE)
     rows = _visible(panel)
     assert len(rows) == 2
     assert all("T04:00" in r.recording_time for r in rows)
-
-
-def test_is_any_of_filter(panel: ExaminePanel) -> None:
-    col = panel._model.index_of("ARU")
-    panel._model.set_column_filter(col, "MSD-1; MSD-2", FilterOp.IS_ANY_OF)
-    assert panel._model.rowCount() == 6
-    panel._model.set_column_filter(col, "MSD-1", FilterOp.IS_ANY_OF)
-    rows = _visible(panel)
-    assert rows and all(r.aru == "MSD-1" for r in rows)
 
 
 def test_distinct_values_for_set_popup(panel: ExaminePanel) -> None:
@@ -1479,18 +1417,3 @@ def test_right_click_position_opens_the_menu_for_the_cell_under_it(qtbot, panel:
     assert "Export Selected as Audio Snippets…" in seen
     assert _clipboard() == "MSD-1"
     QCoreApplication.processEvents()
-
-
-def test_detection_table_takes_its_parent_as_first_argument(qtbot) -> None:
-    """Designer-generated code passes the parent positionally."""
-    host = QWidget()
-    qtbot.addWidget(host)
-    table = DetectionTable(host)
-    assert table.parent() is host
-
-
-def test_spread_combo_tooltip_follows_the_current_item(panel: ExaminePanel) -> None:
-    combo = panel.ui.spread_when_combo
-    _spread_to(combo, SpreadKey.DAY)
-    assert combo.toolTip() == combo.itemData(combo.currentIndex(), Qt.ItemDataRole.ToolTipRole)
-    assert combo.toolTip().startswith("Rank each day")

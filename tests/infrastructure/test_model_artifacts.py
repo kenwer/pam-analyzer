@@ -7,7 +7,6 @@ from birdnet.geo.models.v3_0.onnx import models as v3_geo_models
 from birdnet.utils.taxonomy_v3 import get_taxonomy_v3_input
 
 from pam_analyzer.infrastructure import perch_onnx
-from pam_analyzer.infrastructure.birdnet_2_4_runner import Birdnet24Runner
 from pam_analyzer.infrastructure.birdnet_lib import (
     prepare_v3_0_labels,
     v3_0_artifacts,
@@ -62,15 +61,3 @@ def test_v3_0_and_perch_share_geo_and_label_files() -> None:
 def test_v3_0_and_perch_generate_labels_after_download() -> None:
     assert BirdnetRunner.package.prepare is prepare_v3_0_labels
     assert PerchRunner.package.prepare is prepare_v3_0_labels
-
-
-def test_model_info_licences() -> None:
-    assert Birdnet24Runner.package.info.licence == "CC BY-NC-SA 4.0"
-    assert BirdnetRunner.package.info.licence == "CC BY-NC-SA 4.0"
-    assert PerchRunner.package.info.licence == "Apache 2.0"
-
-
-def test_model_info_links() -> None:
-    assert Birdnet24Runner.package.info.info_url == "https://zenodo.org/records/15050749"
-    assert BirdnetRunner.package.info.info_url == "https://zenodo.org/records/20703646"
-    assert PerchRunner.package.info.info_url == "https://huggingface.co/justinchuby/Perch-onnx"

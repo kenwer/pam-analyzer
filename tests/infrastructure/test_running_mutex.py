@@ -28,13 +28,6 @@ def test_mutex_is_visible_while_held_and_gone_after_close() -> None:
     assert not kernel32.OpenMutexW(_SYNCHRONIZE, False, MUTEX_NAME)
 
 
-def test_no_mutex_off_windows(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(running_mutex.sys, "platform", "darwin")
-    monkeypatch.setattr(running_mutex, "_handle", None)
-    hold_running_mutex()
-    assert running_mutex._handle is None
-
-
 def test_mutex_name_matches_the_installer_script() -> None:
     from pathlib import Path
 

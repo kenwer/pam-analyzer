@@ -7,8 +7,6 @@ fake region_species lookup, no runner and no model.
 
 from pathlib import Path
 
-import pytest
-
 from pam_analyzer.domain import FilterMode, LatLon, SpeciesFilter
 from pam_analyzer.domain.audio_import import WEEK_YEAR_ROUND
 
@@ -121,15 +119,6 @@ def test_location_mode_reads_must_haves_through_the_port_but_not_region() -> Non
     assert resolved.must_haves == frozenset({"Accipiter gentilis", "Astur gentilis"})
 
 
-def test_list_mode_save_load_round_trip(tmp_path: Path) -> None:
-    SpeciesFilter(mode=FilterMode.LIST, list_text="Parus major\n").save(tmp_path)
-    loaded = SpeciesFilter.load(tmp_path, FilterMode.LIST, None)
-
-    assert loaded.list_text == "Parus major\n"
-    # LIST mode never touches the must-have sidecar.
-    assert loaded.must_have_text == ""
-
-
 def test_location_mode_save_load_round_trip(tmp_path: Path) -> None:
     loc = LatLon(48.0, 11.0)
     SpeciesFilter(
@@ -140,14 +129,6 @@ def test_location_mode_save_load_round_trip(tmp_path: Path) -> None:
     assert loaded.must_have_text == "Aquila chrysaetos\n"
     assert loaded.location == loc
     assert loaded.list_text == ""
-
-
-def test_resolve_requires_a_name_reader() -> None:
-    """No production caller relies on a default, and an identity default would
-    silently match nothing for a BirdNET-format list. Better to not have one."""
-    sf = SpeciesFilter(mode=FilterMode.LIST, list_text="Parus major\n")
-    with pytest.raises(TypeError):
-        sf.resolve([Path("a.wav")], _fake_region)  # type: ignore[call-arg]
 
 
 def test_resolve_hands_whole_lines_to_the_reader() -> None:

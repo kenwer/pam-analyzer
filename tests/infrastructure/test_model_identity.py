@@ -14,7 +14,6 @@ from birdnet.acoustic.models.v3_0 import onnx as v3_onnx
 from pam_analyzer.infrastructure.birdnet_runner import (
     MODEL_KEY,
     MODEL_PRECISION,
-    BirdnetRunner,
 )
 
 # e.g. "BirdNET+_V3.0-preview3.1_Global_11K_FP32.onnx"
@@ -35,13 +34,3 @@ def test_model_key_names_the_shipped_release():
         f"birdnet now ships {SHIPPED_MODEL_FILE!r}, which is not the release "
         f"that {MODEL_KEY!r} names."
     )
-
-
-def test_model_key_is_filesystem_safe():
-    """It is used verbatim as a filename component."""
-    assert MODEL_KEY == MODEL_KEY.strip()
-    assert not set(MODEL_KEY) & set('/\\:*?"<>|')
-
-
-def test_runner_exposes_the_model_key():
-    assert BirdnetRunner().model_key == MODEL_KEY

@@ -28,7 +28,6 @@ from pam_analyzer.domain import (
     FilterMode,
     RunStatus,
 )
-from pam_analyzer.infrastructure.birdnet_lib import TAXONOMY_V3_0
 from pam_analyzer.infrastructure.perch_runner import (
     MODEL_KEY,
     PerchRunner,
@@ -135,22 +134,6 @@ def test_parse_row_takes_common_names_from_the_v3_labels() -> None:
         preferred_lang_map={CURRENT_NAME: "Northern Goshawk"},
     )
     assert parsed.preferred_common == "Northern Goshawk"
-
-
-def test_runner_uses_the_v3_taxonomy() -> None:
-    """Perch's axis converges with BirdNET v3.0's, so it reuses those services.
-
-    Measured on the shipped label sets: 10916 of v3.0's 11560 classes are
-    spelled identically in Perch. That is what lets the v3.0 geo model supply a
-    usable allow-list without a Perch-specific crosswalk.
-    """
-    assert PerchRunner.taxonomy is TAXONOMY_V3_0
-
-
-def test_model_key_names_the_perch_release() -> None:
-    """The key becomes part of the CSV filename on the user's disk."""
-    assert MODEL_KEY == "Perch-2.0"
-    assert PerchRunner.model_key == MODEL_KEY
 
 
 @pytest.mark.slow

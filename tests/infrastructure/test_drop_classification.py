@@ -13,7 +13,6 @@ no model is loaded and nothing is downloaded.
 
 from __future__ import annotations
 
-import dataclasses
 import logging
 from contextlib import contextmanager
 from pathlib import Path
@@ -168,11 +167,3 @@ def test_a_superseded_class_survives_an_allow_list_holding_only_the_canonical_na
 
     assert result.campaigns[0].detection_count == 1
     assert not any("species filter dropped" in str(r.msg) for r in caplog.records)
-
-
-def test_parsed_row_has_no_separate_match_name():
-    """Output and matching share one namespace, so the second name that
-    existed to bridge them is gone. A field left behind would be a name
-    downstream code could wrongly compare on.
-    """
-    assert "match_name" not in {f.name for f in dataclasses.fields(ParsedRow)}

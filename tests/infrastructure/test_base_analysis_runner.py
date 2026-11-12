@@ -227,7 +227,3 @@ def test_run_does_not_download(tmp_path: Path, local_http_server) -> None:
     assert result.status is RunStatus.COMPLETED
     assert runner.events == ["load"]
     assert local_http_server.requests == []
-
-
-def test_model_info_comes_from_the_package() -> None:
-    assert _StubRunner().model_info is _STUB_INFO

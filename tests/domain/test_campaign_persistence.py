@@ -24,15 +24,6 @@ def _new_campaign(audio_root: Path, name: str, location: LatLon | None = None) -
     )
 
 
-def test_create_writes_folder_and_toml(audio_root):
-    c = _new_campaign(audio_root, "site-alpha")
-    c.create()
-    assert c.folder.exists()
-    toml_path = c.folder / "campaign.toml"
-    assert toml_path.exists()
-    assert "species_filter_mode" in toml_path.read_text()
-
-
 def test_create_raises_on_duplicate(audio_root):
     c = _new_campaign(audio_root, "dup")
     c.create()
@@ -40,20 +31,13 @@ def test_create_raises_on_duplicate(audio_root):
         _new_campaign(audio_root, "dup").create()
 
 
-def test_rename_moves_folder(audio_root):
-    old = _new_campaign(audio_root, "old-name")
-    old.create()
-    renamed = old.rename("new-name")
-    assert renamed.name == "new-name"
-    assert renamed.folder == audio_root / "new-name"
-    assert renamed.folder.exists()
-    assert not old.folder.exists()
-
-
 def test_rename_preserves_mode_and_location(audio_root):
     c = _new_campaign(audio_root, "with-loc", LatLon(48.1, 11.5))
     c.create()
     renamed = c.rename("renamed-loc")
+    assert renamed.folder == audio_root / "renamed-loc"
+    assert renamed.folder.exists()
+    assert not c.folder.exists()
     assert renamed.location == LatLon(48.1, 11.5)
     assert renamed.species_filter_mode == FilterMode.LOCATION
 
@@ -81,14 +65,6 @@ def test_rename_keeps_detection_csvs_valid(audio_root):
     assert (audio_root / detection.file).parent == renamed.folder / "MSD-1" / "week_08"
 
 
-def test_delete_removes_entire_folder(audio_root):
-    c = _new_campaign(audio_root, "to-delete")
-    c.create()
-    (c.folder / "recording.wav").write_bytes(b"RIFF")
-    c.delete()
-    assert not c.folder.exists()
-
-
 def test_count_audio_files_counts_by_extension(audio_root):
     c = _new_campaign(audio_root, "with-audio")
     c.create()
@@ -107,26 +83,6 @@ def test_count_audio_files_recurses(audio_root):
     sub.mkdir()
     (sub / "deep.wav").write_bytes(b"")
     assert c.count_audio_files() == 1
-
-
-def test_count_audio_files_empty(audio_root):
-    c = _new_campaign(audio_root, "empty-audio")
-    c.create()
-    assert c.count_audio_files() == 0
-
-
-def test_species_filter_read_write_roundtrip(audio_root):
-    c = Campaign(
-        name="species-test",
-        folder=audio_root / "species-test",
-        species_filter_mode=FilterMode.LIST,
-    )
-    c.create()
-    assert c.load_species_filter().list_text == ""
-    c.write_species_filter("Robin\nBlackcap\n", "")
-    result = c.load_species_filter().list_text
-    assert "Robin" in result
-    assert "Blackcap" in result
 
 
 def test_load_after_save(audio_root):

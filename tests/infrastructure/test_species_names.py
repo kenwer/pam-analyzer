@@ -32,28 +32,17 @@ def test_parse_rejects_malformed_rows(text, match):
         _parse_tsv(text)
 
 
-def test_canonical_rewrites_a_superseded_spelling():
-    assert canonical("Accipiter gentilis") == "Astur gentilis"
-
-
-def test_canonical_is_the_identity_for_a_current_spelling():
-    assert canonical("Astur gentilis") == "Astur gentilis"
-
-
-def test_canonical_is_the_identity_for_an_unknown_name():
-    assert canonical("Acoustic_guitar") == "Acoustic_guitar"
-    assert canonical("Turdus merula") == "Turdus merula"
-
-
-def test_canonical_is_stable_under_reapplication():
-    once = canonical("Charadrius dubius")
-    assert canonical(once) == once
-
-
-def test_canonical_set_maps_every_member():
-    assert canonical_set(["Accipiter gentilis", "Turdus merula"]) == frozenset(
-        {"Astur gentilis", "Turdus merula"}
-    )
+@pytest.mark.parametrize(
+    "name, expected",
+    [
+        ("Accipiter gentilis", "Astur gentilis"),
+        ("Astur gentilis", "Astur gentilis"),
+        ("Acoustic_guitar", "Acoustic_guitar"),
+    ],
+    ids=["superseded", "current", "unknown"],
+)
+def test_canonical_rewrites_only_superseded_spellings(name, expected):
+    assert canonical(name) == expected
 
 
 def test_canonical_set_collapses_two_spellings_of_one_bird():

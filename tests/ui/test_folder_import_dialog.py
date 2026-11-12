@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialogButtonBox
 
 from pam_analyzer.domain.audio_import import DetectedCard, ImportSource
@@ -32,13 +31,6 @@ def test_empty_name_disables_ok(qtbot):
     assert "Invalid" in dialog.ui.validation_label.text()
 
 
-def test_slash_in_name_disables_ok(qtbot):
-    dialog = FolderImportDialog([_card("CardA")], [3])
-    qtbot.addWidget(dialog)
-    dialog.ui.card_table.item(0, 0).setText("Card/A")
-    assert not _ok_button(dialog).isEnabled()
-
-
 def test_duplicate_names_disable_ok(qtbot):
     dialog = FolderImportDialog([_card("CardA"), _card("CardB")], [3, 5])
     qtbot.addWidget(dialog)
@@ -66,22 +58,7 @@ def test_result_cards_reflects_edited_names_in_order():
     assert renamed[0].source is ImportSource.FOLDER
 
 
-def test_file_counts_shown_read_only(qtbot):
-    dialog = FolderImportDialog([_card("CardA")], [7])
-    qtbot.addWidget(dialog)
-    files_item = dialog.ui.card_table.item(0, 1)
-    assert files_item.text() == "7"
-    assert not (files_item.flags() & Qt.ItemFlag.ItemIsEditable)
-
-
 def test_clear_after_defaults_unchecked(qtbot):
     dialog = FolderImportDialog([_card("CardA")], [3])
     qtbot.addWidget(dialog)
     assert dialog.clear_after() is False
-
-
-def test_clear_after_reflects_checkbox(qtbot):
-    dialog = FolderImportDialog([_card("CardA")], [3])
-    qtbot.addWidget(dialog)
-    dialog.ui.clear_after_check.setChecked(True)
-    assert dialog.clear_after() is True

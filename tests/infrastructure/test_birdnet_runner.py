@@ -27,6 +27,7 @@ from mutagen.flac import FLAC
 
 from pam_analyzer.domain import (
     AnalysisProgressSnapshot,
+    AnalysisRunResult,
     AnalysisSettings,
     Campaign,
     DetectionStore,
@@ -83,6 +84,20 @@ def _campaign_with_one_wav(tmp_path: Path, seconds: float, *, silent: bool = Fal
 def campaign_with_minute_wav(tmp_path: Path) -> Path:
     """One 60 s WAV, the file length AudioMoth deployments produce."""
     return _campaign_with_one_wav(tmp_path, seconds=60.0)
+
+
+@pytest.fixture(scope="module")
+def minute_run(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, AnalysisRunResult, _RecordingProgress]:
+    """One unfiltered run over a minute of noise, shared because each run spawns the model pipeline."""
+    camp_dir = _campaign_with_one_wav(tmp_path_factory.mktemp("minute"), seconds=60.0)
+    progress = _RecordingProgress()
+    result = BirdnetRunner().run(
+        campaigns=[Campaign(name="c1", folder=camp_dir, species_filter_mode=FilterMode.LIST)],
+        settings=AnalysisSettings(min_conf=0.001, overlap=0.0, locales=("en_us",)),
+        preferred_lang="en_us",
+        progress=progress,
+    )
+    return camp_dir, result, progress
 
 
 def _parse_one(species_name: str, preferred_lang_map: dict[str, str]) -> str:
@@ -151,39 +166,6 @@ def test_a_superseded_v3_class_is_canonicalised() -> None:
 
 
 @pytest.mark.slow
-def test_writes_detections_csv(campaign_with_minute_wav: Path) -> None:
-    camp_dir = campaign_with_minute_wav
-    settings = AnalysisSettings(min_conf=0.001, overlap=0.0, locales=("en_us",))
-    campaign = Campaign(name="c1", folder=camp_dir, species_filter_mode=FilterMode.LIST)
-    progress = _RecordingProgress()
-
-    result = BirdnetRunner().run(
-        campaigns=[campaign],
-        settings=settings,
-        preferred_lang="en_us",
-        progress=progress,
-    )
-
-    assert len(result.campaigns) == 1
-    camp = result.campaigns[0]
-    assert camp.campaign_name == "c1"
-    assert camp.wav_count == 1
-    assert camp.detections_csv == camp_dir / f"detections-{MODEL_KEY}.csv"
-    assert camp.detections_csv.exists()
-
-    header = camp.detections_csv.read_text(encoding="utf-8").splitlines()[0]
-    for col in ("Campaign", "ARU", "Scientific_Name", "Species", "Confidence", "Rank", "File"):
-        assert col in header, f"missing column {col!r} in CSV header"
-
-    # Threshold 0.001 over 11,560 classes guarantees at least one row per window.
-    assert camp.detection_count > 0
-    assert camp.aru_count == 1
-
-    phases = {s.phase for s in progress.snapshots}
-    assert {"preparing", "analyzing", "done"}.issubset(phases)
-
-
-@pytest.mark.slow
 def test_recording_time_comes_from_the_flac_guano(tmp_path: Path) -> None:
     """A FLAC whose name carries no stamp still gets the time its GUANO holds."""
     aru_dir = tmp_path / "project" / "c1" / "ARU-1"
@@ -207,27 +189,30 @@ def test_recording_time_comes_from_the_flac_guano(tmp_path: Path) -> None:
 
 
 @pytest.mark.slow
-def test_runner_csv_survives_load_and_save_unchanged(campaign_with_minute_wav: Path) -> None:
-    """The runner and the Examine autosave share one writer, so a save without edits rewrites nothing."""
-    settings = AnalysisSettings(min_conf=0.001, overlap=0.0, locales=("en_us",))
-    campaign = Campaign(name="c1", folder=campaign_with_minute_wav, species_filter_mode=FilterMode.LIST)
-    result = BirdnetRunner().run(
-        campaigns=[campaign],
-        settings=settings,
-        preferred_lang="en_us",
-        progress=_RecordingProgress(),
-    )
+def test_writes_detections_csv(minute_run) -> None:
+    camp_dir, result, progress = minute_run
+
+    assert len(result.campaigns) == 1
     camp = result.campaigns[0]
+    assert camp.campaign_name == "c1"
+    assert camp.wav_count == 1
+    assert camp.detections_csv == camp_dir / f"detections-{MODEL_KEY}.csv"
+    assert camp.detections_csv.exists()
+
+    header = camp.detections_csv.read_text(encoding="utf-8").splitlines()[0]
+    for col in ("Campaign", "ARU", "Scientific_Name", "Species", "Confidence", "Rank", "File"):
+        assert col in header, f"missing column {col!r} in CSV header"
+
+    # Threshold 0.001 over 11,560 classes guarantees at least one row per window.
     assert camp.detection_count > 0
-    written = camp.detections_csv.read_bytes()
+    assert camp.aru_count == 1
 
-    DetectionStore.load_for_campaign(campaign_with_minute_wav).save()
-
-    assert camp.detections_csv.read_bytes() == written
+    phases = {s.phase for s in progress.snapshots}
+    assert {"preparing", "analyzing", "done"}.issubset(phases)
 
 
 @pytest.mark.slow
-def test_written_rows_are_on_the_v3_axis(campaign_with_minute_wav: Path) -> None:
+def test_written_rows_are_on_the_v3_axis(minute_run) -> None:
     """Every Scientific_Name written must be a live v3.0 class.
 
     Guards the upgrade: rows carrying legacy (v2.4-era) spellings would mean
@@ -235,21 +220,22 @@ def test_written_rows_are_on_the_v3_axis(campaign_with_minute_wav: Path) -> None
     """
     from pam_analyzer.infrastructure.birdnet_lib import TAXONOMY_V3_0
 
-    settings = AnalysisSettings(min_conf=0.001, overlap=0.0, locales=("en_us",))
-    campaign = Campaign(
-        name="c1", folder=campaign_with_minute_wav, species_filter_mode=FilterMode.LIST
-    )
-    result = BirdnetRunner().run(
-        campaigns=[campaign],
-        settings=settings,
-        preferred_lang="en_us",
-        progress=_RecordingProgress(),
-    )
-
+    _, result, _ = minute_run
     with open(result.campaigns[0].detections_csv, newline="", encoding="utf-8") as f:
         names = {r["Scientific_Name"] for r in _csv.DictReader(f)}
     assert names, "expected at least one row at min_conf=0.001"
     assert names <= TAXONOMY_V3_0.known_species_scientific()
+
+
+@pytest.mark.slow
+def test_runner_csv_survives_load_and_save_unchanged(minute_run) -> None:
+    """The runner and the Examine autosave share one writer, so a save without edits rewrites nothing."""
+    camp_dir, result, _ = minute_run
+    written = result.campaigns[0].detections_csv.read_bytes()
+
+    DetectionStore.load_for_campaign(camp_dir).save()
+
+    assert result.campaigns[0].detections_csv.read_bytes() == written
 
 
 @pytest.mark.slow

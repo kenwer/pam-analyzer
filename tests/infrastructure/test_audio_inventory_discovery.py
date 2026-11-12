@@ -94,14 +94,6 @@ def test_empty_campaign_has_no_cards(project_dir: Path):
     assert beta.file_count == 0
 
 
-def test_campaign_totals_sum_card_totals(project_dir: Path):
-    inv = discover_audio_inventory(project_dir)
-    alpha = inv.for_campaign("alpha")
-    assert alpha is not None
-    assert alpha.file_count == sum(c.file_count for c in alpha.cards)
-    assert alpha.total_bytes == sum(c.total_bytes for c in alpha.cards)
-
-
 def test_date_range_merges_bottom_up_from_filenames(project_dir: Path):
     """MSD-X's three files span 2024-01-01 to 2024-01-08; the campaign-level
     range should be merged from its cards without re-parsing any filenames

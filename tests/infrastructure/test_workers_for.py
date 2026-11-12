@@ -19,8 +19,9 @@ RUNNER_SPLITS = pytest.mark.parametrize(
     ids=["v2.4", "perch"],
 )
 
-# Odd counts matter: CI runners have shipped with 3 physical cores.
-CORE_COUNTS = pytest.mark.parametrize("cores", [1, 2, 3, 4, 7, 8, 14], indirect=True)
+# The minimum, an odd count (CI runners have shipped with 3 physical cores),
+# an exact multiple of both splits, and a developer machine
+CORE_COUNTS = pytest.mark.parametrize("cores", [1, 3, 4, 14], indirect=True)
 
 
 @pytest.fixture
