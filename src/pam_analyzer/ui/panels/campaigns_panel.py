@@ -122,7 +122,9 @@ class CampaignsPanel(QWidget):
         self._detail.cancelled.connect(self._on_detail_cancelled)
 
     def _setup_shortcuts(self) -> None:
-        QShortcut(QKeySequence(Qt.Key.Key_Delete), self).activated.connect(self._on_delete_shortcut)
+        # Delete is the convention on Windows and Linux, Backspace on macOS, whose keyboards lack a Delete key
+        for key in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+            QShortcut(QKeySequence(key), self).activated.connect(self._on_delete_shortcut)
         QShortcut(QKeySequence(Qt.Key.Key_F2), self).activated.connect(self._on_rename_shortcut)
         QShortcut(QKeySequence("Shift+Ctrl+N"), self).activated.connect(self._on_new)
         # Esc leaves a campaign's details and returns to the overview. Scoped to this panel so it doesn't shadow Esc elsewhere in the window

@@ -120,18 +120,3 @@ def test_context_menu_on_placeholder_does_nothing(qtbot, panel: WelcomePanel):
     with qtbot.assertNotEmitted(panel.removeRecentRequested):
         labels = _choose_from_context_menu(panel, 0, "Remove from list")
     assert labels == []
-
-
-def test_delete_key_removes_the_current_recent_project(qtbot, panel: WelcomePanel):
-    panel.set_recent_projects(["/a/one", "/b/two"])
-    recent_list = panel.ui.recent_list
-    with qtbot.waitExposed(panel):
-        panel.show()
-    panel.activateWindow()
-    recent_list.setFocus()
-    qtbot.waitUntil(lambda: QApplication.focusWidget() is recent_list)
-    recent_list.setCurrentRow(0)
-
-    with qtbot.waitSignal(panel.removeRecentRequested) as removed:
-        qtbot.keyClick(recent_list, Qt.Key.Key_Delete)
-    assert removed.args == ["/a/one"]

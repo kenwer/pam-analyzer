@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 ### Changed
+- Shortcuts:
+  - Ctrl+/ or F1 (⌘/ or ⌘? on macOS) opens the keyboard shortcuts list.
+  - On the Campaigns panel, Backspace removes a recent project or deletes a campaign, just like Delete.
+  - Alt+F4 quits on Windows, where the Quit action is now named Exit.
+  - The keyboard shortcuts list shows only the keys for the platform the app runs on.
+  - The keyboard shortcuts moved from `SHORTCUTS.md` into the README.
 - [Dev] Remove unused internal code.
 
 ## [0.10.0] - 2026-11-11

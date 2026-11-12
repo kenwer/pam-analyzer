@@ -151,9 +151,6 @@
    <property name="text">
     <string>&amp;Open Project Folder…</string>
    </property>
-   <property name="shortcut">
-    <string>Ctrl+O</string>
-   </property>
   </action>
   <action name="action_open_legacy_pamproj">
    <property name="text">
@@ -177,8 +174,8 @@
    <property name="text">
     <string>&amp;Quit</string>
    </property>
-   <property name="shortcut">
-    <string>Ctrl+Q</string>
+   <property name="menuRole">
+    <enum>QAction::MenuRole::QuitRole</enum>
    </property>
   </action>
   <action name="action_open_log_folder">

@@ -18,10 +18,8 @@ from PySide6.QtGui import (
     QFont,
     QFontMetrics,
     QIcon,
-    QKeySequence,
     QPainter,
     QPalette,
-    QShortcut,
 )
 from PySide6.QtWidgets import (
     QListWidgetItem,
@@ -63,9 +61,6 @@ class WelcomePanel(QWidget):
         self.ui.recent_list.itemClicked.connect(self._on_recent_activated)
         self.ui.recent_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.ui.recent_list.customContextMenuRequested.connect(self._on_recent_context_menu)
-        remove = QShortcut(QKeySequence(Qt.Key.Key_Delete), self.ui.recent_list)
-        remove.setContext(Qt.ShortcutContext.WidgetShortcut)
-        remove.activated.connect(lambda: self._remove_recent(self.ui.recent_list.currentItem()))
 
     def set_loading(self, project_name: str) -> None:
         """Show a loading state in place of the usual tagline while a folder

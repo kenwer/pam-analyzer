@@ -785,3 +785,17 @@ def test_new_campaign_shortcut_leaves_ctrl_n_to_new_project(panel: CampaignsPane
     keys = [shortcut.key() for shortcut in panel.findChildren(QShortcut)]
     assert QKeySequence("Shift+Ctrl+N") in keys
     assert QKeySequence("Ctrl+N") not in keys
+
+
+@pytest.mark.parametrize("key", [Qt.Key.Key_Delete, Qt.Key.Key_Backspace])
+def test_delete_key_asks_to_delete_the_selected_campaign(qtbot, panel: CampaignsPanel, key):
+    with qtbot.waitExposed(panel):
+        panel.show()
+    panel.activateWindow()
+    panel.ui.campaign_list.setFocus()
+    qtbot.waitUntil(lambda: QApplication.focusWidget() is panel.ui.campaign_list)
+    panel.ui.campaign_list.setCurrentIndex(panel._model.index(0, 0))
+
+    qtbot.keyClick(panel.ui.campaign_list, key)
+
+    assert panel._detail.ui.stack.currentWidget() is panel._detail.ui.confirm_page

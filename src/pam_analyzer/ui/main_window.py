@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, QTimer, QUrl
-from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QColor, QDesktopServices, QPalette
+from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QColor, QDesktopServices, QKeySequence, QPalette
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -156,6 +156,15 @@ class MainWindow(QMainWindow):
         self.ui.recent_projects_menu.triggered.connect(self._on_recent_chosen)
         self.ui.action_quit.triggered.connect(self.close)
         self.ui.action_open_log_folder.triggered.connect(self._on_open_log_folder)
+        # Platform shortcuts can't be expressed in the .ui file, which only stores fixed key strings
+        self.ui.action_open_project_folder.setShortcuts(QKeySequence.StandardKey.Open)
+        self.ui.action_quit.setShortcuts(QKeySequence.StandardKey.Quit)
+        self.ui.action_keyboard_shortcuts.setShortcuts(
+            [QKeySequence("Ctrl+/"), *QKeySequence.keyBindings(QKeySequence.StandardKey.HelpContents)]
+        )
+        # Windows has no Quit shortcut, Alt+F4 closes the window instead, and names the action Exit
+        if sys.platform == "win32":
+            self.ui.action_quit.setText("E&xit")
         self.ui.action_keyboard_shortcuts.triggered.connect(self._on_keyboard_shortcuts)
         self.ui.action_about.triggered.connect(self._on_about)
         self._wire_log_level_menu()

@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 import shiboken6
 from PySide6.QtCore import QCoreApplication, Qt
+from PySide6.QtGui import QKeySequence
 
 from pam_analyzer.domain import AnalysisRunResult, Campaign, FilterMode, Project, RunStatus, paths
 from pam_analyzer.infrastructure.http_download import DownloadCancelled
@@ -366,3 +367,19 @@ def test_deleting_a_closed_window_stops_the_spectrogram_render_thread(qtbot) -> 
     shiboken6.delete(w)
 
     assert not render_thread.isRunning()
+
+
+def test_actions_use_the_platform_shortcuts(window: MainWindow) -> None:
+    def bindings(key: QKeySequence.StandardKey) -> list[QKeySequence]:
+        return QKeySequence.keyBindings(key)
+
+    assert window.ui.action_open_project_folder.shortcuts() == bindings(QKeySequence.StandardKey.Open)
+    assert window.ui.action_quit.shortcuts() == bindings(QKeySequence.StandardKey.Quit)
+    assert window.ui.action_keyboard_shortcuts.shortcuts() == [
+        QKeySequence("Ctrl+/"),
+        *bindings(QKeySequence.StandardKey.HelpContents),
+    ]
+
+
+def test_quit_is_the_last_action_of_the_file_menu(window: MainWindow) -> None:
+    assert [action for action in window.ui.menu_file.actions() if action.text()][-1] is window.ui.action_quit
