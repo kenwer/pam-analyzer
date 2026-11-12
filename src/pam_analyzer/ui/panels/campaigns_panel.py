@@ -14,6 +14,7 @@ from PySide6.QtGui import (
     QStandardItemModel,
 )
 from PySide6.QtWidgets import (
+    QApplication,
     QInputDialog,
     QMenu,
     QMessageBox,
@@ -58,6 +59,8 @@ class CampaignsPanel(QWidget):
         self.ui = Ui_CampaignsPanel()
         self.ui.setupUi(self)
         self.ui.splitter.setSizes([220, 780])
+        for button in (self.ui.overview_button, self.ui.new_button):
+            button.setFont(QApplication.font())  # Give the QToolButtons the regular UI font
 
         self._app_state = app_state
         # The panel only READS a campaign's files (species lists, audio counts)
@@ -108,6 +111,7 @@ class CampaignsPanel(QWidget):
         self._app_state.audioInventoryChanged.connect(self._refresh_overview_if_visible)
 
         self.ui.new_button.clicked.connect(self._on_new)
+        self.ui.overview_button.clicked.connect(self._on_overview_clicked)
         selection = self.ui.campaign_list.selectionModel()
         selection.selectionChanged.connect(self._on_selection_changed)
         self.ui.campaign_list.customContextMenuRequested.connect(self._on_context_menu)
@@ -441,6 +445,12 @@ class CampaignsPanel(QWidget):
         # back to the overview via _on_selection_changed.
         if self._detail.is_showing_view():
             self.ui.campaign_list.clearSelection()
+
+    def _on_overview_clicked(self) -> None:
+        # The edit and new forms lock the list, so leaving them goes through Save or Cancel
+        if self._list_locked:
+            return
+        self._return_to_overview()
 
     def _show_delete_confirm(self, campaign: Campaign) -> None:
         audio_count = campaign.count_audio_files()

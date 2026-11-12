@@ -8,6 +8,7 @@
   - Alt+F4 quits on Windows, where the Quit action is now named Exit.
   - The keyboard shortcuts list shows only the keys for the platform the app runs on.
   - The keyboard shortcuts moved from `SHORTCUTS.md` into the README.
+- Clicking the "Campaigns" header on the Campaigns panel shows the overview of all campaigns.
 - [Dev] Remove unused internal code.
 - [Dev] Cleanup the test suite and drop low-signal tests.
 ### Fixed

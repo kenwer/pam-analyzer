@@ -467,10 +467,11 @@ def test_inventory_clears_when_project_switches(
     assert state.audio_inventory.campaigns == ()
 
 
-def test_new_button_clears_selection_and_shows_form(qtbot, panel: CampaignsPanel):
+def test_new_button_shows_form_and_disables_while_editing(qtbot, panel: CampaignsPanel):
     panel.ui.new_button.click()
     assert panel._detail.ui.stack.currentWidget() is panel._detail.ui.form_page
     assert panel._detail.ui.name_edit.text() == ""
+    assert not panel.ui.new_button.isEnabled()
 
 
 def test_project_close_clears_list(panel: CampaignsPanel):
@@ -729,6 +730,22 @@ def test_loading_another_project_shows_overview(
     assert not panel.ui.campaign_list.selectionModel().hasSelection()
     assert panel._detail.ui.stack.currentWidget() is panel._detail.ui.empty_page
     qtbot.waitUntil(lambda: "gamma" in panel._detail.ui.overview_label.text(), timeout=1000)
+
+
+def test_overview_button_returns_to_overview(qtbot, panel: CampaignsPanel):
+    panel.show()
+    panel.ui.campaign_list.setCurrentIndex(panel._model.index(0, 0))
+    assert panel._detail.ui.stack.currentWidget() is panel._detail.ui.view_page
+    QTest.mouseClick(panel.ui.overview_button, Qt.MouseButton.LeftButton)
+    assert not panel.ui.campaign_list.selectionModel().hasSelection()
+    assert panel._detail.ui.stack.currentWidget() is panel._detail.ui.empty_page
+
+
+def test_overview_button_ignored_while_editing(qtbot, panel: CampaignsPanel):
+    panel.show()
+    panel.ui.new_button.click()
+    QTest.mouseClick(panel.ui.overview_button, Qt.MouseButton.LeftButton)
+    assert panel._detail.ui.stack.currentWidget() is panel._detail.ui.form_page
 
 
 def test_overview_includes_campaign_without_audio(panel: CampaignsPanel):

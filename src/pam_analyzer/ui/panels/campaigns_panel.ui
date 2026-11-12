@@ -48,12 +48,18 @@
        <item>
         <layout class="QHBoxLayout" name="header_row">
          <item>
-          <widget class="QLabel" name="campaigns_label">
-           <property name="text">
-            <string>Campaigns</string>
+          <widget class="QToolButton" name="overview_button">
+           <property name="cursor">
+            <cursorShape>PointingHandCursor</cursorShape>
+           </property>
+           <property name="toolTip">
+            <string>Show the overview of all campaigns</string>
            </property>
            <property name="styleSheet">
-            <string>font-weight: 600;</string>
+            <string>QToolButton { border: none; background: transparent; padding: 0; font-weight: 600; }</string>
+           </property>
+           <property name="text">
+            <string>Campaigns</string>
            </property>
           </widget>
          </item>
