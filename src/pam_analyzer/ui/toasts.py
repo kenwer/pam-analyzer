@@ -13,6 +13,8 @@ from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QFont
 from PySide6.QtWidgets import QApplication, QWidget
 
+from .links import link
+
 Links = Sequence[tuple[str, Callable[[], None]]]
 
 
@@ -76,7 +78,7 @@ def _show_toast(
         label.linkActivated.connect(lambda href: callbacks[int(href)]())
         # Rich text reads '&' and '<' in paths as markup and drops newlines.
         body = html.escape(text).replace("\n", "<br>")
-        anchors = " · ".join(f'<a href="{i}">{html.escape(t)}</a>' for i, (t, _cb) in enumerate(links))
+        anchors = " · ".join(link(str(i), t) for i, (t, _cb) in enumerate(links))
         toast.setText(f"{body} {anchors}")
     else:
         toast.setText(text)

@@ -33,6 +33,7 @@ from ...domain import (
 from ...widgets.no_hover_style import disable_item_hover
 from ...workers import AnalysisWorker
 from ..app_state import AppState
+from ..links import link
 from ..model_downloads import ModelDownloads
 from ..models.birdnet_results_model import BirdnetResultsModel
 from ..toasts import show_success_toast, show_warning_toast
@@ -533,9 +534,8 @@ def _campaign_names_caption(names: list[str]) -> str:
 def _model_caption_html(info: ModelInfo) -> str:
     """Licence and info link on one line, for the caption under the model combo."""
     # A word joiner after each slash stops Qt breaking the link text there. Qt ignores CSS nowrap on spans.
-    label = html.escape(info.info_url.removeprefix("https://")).replace("/", "/\u2060")
-    link = f'<a href="{html.escape(info.info_url)}">{label}</a>'
-    return f"{html.escape(info.licence)} · {link}"
+    label = info.info_url.removeprefix("https://").replace("/", "/\u2060")
+    return f"{html.escape(info.licence)} · {link(info.info_url, label)}"
 
 
 def _combo_text_inset(combo: QComboBox) -> int:

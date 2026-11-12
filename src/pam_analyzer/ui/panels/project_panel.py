@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QCheckBox, QWidget
 from ...domain import DEFAULT_MIN_CONF, DEFAULT_SPECIES_LANG, MAX_OVERLAP_S, Project, paths
 from ...infrastructure.birdnet_lib import normalize_lang_code
 from ..app_state import AppState
+from ..links import link
 from .ui_project_panel import Ui_ProjectPanel
 
 # Columns in the extra-languages checkbox grid. The codes are short, so a few
@@ -113,7 +114,7 @@ class ProjectPanel(QWidget):
                 return
 
             folder_text = paths.contract_user_path(str(project.folder))
-            self.ui.folder_label.setText(f'<a href="open">{folder_text}</a>')
+            self.ui.folder_label.setText(link("open", folder_text))
             self.ui.sdcard_pattern_edit.setText(project.sdcard_name_pattern)
             self._set_combo_value(project.preferred_species_lang)
             self._set_slider_values(min_conf=project.min_conf, overlap=project.overlap)

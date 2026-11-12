@@ -92,7 +92,7 @@
        <item>
         <widget class="QLabel" name="link_label">
          <property name="text">
-          <string>&lt;a href=&quot;https://github.com/kenwer/pam-analyzer&quot;&gt;https://github.com/kenwer/pam-analyzer&lt;/a&gt;</string>
+          <string>https://github.com/kenwer/pam-analyzer</string>
          </property>
          <property name="alignment">
           <set>Qt::AlignmentFlag::AlignCenter</set>
