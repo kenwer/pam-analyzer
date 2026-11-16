@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.10.1] - 2026-11-16
 ### Changed
 - Shortcuts:
   - Ctrl+/ or F1 (⌘/ or ⌘? on macOS) opens the keyboard shortcuts list.
