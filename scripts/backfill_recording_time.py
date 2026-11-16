@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.14"
+# dependencies = []
+# ///
 """Fill blank Recording_Time cells in a PAM Analyzer project's detection CSVs.
 
 The filename timestamp parser used to match digits from the recorder serial
