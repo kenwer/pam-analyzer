@@ -14,6 +14,7 @@
 - [Dev] Remove unused internal code.
 - [Dev] Cleanup the test suite and drop low-signal tests.
 - [Dev] `scripts/build.py` no longer has a `--stage` option.
+- [Dev] Upgrade dependencies, including onnxruntime 1.32.0.
 ### Fixed
 - Opening a project shows the Campaigns panel overview instead of a campaign's details.
 - The Analyze panel no longer overcounts detections whose comment spans several lines.
