@@ -314,7 +314,12 @@ def test_attach_updater_places_the_action_and_button(window, monkeypatch) -> Non
     controller = attach_updater(window, AppSettings(), compiled=False)
     texts = [a.text() for a in window.ui.menu_help.actions()]
     assert texts.index("Check for Updates...") < texts.index(STARTUP_CHECK_TEXT)
-    assert texts.index(STARTUP_CHECK_TEXT) < texts.index(window.ui.action_about.text())
+    debug = window.ui.menu_debug.menuAction()
+    actions = window.ui.menu_help.actions()
+    # The update entries form their own group between Keyboard Shortcuts and Debug
+    assert actions[actions.index(debug) - 1].isSeparator()
+    assert texts.index(STARTUP_CHECK_TEXT) < actions.index(debug)
+    assert texts.index("Check for Updates...") > texts.index(window.ui.action_keyboard_shortcuts.text())
     assert controller.status_button.parent() is window.ui.status_bar
     assert controller.block_reason() == NO_INSTALL_REASON
 

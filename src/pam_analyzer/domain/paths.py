@@ -5,6 +5,7 @@ through it without forming an import cycle. The detection-CSV filename
 helpers that need the Detection schema live in detection_schema instead.
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -26,6 +27,25 @@ def model_dir() -> Path:
     synced profile. The Windows uninstaller deletes this folder by its path.
     """
     return Path(user_data_dir("PAM Analyzer", appauthor=False)) / "models"
+
+
+def install_dir() -> Path:
+    """The folder the app is installed in, or the package folder in a source run.
+
+    On macOS this is the folder around the .app bundle, since opening the
+    bundle itself would launch the app. An AppImage names itself in APPIMAGE,
+    while sys.executable points into its temporary mount.
+    """
+    # Nuitka defines __compiled__ in the globals of every compiled module
+    if "__compiled__" not in globals():
+        return Path(__file__).resolve().parent.parent
+    executable = Path(sys.executable)
+    bundle = next((p for p in executable.parents if p.suffix == ".app"), None)
+    if bundle is not None:
+        return bundle.parent
+    if appimage := os.environ.get("APPIMAGE"):
+        return Path(appimage).parent
+    return executable.parent
 
 
 def contract_user_path(path_str: str) -> str:

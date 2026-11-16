@@ -118,7 +118,7 @@ class AppSettings:
 
     @property
     def log_level(self) -> str:
-        """Name of the level the user picked in the Help menu, such as WARNING."""
+        """Name of the level the user picked in the Help > Debug menu, such as WARNING."""
         self._settings.beginGroup(self.GROUP_UI)
         value = self._settings.value(self.KEY_LOG_LEVEL, self.DEFAULT_LOG_LEVEL, type=str)
         self._settings.endGroup()

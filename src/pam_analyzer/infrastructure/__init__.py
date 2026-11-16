@@ -8,6 +8,7 @@ from .audio_inventory_discovery import (
 )
 from .birdnet_2_4_runner import Birdnet24Runner
 from .birdnet_runner import BirdnetRunner
+from .model_store import models_folder
 from .pamproj_migration import (
     AudioRootNotFound,
     LegacyProject,
@@ -39,4 +40,5 @@ __all__ = [
     "load_legacy",
     "load_project",
     "migrate",
+    "models_folder",
 ]

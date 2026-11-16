@@ -24,6 +24,7 @@ from ..infrastructure import (
     find_legacy_pamproj,
     load_legacy,
     migrate,
+    models_folder,
 )
 from ..workers import ImportOrchestrator, ProjectLoadWorker, ReadOnlyThread
 from .app_state import AppState
@@ -155,7 +156,9 @@ class MainWindow(QMainWindow):
         self.ui.action_clear_recent.triggered.connect(self._on_clear_recent)
         self.ui.recent_projects_menu.triggered.connect(self._on_recent_chosen)
         self.ui.action_quit.triggered.connect(self.close)
-        self.ui.action_open_log_folder.triggered.connect(self._on_open_log_folder)
+        self.ui.action_open_log_folder.triggered.connect(lambda: self._open_folder(paths.log_dir()))
+        self.ui.action_open_models_folder.triggered.connect(lambda: self._open_folder(models_folder()))
+        self.ui.action_open_install_folder.triggered.connect(lambda: self._open_folder(paths.install_dir()))
         # Platform shortcuts can't be expressed in the .ui file, which only stores fixed key strings
         self.ui.action_open_project_folder.setShortcuts(QKeySequence.StandardKey.Open)
         self.ui.action_quit.setShortcuts(QKeySequence.StandardKey.Quit)
@@ -491,10 +494,10 @@ class MainWindow(QMainWindow):
         self._settings.log_level = logging.getLevelName(level)
         logging_setup.set_level(level)
 
-    def _on_open_log_folder(self) -> None:
-        log_dir = paths.log_dir()
-        log_dir.mkdir(parents=True, exist_ok=True)
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(log_dir)))
+    def _open_folder(self, folder: Path) -> None:
+        # Nothing is logged or downloaded until first needed, so the folder may not exist yet
+        folder.mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
 
     def _on_keyboard_shortcuts(self) -> None:
         if self._shortcuts_dialog is None:

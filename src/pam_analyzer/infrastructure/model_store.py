@@ -59,6 +59,14 @@ class ModelPackage:
 _install_lock = threading.Lock()
 
 
+def models_folder() -> Path:
+    """The folder every engine downloads into, BIRDNET_APP_DATA or the lib's per-user default."""
+    # Lazy: importing birdnet configures its logging and is slow, see birdnet_lib
+    from birdnet.utils.local_data import get_birdnet_app_data_folder
+
+    return get_birdnet_app_data_folder()
+
+
 def marker_path(artifact: Artifact) -> Path:
     return artifact.dest.with_name(artifact.dest.name + ".sha256")
 

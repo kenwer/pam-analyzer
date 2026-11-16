@@ -10,6 +10,7 @@
   - The keyboard shortcuts moved from `SHORTCUTS.md` into the README.
 - Clicking the "Campaigns" header on the Campaigns panel shows the overview of all campaigns.
 - Links in the app are no longer underlined.
+- The logging entries moved to a new Help > Debug submenu, which also opens the models and install folders.
 - Downloading a model and updating the app use buttons, and links only open web pages or folders.
 - [Dev] Remove unused internal code.
 - [Dev] Cleanup the test suite and drop low-signal tests.

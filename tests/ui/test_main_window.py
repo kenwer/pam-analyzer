@@ -63,6 +63,36 @@ def test_missing_recent_project_is_kept_until_removed_from_the_toast(
     assert paths.contract_user_path(missing) not in menu_texts
 
 
+def test_debug_menu_opens_the_log_models_and_install_folders(
+    window: MainWindow, tmp_path: Path, monkeypatch
+) -> None:
+    folders = {"log": tmp_path / "logs", "models": tmp_path / "models", "install": tmp_path / "install"}
+    monkeypatch.setattr(main_window.paths, "log_dir", lambda: folders["log"])
+    monkeypatch.setattr(main_window, "models_folder", lambda: folders["models"])
+    monkeypatch.setattr(main_window.paths, "install_dir", lambda: folders["install"])
+    opened = []
+    monkeypatch.setattr(main_window.QDesktopServices, "openUrl", lambda url: opened.append(Path(url.toLocalFile())))
+
+    assert window.ui.menu_debug.menuAction() in window.ui.menu_help.actions()
+    debug_actions = window.ui.menu_debug.actions()
+    assert window.ui.menu_log_level.menuAction() in debug_actions
+    for action in (
+        window.ui.action_open_log_folder,
+        window.ui.action_open_models_folder,
+        window.ui.action_open_install_folder,
+    ):
+        assert action in debug_actions
+        action.trigger()
+
+    assert opened == list(folders.values())
+    assert all(folder.is_dir() for folder in opened)
+
+
+def test_install_dir_is_the_package_folder_in_a_source_run() -> None:
+    assert (paths.install_dir() / "__main__.py").is_file()
+    assert paths.install_dir().name == "pam_analyzer"
+
+
 def test_choosing_a_recent_project_from_the_menu_opens_it(window: MainWindow, tmp_path: Path, toasts) -> None:
     missing = str(tmp_path / "unplugged-drive" / "project")
     window._settings.add_recent_project(missing)

@@ -81,7 +81,8 @@ def attach_updater(window: MainWindow, settings: AppSettings, compiled: bool) ->
     install = detect_install(sys.platform, Path(sys.executable), os.environ) if compiled else None
     feed_url = os.environ.get("PAM_UPDATE_FEED_URL", DEFAULT_FEED_URL)
     updater = UpdateController(window, __version__, install, feed_url, release_asset_name())
-    window.ui.menu_help.insertAction(window.ui.action_about, updater.action)
+    debug = window.ui.menu_debug.menuAction()
+    window.ui.menu_help.insertAction(debug, updater.action)
 
     startup_check = QAction(STARTUP_CHECK_TEXT, window)
     startup_check.setCheckable(True)
@@ -92,7 +93,8 @@ def attach_updater(window: MainWindow, settings: AppSettings, compiled: bool) ->
 
     # triggered, not toggled, so the setChecked above writes nothing back
     startup_check.triggered.connect(store)
-    window.ui.menu_help.insertAction(window.ui.action_about, startup_check)
+    window.ui.menu_help.insertAction(debug, startup_check)
+    window.ui.menu_help.insertSeparator(debug)
     window.ui.status_bar.addPermanentWidget(updater.status_button)
     return updater
 

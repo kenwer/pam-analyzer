@@ -339,15 +339,17 @@ The application writes a rotating debug log (`pam-analyzer.log`, capped at 1 MB 
 - **macOS**: `~/Library/Logs/PAM Analyzer/pam-analyzer.log`
 - **Linux**: `~/.local/state/PAM Analyzer/log/pam-analyzer.log`
 
-The easiest way to locate it is **Help > Open Log Folder** in the app.
+The easiest way to locate it is **Help > Debug > Open Log Folder** in the app.
 
 Downloaded models are kept across updates in the app's data folder. The Windows uninstaller deletes them. On macOS and Linux, delete the folder by hand to free the space:
 - **Windows**: `%LOCALAPPDATA%\PAM Analyzer\models`
 - **macOS**: `~/Library/Application Support/PAM Analyzer/models`
 - **Linux**: `~/.local/share/PAM Analyzer/models`
 
+**Help > Debug > Open Models Folder** opens it, and **Help > Debug > Open Install Folder** opens the folder the app is installed in.
+
 ### Changing the log level
-**Help > Log Level** sets how much detail the app records: `Debug`, `Info`,
+**Help > Debug > Log Level** sets how much detail the app records: `Debug`, `Info`,
 `Warning`, `Error` or `Critical`. New installs start at `Warning`. The change takes effect immediately and is remembered for the next launch.
 
 Log output goes to `pam-analyzer.log` and, when the app is started from a
