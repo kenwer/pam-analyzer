@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+### Fixed
+- Issue v0.10.1 introduced that opening, creating or dropping a project failed.
+
 ## [0.10.1] - 2026-11-16
 ### Changed
 - Shortcuts:
