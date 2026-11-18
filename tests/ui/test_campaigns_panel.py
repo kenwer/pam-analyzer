@@ -4,6 +4,7 @@ import dataclasses
 import os
 import time
 import unicodedata
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -56,7 +57,7 @@ def project_with_campaign(tmp_path: Path) -> tuple[Project, Campaign]:
 
 
 @pytest.fixture
-def state(project_with_campaign) -> AppState:
+def state(project_with_campaign) -> Iterator[AppState]:
     s = AppState()
     yield s
     # refresh_audio_inventory now rebuilds on a worker thread. Drain any in-flight

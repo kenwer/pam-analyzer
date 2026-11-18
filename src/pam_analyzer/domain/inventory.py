@@ -13,6 +13,7 @@ from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
+from typing import cast
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,7 +81,8 @@ class CardInventory:
 
     def with_sizes(self, sizes: Mapping[Path, int]) -> CardInventory:
         weeks = tuple(week.with_sizes(sizes) for week in self.weeks)
-        return replace(self, weeks=weeks, total_bytes=sum(week.total_bytes for week in weeks))
+        # Each week just went through with_sizes, so its total is an int
+        return replace(self, weeks=weeks, total_bytes=sum(cast(int, week.total_bytes) for week in weeks))
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,7 +101,8 @@ class CampaignInventory:
 
     def with_sizes(self, sizes: Mapping[Path, int]) -> CampaignInventory:
         cards = tuple(card.with_sizes(sizes) for card in self.cards)
-        return replace(self, cards=cards, total_bytes=sum(card.total_bytes for card in cards))
+        # Each card just went through with_sizes, so its total is an int
+        return replace(self, cards=cards, total_bytes=sum(cast(int, card.total_bytes) for card in cards))
 
 
 @dataclass(frozen=True, slots=True)

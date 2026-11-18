@@ -67,8 +67,8 @@ def _add_apply(popup: QWidget, layout: QVBoxLayout | QFormLayout) -> QPushButton
     """
     button = QPushButton("Apply", popup)
     layout.addRow("", button) if isinstance(layout, QFormLayout) else layout.addWidget(button)
-    QShortcut(QKeySequence(Qt.Key.Key_Return), popup, activated=button.click)
-    QShortcut(QKeySequence(Qt.Key.Key_Enter), popup, activated=button.click)
+    QShortcut(QKeySequence(Qt.Key.Key_Return), popup).activated.connect(button.click)
+    QShortcut(QKeySequence(Qt.Key.Key_Enter), popup).activated.connect(button.click)
     return button
 
 

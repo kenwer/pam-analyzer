@@ -11,6 +11,7 @@ placeholder here until the size pass fills it in.
 import html
 from dataclasses import dataclass
 from datetime import datetime
+from typing import cast
 
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import QApplication
@@ -101,7 +102,7 @@ def _disk_usage(inventories: list[CampaignInventory]) -> str:
     """
     if any(inv.size_pending for inv in inventories):
         return SIZE_PENDING
-    return format_bytes(sum(inv.total_bytes for inv in inventories))
+    return format_bytes(sum(cast(int, inv.total_bytes) for inv in inventories))
 
 
 def _stats(inv: CampaignInventory | CardInventory) -> str:

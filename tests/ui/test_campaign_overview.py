@@ -1,6 +1,7 @@
 """Unit tests for the empty-state overview text formatter."""
 
 from pathlib import Path
+from typing import cast
 
 from pam_analyzer.domain import (
     CampaignInventory,
@@ -35,7 +36,7 @@ def _campaign(name: str, cards: tuple[CardInventory, ...]) -> CampaignInventory:
         folder=Path(name),
         cards=cards,
         file_count=sum(c.file_count for c in cards),
-        total_bytes=sum(c.total_bytes for c in cards),
+        total_bytes=sum(cast(int, c.total_bytes) for c in cards),
         date_range=merge_date_ranges(c.date_range for c in cards),
     )
 

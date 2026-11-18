@@ -7,6 +7,7 @@ audioInventoryChanged, that a late result for a different folder is dropped,
 and that the auto-trigger actually lands a fully sized inventory.
 """
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -31,7 +32,7 @@ def project_folder(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def state() -> AppState:
+def state() -> Iterator[AppState]:
     # apply_loaded_project auto-triggers the size resolver whenever a loaded
     # project has audio, so a load_project() call below always launches a
     # real background worker. Drain it so it cannot outlive the test.
