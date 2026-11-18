@@ -243,9 +243,6 @@ class DetectionStore:
         self._dirty.clear()
         return saved
 
-    def discard_dirty(self) -> None:
-        self._dirty.clear()
-
     def _save_file(self, i: int) -> None:
         f = self.files[i]
         write_detections_frame(

@@ -626,6 +626,7 @@ class MainWindow(QMainWindow):
                 event.ignore()
                 return
             self._settings.window_geometry = self.saveGeometry()
+            self._examine_panel.flush_pending_edits()
             self._close_deadline = time.monotonic() + _CLOSE_TIMEOUT_S
         self._import_orchestrator.stop_watching()  # else a finishing card starts the next one
         running = self.running_threads()

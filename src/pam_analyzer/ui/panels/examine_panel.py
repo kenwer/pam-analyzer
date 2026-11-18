@@ -250,10 +250,7 @@ class ExaminePanel(QWidget):
     # state observers
 
     def _on_project_changed(self, project: object) -> None:
-        # Flush any pending edits against the previous project before switching.
-        if self._autosave_timer.isActive():
-            self._autosave_timer.stop()
-            self._flush_autosave()
+        self.flush_pending_edits()
         loaded = project is not None
         self._set_controls_enabled(loaded)
         audio_root = project.folder if loaded else None  # type: ignore[union-attr]
@@ -303,6 +300,7 @@ class ExaminePanel(QWidget):
     # handlers
 
     def _on_campaign_selected(self, index: int) -> None:
+        self.flush_pending_edits()  # before the store holding them is replaced
         project = self._app_state.project
         if project is None or index < 0:
             return
@@ -425,12 +423,22 @@ class ExaminePanel(QWidget):
         pair plus an optional roles list. We don't care about the args here."""
         self._autosave_timer.start()
 
+    def flush_pending_edits(self) -> None:
+        """Save the edits still inside the debounce window.
+
+        Call before the store is replaced (campaign or project change) or the
+        app quits, else the timer later saves the new store and the edits are lost.
+        """
+        if self._autosave_timer.isActive():
+            self._autosave_timer.stop()
+            self._flush_autosave()
+
     def _flush_autosave(self) -> None:
-        """Persist any dirty rows. Called when the debounce window expires or
-        when the panel needs to release in-flight edits (project change, etc)."""
-        if self._app_state.project is None:
-            self._detections.discard_dirty()  # no project to save into
-            return
+        """Persist any dirty rows into the files they came from.
+
+        The store knows its own file paths, so this also works after the
+        project was closed, which happens before projectChanged reaches here.
+        """
         # Each owning file is rewritten with all of its rows, including the ones
         # the table's filters hide. A failed write keeps the edits for a retry.
         try:

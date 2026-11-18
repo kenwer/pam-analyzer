@@ -30,6 +30,7 @@ from pam_analyzer.ui.settings import AppSettings
 from pam_analyzer.widgets.combo_delegate import ComboDelegate
 from pam_analyzer.widgets.filter_popups import SetPopup
 from tests.conftest import DEFAULT_MODEL_KEY
+from tests.ui.conftest import make_main_window
 
 
 def _visible(panel: ExaminePanel) -> list[Detection]:
@@ -437,6 +438,38 @@ def test_autosave_preserves_unedited_rows(qtbot, panel: ExaminePanel, project) -
 
     rows_after = csv_path.read_text(encoding="utf-8").splitlines()
     assert len(rows_after) == 4, "auto-save dropped unedited rows"
+
+
+def _mark_first_row_true(panel: ExaminePanel, project: Project) -> Path:
+    """Set Verified on the first row, leaving the save pending. Returns its CSV."""
+    detection = panel._model.detection_at(0)
+    assert detection is not None
+    assert panel._model.setData(panel._model.index(0, COLUMNS_BY_NAME["Verified"]), "true")
+    assert panel._autosave_timer.isActive()
+    return project.folder / detection.campaign / f"detections-{DEFAULT_MODEL_KEY}.csv"
+
+
+def test_switching_campaigns_saves_a_pending_edit(panel: ExaminePanel, project) -> None:
+    csv_path = _mark_first_row_true(panel, project)
+    combo = panel.ui.campaign_combo
+    combo.setCurrentIndex(combo.findData("beta"))
+    assert "true" in csv_path.read_text(encoding="utf-8")
+
+
+def test_closing_the_project_saves_a_pending_edit(panel: ExaminePanel, project) -> None:
+    csv_path = _mark_first_row_true(panel, project)
+    panel._app_state.close_project()
+    assert "true" in csv_path.read_text(encoding="utf-8")
+
+
+def test_quitting_saves_a_pending_edit(qtbot, project, load_project) -> None:
+    window = make_main_window()
+    qtbot.addWidget(window)
+    load_project(window._app_state, project.folder)
+    QCoreApplication.processEvents()
+    csv_path = _mark_first_row_true(window._examine_panel, project)
+    window.close()
+    assert "true" in csv_path.read_text(encoding="utf-8")
 
 
 def test_autosave_rewrites_only_the_edited_campaign(qtbot, panel: ExaminePanel, project) -> None:
