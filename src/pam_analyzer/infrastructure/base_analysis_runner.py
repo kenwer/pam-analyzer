@@ -2,10 +2,11 @@
 
 BaseAnalysisRunner owns the per-campaign sequencing, progress reporting,
 species-filter resolution, per-week species-list TXT writing, ARU and rank
-computation, and CSV writing. Subclasses fill in the per-model bits via
-three abstract methods (_load_model, _open_predict_session, _parse_row)
-plus a `taxonomy` binding that supplies their model's species axis, geo
-filter and locale set.
+computation, canonical and common names, and CSV writing. Subclasses fill
+in the per-model bits via two abstract methods (_load_model,
+_open_predict_session) plus a `taxonomy` binding that supplies their
+model's species axis, geo filter and locale set. A model whose result rows
+are not in BirdNET's layout also overrides _parse_row.
 
 Lifecycle of one run() call:
 
@@ -20,8 +21,8 @@ Lifecycle of one run() call:
                 session.run(files)
             emit 'parsing'
             for each raw lib row:
-                _parse_row() per row (subclass interprets the row)
-                shared: rank, ARU, file_rel, week
+                _parse_row() per row (decodes the model's row layout)
+                shared: canonical name, filter, rank, ARU, file_rel, week, common names
             write the CSV once (shared, detection_store.write_detections_csv)
             emit 'done'
 """
@@ -64,28 +65,44 @@ from ._analysis_helpers import (
     write_species_list_files,
 )
 from .audio_import import recording_time_of
-from .birdnet_lib import TaxonomyServices, normalize_lang_code
+from .birdnet_lib import TaxonomyServices, normalize_lang_code, split_sci_common
 from .http_download import DownloadError
 from .model_store import ModelPackage
-from .species_names import canonical_set
+from .species_names import canonical, canonical_set
 
 
 @dataclass(frozen=True)
 class ParsedRow:
-    """Model-agnostic view of one raw library result row.
+    """One raw library result row, decoded but not yet named.
 
-    Subclasses translate a raw structured-array row from the lib (which
-    differs in confidence units and species-name encoding by model) into
-    one of these for the base class to write to CSV.
+    _parse_row produces it from the model's own row layout. The base class
+    then canonicalises the label and looks up its common names.
     """
 
     file_path: Path
     start_time: float
     end_time: float
-    scientific_name: str  # canonical name, written to CSV and used for every comparison
+    label: str  # the model's scientific name, before canonicalisation
     confidence: float  # probability 0-1, after any per-model calibration
-    preferred_common: str  # for the "Species" CSV column
-    locale_commons: dict[str, str]  # Keyed by locale code without the "Species_" prefix (e.g. "en_us")
+    emitted_en: str = ""  # English name the model printed with its label, if any
+
+
+def _common_names(
+    name: str, emitted_en: str, preferred_lang_map: dict[str, str], locale_maps: dict[str, dict[str, str]]
+) -> tuple[str, dict[str, str]]:
+    """The preferred common name and the per-locale common names of one row.
+
+    emitted_en is only a fallback: for a class the model lumped under a
+    superseded name, it names the species as the model drew it, not the
+    canonical one. `or` rather than a .get default, because locale_label_map
+    keeps entries whose common name is blank, and a blank translation has to
+    degrade the same way a missing key does.
+    """
+    preferred = preferred_lang_map.get(name) or emitted_en or name
+    commons = {loc: names.get(name, "") for loc, names in locale_maps.items()}
+    if "en_us" in commons:
+        commons["en_us"] = commons["en_us"] or emitted_en
+    return preferred, commons
 
 
 class _SegmentRanker:
@@ -125,8 +142,8 @@ class BaseAnalysisRunner(ABC):
 
     The public interface (run, count_audio_files, available_locales)
     matches what AnalysisRunner callers expect. Concrete subclasses provide
-    model-specific behaviour via _load_model, _open_predict_session, and
-    _parse_row.
+    model-specific behaviour via _load_model and _open_predict_session, and
+    may override _parse_row.
     """
 
     model_key: ClassVar[str]
@@ -419,12 +436,7 @@ class BaseAnalysisRunner(ABC):
         ranker = _SegmentRanker()
         recording_times: dict[Path, str] = {}
         for raw_row in arr:
-            parsed = self._parse_row(
-                raw_row,
-                preferred_lang_map=preferred_lang_map,
-                locale_maps=locale_maps,
-                settings=settings,
-            )
+            parsed = self._parse_row(raw_row)
 
             # A model can hand back a non-finite score for degenerate
             # input. BirdNET v3.0 normalizes each window by its own
@@ -437,11 +449,14 @@ class BaseAnalysisRunner(ABC):
                 nonfinite_count += 1
                 continue
 
-            # Both sides are canonical, so this is membership in one
-            # namespace rather than a bridge between two.
+            # Canonicalised at the boundary, so every lookup and comparison
+            # below is in the app's namespace rather than the model's. Both
+            # sides of the allow-list check are canonical, so this is
+            # membership in one namespace rather than a bridge between two.
+            name = canonical(parsed.label)
             allowed = resolved.allowed_for(parsed.file_path)
-            if allowed is not None and parsed.scientific_name not in allowed:
-                if parsed.scientific_name in self._known_output_species():
+            if allowed is not None and name not in allowed:
+                if name in self._known_output_species():
                     out_of_region_count += 1
                 else:
                     unknown_species_count += 1
@@ -468,12 +483,12 @@ class BaseAnalysisRunner(ABC):
                 recording_times[parsed.file_path] = recording_time
             file_week = week_from_path(parsed.file_path)
 
-            rank = ranker.rank_for(
-                (str(parsed.file_path), parsed.start_time), parsed.scientific_name
-            )
+            rank = ranker.rank_for((str(parsed.file_path), parsed.start_time), name)
             if rank is None:
                 merged_duplicate_count += 1
                 continue
+
+            preferred, locale_commons = _common_names(name, parsed.emitted_en, preferred_lang_map, locale_maps)
 
             # Serialize through the schema's Detection path so this
             # writer cannot drift from what the repo and table read.
@@ -484,8 +499,8 @@ class BaseAnalysisRunner(ABC):
                 campaign=campaign_name,
                 aru=aru,
                 week=file_week if file_week is not None else WEEK_YEAR_ROUND,
-                species=parsed.preferred_common,
-                scientific_name=parsed.scientific_name,
+                species=preferred,
+                scientific_name=name,
                 confidence=round(float(parsed.confidence), 4),
                 start_time=round(float(parsed.start_time), 1),
                 end_time=round(float(parsed.end_time), 1),
@@ -496,10 +511,7 @@ class BaseAnalysisRunner(ABC):
                 lon=lon,
                 min_conf=settings.min_conf,
                 model=self.model_key,
-                extra={
-                    schema.locale_column(loc): parsed.locale_commons.get(loc, "")
-                    for loc in settings.locales
-                },
+                extra={schema.locale_column(loc): common for loc, common in locale_commons.items()},
             )
             detections.append(detection)
             detection_count += 1
@@ -647,20 +659,19 @@ class BaseAnalysisRunner(ABC):
         the model needs (sigmoid handling, top-k caps, device selection).
         """
 
-    @abstractmethod
-    def _parse_row(
-        self,
-        raw_row: Any,
-        *,
-        preferred_lang_map: dict[str, str],
-        locale_maps: dict[str, dict[str, str]],
-        settings: AnalysisSettings,
-    ) -> ParsedRow:
-        """Convert one raw lib result row into a ParsedRow.
+    def _parse_row(self, raw_row: Any) -> ParsedRow:
+        """Decode one raw lib result row.
 
-        The lib's row layout differs by model, both in how species_name
-        encodes the name and in whether confidence arrives as a probability
-        or a raw logit. Subclasses normalise theirs into a ParsedRow whose
-        confidence is in probability space and whose scientific_name is on
-        the axis the species filter checks against.
+        This default reads BirdNET's 'Scientific_Common' species_name and a
+        confidence that is already a probability. A model whose labels or
+        scores differ overrides it.
         """
+        sci, common_en = split_sci_common(str(raw_row["species_name"]))
+        return ParsedRow(
+            file_path=Path(str(raw_row["input"])),
+            start_time=float(raw_row["start_time"]),
+            end_time=float(raw_row["end_time"]),
+            label=sci,
+            confidence=float(raw_row["confidence"]),
+            emitted_en=common_en,
+        )

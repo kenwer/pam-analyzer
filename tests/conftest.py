@@ -36,7 +36,7 @@ FAKE_MODEL_INFO = ModelInfo("Fake 1.0", "https://example.org/fake", "CC0 1.0")
 
 # Keys the app can still read but no longer writes. Only tests whose subject
 # is that continuity should name one of these, and they should say so.
-RETIRED_MODEL_KEYS = ("Perch-2.0",)
+RETIRED_MODEL_KEYS = ("BirdNET-3.0-preview3.1",)
 
 
 def wait_until_cancelled(is_cancelled: Callable[[], bool]) -> bool:

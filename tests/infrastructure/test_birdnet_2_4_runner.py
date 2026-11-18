@@ -3,13 +3,11 @@
 The shared pipeline (progress phases, CSV schema, cancellation, species
 filtering) is covered once in test_birdnet_runner.py and lives in
 BaseAnalysisRunner, so it is not repeated here. What is specific to this
-runner is the two-axis handling: v2.4 emits names on the older eBird axis,
-the species filter matches on that axis, and the name written to CSV is
-rewritten to whichever axis the project chose.
+runner is that v2.4 emits names on the older eBird axis, and every name it
+writes has to land on the app's canonical axis.
 
-The _parse_row cases run fast because that hook takes its label maps as
-arguments and never touches the model. The end-to-end case is marked slow
-because it loads the v2.4 ONNX weights that birdnet_2_4_keras_onnx builds.
+The end-to-end case is marked slow because it loads the v2.4 ONNX weights
+that birdnet_2_4_keras_onnx builds.
 """
 
 from __future__ import annotations
@@ -28,58 +26,6 @@ from tests.infrastructure.test_birdnet_runner import (
     _campaign_with_one_wav,
     _RecordingProgress,
 )
-
-# The rename this whole two-axis path exists for: v2.4 emits the first
-# spelling, v3.0 the second.
-LEGACY_NAME = "Accipiter gentilis"
-CURRENT_NAME = "Astur gentilis"
-
-
-def _parse_one(species_name: str, preferred_lang_map: dict[str, str] | None = None):
-    """Run _parse_row on a single synthetic result row.
-
-    Needs no model: the hook takes its label maps as arguments.
-    """
-    return Birdnet24Runner()._parse_row(
-        {
-            "species_name": species_name,
-            "input": "/tmp/x.WAV",
-            "start_time": 0.0,
-            "end_time": 3.0,
-            "confidence": 0.9,
-        },
-        preferred_lang_map=preferred_lang_map or {},
-        locale_maps={"en_us": {}},
-        settings=AnalysisSettings(min_conf=0.25, overlap=0.0, locales=("en_us",)),
-    )
-
-
-def test_legacy_name_is_canonicalised_on_output() -> None:
-    """A v2.4 spelling is canonicalised, so the two engines' rows line up in
-    the Examine grid under one spelling.
-    """
-    parsed = _parse_one(f"{LEGACY_NAME}_Eurasian Goshawk")
-    assert parsed.scientific_name == CURRENT_NAME
-
-
-def test_name_without_an_alias_passes_through() -> None:
-    """The large majority of species are spelled the same on both axes."""
-    parsed = _parse_one("Turdus merula_Eurasian Blackbird")
-    assert parsed.scientific_name == "Turdus merula"
-
-
-def test_common_name_lookup_keys_on_the_canonical_spelling() -> None:
-    """Label maps are canonicalised too, so the lookup has to key on the
-    canonical name rather than the raw label v2.4 emits.
-
-    Keying on the raw label would miss for every renamed species and
-    silently fall back to English.
-    """
-    parsed = _parse_one(
-        f"{LEGACY_NAME}_Eurasian Goshawk", preferred_lang_map={CURRENT_NAME: "Habicht"}
-    )
-    assert parsed.preferred_common == "Habicht"
-    assert parsed.scientific_name == CURRENT_NAME
 
 
 @pytest.mark.slow

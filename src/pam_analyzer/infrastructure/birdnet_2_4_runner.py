@@ -2,40 +2,37 @@
 
 Birdnet24Runner is the AnalysisRunner backed by BirdNET v2.4, kept
 alongside the v3.0 runner so a monitoring study that started under v2.4 can
-keep extending its time series under the same model, and so there is a
-non-preview engine available while v3.0 ships as a preview build.
+keep extending its time series under the same model, and because it runs
+several times faster.
 
 Upstream publishes no ONNX export for v2.4, so the package downloads
 upstream's Keras weights and converts them on this machine
 (birdnet_2_4_convert), and the result loads through birdnet_2_4_onnx.
 
-v2.4 labels its classes on the older eBird-based axis. Every name is
-canonicalised at the boundary (species_names.canonical), so the species
-filter and the name written to CSV both speak the app's one namespace, and
-both engines' rows line up in the Examine grid. That turns Accipiter
-gentilis into Astur gentilis on the way in. The Model column records which
-engine actually produced each row.
+v2.4 labels its classes on the older eBird-based axis. BaseAnalysisRunner
+canonicalises every name (species_names.canonical), so the species filter
+and the name written to CSV both speak the app's one namespace, and all
+engines' rows line up in the Examine grid. That turns Accipiter gentilis
+into Astur gentilis on the way in. The Model column records which engine
+actually produced each row.
 
-The lib's `species_name` in result rows is in 'Scientific_Common' format
-because we load the model with lang='en_us'. We split each entry to get the
-scientific name and the English common name. Other locales come from the
-taxonomy's locale_label_map().
+Common names come from the BirdNET v3.0 label files, which carry the
+reference taxonomy's names, so the package downloads those too. The name
+v2.4 prints with each label is only the fallback.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import AbstractContextManager
-from pathlib import Path
 from typing import Any, ClassVar
 
 from ..domain import AnalysisSettings, ModelInfo
 from . import birdnet_2_4_convert
 from ._analysis_helpers import workers_for
-from .base_analysis_runner import BaseAnalysisRunner, ParsedRow
-from .birdnet_lib import TAXONOMY_V2_4
-from .model_store import ModelPackage
-from .species_names import canonical
+from .base_analysis_runner import BaseAnalysisRunner
+from .birdnet_lib import TAXONOMY_V2_4, prepare_v3_0_labels, v3_0_label_artifacts
+from .model_store import Artifact, ModelPackage
 
 MODEL_KEY = "BirdNET-2.4"
 
@@ -47,10 +44,14 @@ MODEL_KEY = "BirdNET-2.4"
 THREADS_PER_WORKER = 2
 
 
-def _split_sci_common(species_name: str) -> tuple[str, str]:
-    """Split a 'Scientific_Common' label entry into (sci, common)."""
-    sci, _, common = species_name.partition("_")
-    return sci, common
+def _artifacts() -> tuple[Artifact, ...]:
+    """The converted weights plus the BirdNET v3.0 label files the common names come from."""
+    return (*birdnet_2_4_convert.artifacts(), *v3_0_label_artifacts())
+
+
+def _prepare() -> None:
+    birdnet_2_4_convert.prepare()
+    prepare_v3_0_labels()
 
 
 class Birdnet24Runner(BaseAnalysisRunner):
@@ -72,8 +73,8 @@ class Birdnet24Runner(BaseAnalysisRunner):
             info_url="https://zenodo.org/records/15050749",
             licence="CC BY-NC-SA 4.0",
         ),
-        artifacts=birdnet_2_4_convert.artifacts,
-        prepare=birdnet_2_4_convert.prepare,
+        artifacts=_artifacts,
+        prepare=_prepare,
     )
 
     def _load_model(self) -> Any:
@@ -143,46 +144,4 @@ class Birdnet24Runner(BaseAnalysisRunner):
             progress_callback=on_stats,
             max_n_files=files_total,
             device="CPU",
-        )
-
-    def _parse_row(
-        self,
-        raw_row: Any,
-        *,
-        preferred_lang_map: dict[str, str],
-        locale_maps: dict[str, dict[str, str]],
-        settings: AnalysisSettings,
-    ) -> ParsedRow:
-        """Convert one raw lib result row into a ParsedRow.
-
-        The label is canonicalised first, so the common-name lookups key on
-        the same name the row is written under.
-        """
-        sci, common_en = _split_sci_common(str(raw_row["species_name"]))
-        # Canonicalised at the boundary, so every lookup and comparison below
-        # is in the app's namespace rather than the model's.
-        name = canonical(sci)
-
-        # Fall back to the lib's en_us common name if the locale lookup misses
-        # (e.g. a species not yet translated in the user's language). `or`
-        # rather than a .get default because locale_label_map keeps entries
-        # whose common name is blank, and a blank translation has to degrade
-        # the same way a missing key does.
-        preferred = preferred_lang_map.get(name) or common_en or name
-
-        # For the en_us column reuse the lib-provided common name directly,
-        # avoiding a locale_map lookup that would return the same string.
-        locale_commons = {
-            loc: (common_en if loc == "en_us" else locale_maps[loc].get(name, ""))
-            for loc in settings.locales
-        }
-
-        return ParsedRow(
-            file_path=Path(str(raw_row["input"])),
-            start_time=float(raw_row["start_time"]),
-            end_time=float(raw_row["end_time"]),
-            scientific_name=name,
-            confidence=float(raw_row["confidence"]),
-            preferred_common=preferred,
-            locale_commons=locale_commons,
         )

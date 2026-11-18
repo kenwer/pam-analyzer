@@ -7,6 +7,7 @@ from birdnet.geo.models.v3_0.onnx import models as v3_geo_models
 from birdnet.utils.taxonomy_v3 import get_taxonomy_v3_input
 
 from pam_analyzer.infrastructure import perch_onnx
+from pam_analyzer.infrastructure.birdnet_2_4_runner import Birdnet24Runner
 from pam_analyzer.infrastructure.birdnet_lib import (
     prepare_v3_0_labels,
     v3_0_artifacts,
@@ -56,6 +57,11 @@ def test_v3_0_and_perch_share_geo_and_label_files() -> None:
     shared = {a.id for a in (v3_0_geo_artifact(), *v3_0_label_artifacts())}
     assert shared <= {a.id for a in BirdnetRunner.package.artifacts()}
     assert shared <= {a.id for a in PerchRunner.package.artifacts()}
+
+
+def test_v2_4_reads_the_v3_0_labels_for_its_common_names() -> None:
+    labels = {a.id for a in v3_0_label_artifacts()}
+    assert labels <= {a.id for a in Birdnet24Runner.package.artifacts()}
 
 
 def test_v3_0_and_perch_generate_labels_after_download() -> None:

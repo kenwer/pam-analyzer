@@ -5,24 +5,18 @@ on the ONNX backend via the birdnet>=1.4 library. Audio I/O, 3 s window
 framing, batched inference, sigmoid scoring, and the confidence threshold
 all live inside the lib's predict_session pipeline. Per-campaign
 sequencing, progress reporting, species filtering, and CSV writing come
-from BaseAnalysisRunner. This module supplies only the three model-specific
-hooks.
-
-The lib's `species_name` in result rows is in 'Scientific_Common' format
-because we load the model with lang='en_us'. We split each entry to get the
-scientific name (the axis for the allow-list check) and the English common
-name. Other locales come from locale_label_map().
+from BaseAnalysisRunner, which also decodes the lib's 'Scientific_Common'
+result rows. This module supplies only loading and the predict session.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import AbstractContextManager
-from pathlib import Path
 from typing import Any, ClassVar
 
 from ..domain import AnalysisSettings, ModelInfo
-from .base_analysis_runner import BaseAnalysisRunner, ParsedRow
+from .base_analysis_runner import BaseAnalysisRunner
 from .birdnet_lib import (
     MODEL_PRECISION,
     TAXONOMY_V3_0,
@@ -30,18 +24,11 @@ from .birdnet_lib import (
     v3_0_artifacts,
 )
 from .model_store import ModelPackage
-from .species_names import canonical
 
 # Hardcoded rather than derived from the library because this string is part of
 # the CSV filename on the user's disk. The version suffix has to name the release
 # the library ships, which test_model_identity.py checks.
-MODEL_KEY = "BirdNET-3.0-preview3.1"
-
-
-def _split_sci_common(species_name: str) -> tuple[str, str]:
-    """Split a 'Scientific_Common' label entry into (sci, common)."""
-    sci, _, common = species_name.partition("_")
-    return sci, common
+MODEL_KEY = "BirdNET-3.0"
 
 
 class BirdnetRunner(BaseAnalysisRunner):
@@ -57,9 +44,9 @@ class BirdnetRunner(BaseAnalysisRunner):
     taxonomy = TAXONOMY_V3_0
     package: ClassVar[ModelPackage] = ModelPackage(
         info=ModelInfo(
-            name="BirdNET v3.0 preview 3.1",
-            info_url="https://zenodo.org/records/20703646",
-            licence="CC BY-NC-SA 4.0",
+            name="BirdNET v3.0",
+            info_url="https://zenodo.org/records/24162518",
+            licence="Apache 2.0",
         ),
         artifacts=v3_0_artifacts,
         prepare=prepare_v3_0_labels,
@@ -70,7 +57,7 @@ class BirdnetRunner(BaseAnalysisRunner):
 
         Loaded with en_us so result rows carry English common names in the
         'Sci_Common' species_name string. Other locales come from
-        locale_label_map() lookups inside _parse_row.
+        locale_label_map() lookups in BaseAnalysisRunner.
         """
         import birdnet
 
@@ -107,8 +94,8 @@ class BirdnetRunner(BaseAnalysisRunner):
         count: the lib's result tensor is dense over top_k, shaped
         (n_files, n_segments, top_k) at 7 bytes per slot, and the app hands it
         a whole campaign at once. None resolves to n_species, which on a
-        6893-file campaign of 2-minute recordings is 22.3 GB for v3.0's 11560
-        classes, against 97 MB at 50.
+        6893-file campaign of 2-minute recordings is about 22.6 GB for v3.0's
+        11725 classes, against 97 MB at 50.
 
         The cap is applied before the per-week allow-list, which runs as a
         post-filter in BaseAnalysisRunner, so a cap low enough to fill with
@@ -116,12 +103,12 @@ class BirdnetRunner(BaseAnalysisRunner):
         them.
 
         50 comes from measuring where that stops happening, over uncapped runs
-        on a 243-file February campaign and a 350-file dawn-chorus sample. The
-        min confidence slider bottoms out at 0.10, and at 0.10 in-region recall
-        is already 100% from k=10 up, with at most 10 classes clearing the
-        threshold in any one segment. At the 0.25 default at most 5 do, so the
-        cap never binds. 50 still holds below the slider's floor: 100% at
-        min_conf 0.02 and 99.4% at 0.01.
+        of the v3.0 preview on a 243-file February campaign and a 350-file
+        dawn-chorus sample. The min confidence slider bottoms out at 0.10, and
+        at 0.10 in-region recall is already 100% from k=10 up, with at most 10
+        classes clearing the threshold in any one segment. At the 0.25 default
+        at most 5 do, so the cap never binds. 50 still holds below the
+        slider's floor: 100% at min_conf 0.02 and 99.4% at 0.01.
 
         All three runners share the cap, sized to v3.0's distribution rather
         than Perch's: a raw sigmoid puts far more classes over a low threshold
@@ -150,46 +137,4 @@ class BirdnetRunner(BaseAnalysisRunner):
             progress_callback=on_stats,
             max_n_files=files_total,
             device="CPU",
-        )
-
-    def _parse_row(
-        self,
-        raw_row: Any,
-        *,
-        preferred_lang_map: dict[str, str],
-        locale_maps: dict[str, dict[str, str]],
-        settings: AnalysisSettings,
-    ) -> ParsedRow:
-        """Convert one raw lib result row into a ParsedRow.
-
-        The label is canonicalised first, so the common-name lookups key on
-        the same name the row is written under.
-        """
-        sci, common_en = _split_sci_common(str(raw_row["species_name"]))
-        # Canonicalised at the boundary, so every lookup and comparison below
-        # is in the app's namespace rather than the model's.
-        name = canonical(sci)
-
-        # Fall back to the lib's en_us common name if the locale lookup misses
-        # (e.g. a species not yet translated in the user's language). `or`
-        # rather than a .get default because locale_label_map keeps entries
-        # whose common name is blank, and a blank translation has to degrade
-        # the same way a missing key does.
-        preferred = preferred_lang_map.get(name) or common_en or name
-
-        # For the en_us column reuse the lib-provided common name directly,
-        # avoiding a locale_map lookup that would return the same string.
-        locale_commons = {
-            loc: (common_en if loc == "en_us" else locale_maps[loc].get(name, ""))
-            for loc in settings.locales
-        }
-
-        return ParsedRow(
-            file_path=Path(str(raw_row["input"])),
-            start_time=float(raw_row["start_time"]),
-            end_time=float(raw_row["end_time"]),
-            scientific_name=name,
-            confidence=float(raw_row["confidence"]),
-            preferred_common=preferred,
-            locale_commons=locale_commons,
         )

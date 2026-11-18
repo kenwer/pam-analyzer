@@ -10,8 +10,7 @@ turns them into a Confidence comparable with what the BirdNET runners write.
 And Perch labels its classes with bare scientific names, where BirdNET uses
 'Scientific_Common', so the row parsing that works for one corrupts the other.
 
-The _parse_row cases run fast because that hook takes its label maps as
-arguments and never touches the model.
+The _parse_row cases run fast because that hook never touches the model.
 """
 
 from __future__ import annotations
@@ -53,16 +52,11 @@ CURRENT_NAME = "Astur gentilis"
 SOUND_EVENT_LABEL = "Accelerating_and_revving_and_vroom"
 
 
-def _parse_one(
-    species_name: str,
-    confidence: float,
-    preferred_lang_map: dict[str, str] | None = None,
-):
+def _parse_one(species_name: str, confidence: float):
     """Run _parse_row on a single synthetic result row.
 
-    Needs no model: the hook takes its label maps as arguments. `confidence`
-    is a raw logit here, because that is what the lib hands over when the
-    session is opened with apply_sigmoid=False.
+    `confidence` is a raw logit here, because that is what the lib hands over
+    when the session is opened with apply_sigmoid=False.
     """
     return PerchRunner()._parse_row(
         {
@@ -72,9 +66,6 @@ def _parse_one(
             "end_time": 5.0,
             "confidence": confidence,
         },
-        preferred_lang_map=preferred_lang_map or {},
-        locale_maps={"en_us": {}},
-        settings=AnalysisSettings(locales=("en_us",)),
     )
 
 
@@ -119,21 +110,8 @@ def test_parse_row_keeps_underscores_in_non_species_labels() -> None:
     turn this class into 'Accelerating' and invent a common name from the rest.
     """
     parsed = _parse_one(SOUND_EVENT_LABEL, confidence=CALIBRATED_OFFSET)
-    assert parsed.scientific_name == SOUND_EVENT_LABEL
-
-
-def test_parse_row_takes_common_names_from_the_v3_labels() -> None:
-    """Perch ships no common names, so they come from BirdNET v3.0's label map.
-
-    The lookup keys on the canonical spelling, which for this bird is the
-    v3.0 one Perch itself emits.
-    """
-    parsed = _parse_one(
-        CURRENT_NAME,
-        confidence=CALIBRATED_OFFSET,
-        preferred_lang_map={CURRENT_NAME: "Northern Goshawk"},
-    )
-    assert parsed.preferred_common == "Northern Goshawk"
+    assert parsed.label == SOUND_EVENT_LABEL
+    assert parsed.emitted_en == ""
 
 
 @pytest.mark.slow

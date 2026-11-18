@@ -34,7 +34,7 @@ set -euo pipefail
 # just re-run in the GUI, since finished campaigns are skipped by the CSV check.
 
 PROJECT_TOML="pam-analyzer.toml"
-MODEL="BirdNET-3.0-preview3.1"
+MODEL="BirdNET-3.0"
 
 die() {
   echo "error: $*" >&2

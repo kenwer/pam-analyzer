@@ -71,3 +71,9 @@ def test_a_project_file_naming_the_old_axis_setting_still_loads(tmp_path):
 
     assert project.analysis_model == "BirdNET-2.4"
     assert not hasattr(project, "analysis_taxonomy")
+
+
+def test_a_project_saved_on_the_v3_preview_opens_on_the_final_v3(tmp_path):
+    project = Project.from_table(tmp_path, {"analysis_model": "BirdNET-3.0-preview3.1"})
+
+    assert project.analysis_model == "BirdNET-3.0"

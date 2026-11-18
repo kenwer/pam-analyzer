@@ -28,10 +28,11 @@ below: a line that already names a Perch class stays whole, and anything else
 is read the BirdNET way, so a hand-written list survives a switch to this
 engine.
 
-Perch's species axis converges with BirdNET v3.0's: 10916 of v3.0's 11560
-classes are spelled identically in Perch's 14795. That is why this runner can
-reuse TAXONOMY_V3_0 for the geo allow-list and the common-name maps rather than
-needing a Perch-specific crosswalk. The classes Perch adds and v3.0 lacks are
+Perch's species axis converges with BirdNET v3.0's: 11063 of v3.0's 11725
+classes are spelled identically in Perch's 14795, and 11190 match once both
+are canonicalised. That is why this runner can reuse TAXONOMY_V3_0 for the
+geo allow-list and the common-name maps rather than needing a
+Perch-specific crosswalk. The classes Perch adds and v3.0 lacks are
 mostly non-birds, and a per-week allow-list drops them the same way it drops
 any name absent from the axis.
 """
@@ -55,7 +56,6 @@ from .birdnet_lib import (
     v3_0_label_artifacts,
 )
 from .model_store import Artifact, ModelPackage
-from .species_names import canonical
 
 # Hardcoded rather than derived from the model, because this string is part of
 # the CSV filename on the user's disk.
@@ -63,9 +63,10 @@ MODEL_KEY = "Perch-2.0"
 
 # Perch resolves to roughly 1.25 GB resident per inference worker: onnxruntime
 # prepacks its 363 MB classifier weight, which is 89% of the model, into a
-# second copy. One worker per core would need about 18.9 GB, more than BirdNET
-# v3.0's 11.5 GB. Half the workers with two threads each measured 96.5 seg/s
-# against 98.0, so 1.5% of throughput buys half the memory.
+# second copy. One worker per core would need about 18.9 GB, more than
+# BirdNET v3.0's 11.1 GiB (summed RSS, 14 workers). Half the workers with two
+# threads each measured 96.5 seg/s against 98.0, so 1.5% of throughput buys
+# half the memory.
 #
 # The lib's n_workers=None does not cover this. It estimates a worker from the
 # model's size on disk and misses the prepacked copy, so it would start more
@@ -213,45 +214,22 @@ class PerchRunner(BaseAnalysisRunner):
             device="CPU",
         )
 
-    def _parse_row(
-        self,
-        raw_row: Any,
-        *,
-        preferred_lang_map: dict[str, str],
-        locale_maps: dict[str, dict[str, str]],
-        settings: AnalysisSettings,
-    ) -> ParsedRow:
-        """Convert one raw lib result row into a ParsedRow.
+    def _parse_row(self, raw_row: Any) -> ParsedRow:
+        """Decode one raw lib result row.
 
         The species name is taken whole. Perch labels are bare names, and the
         non-bird half of its label set contains underscores that a
-        'Scientific_Common' split would truncate.
-
-        Common-name lookups key on the canonicalised name, since that is what
-        the label maps (v3.0's files) are keyed on too.
+        'Scientific_Common' split would truncate. Perch prints no common name,
+        so its classes outside v3.0's axis, the insects and sound events, fall
+        through to the scientific name.
         """
-        sci = str(raw_row["species_name"])
-        # The lib returned a raw logit because the session set
-        # apply_sigmoid=False. Converting here keeps the CSV's Confidence in
-        # the same units the BirdNET runners write.
-        conf = _perch_logit_to_prob(float(raw_row["confidence"]))
-
-        name = canonical(sci)
-
-        # `or` rather than a .get default, because locale_label_map keeps
-        # entries whose common name is blank and a blank translation has to
-        # degrade the same way a missing key does. Perch classes outside
-        # v3.0's axis, the insects and sound events, fall through to the
-        # scientific name.
-        preferred = preferred_lang_map.get(name) or name
-        locale_commons = {loc: locale_maps[loc].get(name, "") for loc in settings.locales}
-
         return ParsedRow(
             file_path=Path(str(raw_row["input"])),
             start_time=float(raw_row["start_time"]),
             end_time=float(raw_row["end_time"]),
-            scientific_name=name,
-            confidence=conf,
-            preferred_common=preferred,
-            locale_commons=locale_commons,
+            label=str(raw_row["species_name"]),
+            # The lib returned a raw logit because the session set
+            # apply_sigmoid=False. Converting here keeps the CSV's Confidence
+            # in the same units the BirdNET runners write.
+            confidence=_perch_logit_to_prob(float(raw_row["confidence"])),
         )

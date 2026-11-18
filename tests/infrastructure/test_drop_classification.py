@@ -23,7 +23,6 @@ import pytest
 from pam_analyzer.domain import AnalysisSettings, Campaign, FilterMode
 from pam_analyzer.infrastructure.base_analysis_runner import BaseAnalysisRunner, ParsedRow
 from pam_analyzer.infrastructure.model_store import ModelPackage
-from pam_analyzer.infrastructure.species_names import canonical
 from tests.conftest import FAKE_MODEL_INFO
 
 # The model's own axis is wider than the one it borrows for geo and locales,
@@ -91,18 +90,13 @@ class _AxisStubRunner(BaseAnalysisRunner):
     def _open_predict_session(self, model: Any, **kwargs: Any) -> Any:
         yield _FakeSession(self._rows)
 
-    def _parse_row(self, raw_row: Any, **kwargs: Any) -> ParsedRow:
-        # Canonicalised here too, matching every real _parse_row, so a stub
-        # row exercises the same namespace the row loop actually compares in.
-        name = canonical(str(raw_row["species_name"]))
+    def _parse_row(self, raw_row: Any) -> ParsedRow:
         return ParsedRow(
             file_path=Path("a.wav"),
             start_time=0.0,
             end_time=3.0,
-            scientific_name=name,
+            label=str(raw_row["species_name"]),
             confidence=0.9,
-            preferred_common=name,
-            locale_commons={},
         )
 
 

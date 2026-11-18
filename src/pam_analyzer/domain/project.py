@@ -10,6 +10,7 @@ from .values import (
     DEFAULT_MIN_CONF,
     DEFAULT_SPECIES_LANG,
     MAX_OVERLAP_S,
+    MODEL_SUCCESSORS,
     AnalysisSettings,
 )
 
@@ -83,7 +84,7 @@ class Project:
         return cls(
             folder=folder,
             sdcard_name_pattern=raw.sdcard_name_pattern,
-            analysis_model=raw.analysis_model,
+            analysis_model=MODEL_SUCCESSORS.get(raw.analysis_model, raw.analysis_model),
             min_conf=raw.birdnet_min_conf,
             overlap=raw.birdnet_overlap,
             locales=tuple(raw.birdnet_locales),

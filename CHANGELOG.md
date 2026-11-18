@@ -1,7 +1,14 @@
 # Changelog
 
 ## [Unreleased]
+### Added
+- Initial support for the final BirdNET v3.0 model release, which replaces the BirdNET v3.0 preview 3.1 model.
 ### Changed
+- BirdNET v3.0 replaces the BirdNET v3.0 preview 3.1 model:
+  - The v3.0 model is downloaded on its first run or from the BirdNET panel. The preview's model files are then deleted.
+  - New detections are saved to `detections-BirdNET-3.0.csv`. Detections from the preview still load.
+  - A project whose model selection was the preview now selects 3.0.
+  - When species are filtered by recording location, non-animal sounds such as engines and sirens are no longer filtered out.
 - [Dev] `poe lint` also runs pyright and checks `scripts/`, and a pre-commit hook runs `poe lint`.
 ### Fixed
 - Downloading a newer version of a model no longer leaves the old version's checksum file in the models folder.

@@ -1,4 +1,4 @@
-"""Tests for BirdnetRunner: _parse_row unit cases plus end-to-end smoke tests.
+"""End-to-end smoke tests for BirdnetRunner.
 
 The end-to-end cases are marked slow because they download the BirdNET v3.0
 ONNX model on first run (~541 MB, cached afterwards) and pay the session
@@ -10,9 +10,6 @@ They verify the runner's contract: it produces a detections CSV with our
 schema, emits the expected progress phases, applies the species filter, and
 turns a Stop click into a CANCELLED AnalysisRunResult. Audio I/O and 3 s
 framing live inside the birdnet library, so nothing here covers them.
-
-The _parse_row cases run fast because that hook takes its label maps as
-arguments and never touches the model.
 """
 
 from __future__ import annotations
@@ -98,71 +95,6 @@ def minute_run(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Analysis
         progress=progress,
     )
     return camp_dir, result, progress
-
-
-def _parse_one(species_name: str, preferred_lang_map: dict[str, str]) -> str:
-    """Run _parse_row on a single synthetic result row, return Species.
-
-    Needs no model: the hook takes its label maps as arguments.
-    """
-    parsed = BirdnetRunner()._parse_row(
-        {
-            "species_name": species_name,
-            "input": "/tmp/x.WAV",
-            "start_time": 0.0,
-            "end_time": 3.0,
-            "confidence": 0.9,
-        },
-        preferred_lang_map=preferred_lang_map,
-        locale_maps={"en_us": {}},
-        settings=AnalysisSettings(min_conf=0.5, overlap=0.0, locales=("en_us",)),
-    )
-    return parsed.preferred_common
-
-
-def test_blank_locale_name_falls_back_like_a_missing_one() -> None:
-    """An entry present but empty must not blank out the Species column.
-
-    Label files are vendor data. locale_label_map keeps every entry with a
-    non-empty scientific name, so a line carrying no common name ('Sci_')
-    lands in the map as an empty string rather than being absent. No shipped
-    v3.0 locale has one today, but a future model release could add one, and
-    the two cases have to behave alike.
-    """
-    assert _parse_one("Parus major_Great Tit", {}) == "Great Tit"
-    assert _parse_one("Parus major_Great Tit", {"Parus major": ""}) == "Great Tit"
-
-
-def test_scientific_name_is_the_last_resort() -> None:
-    """With no common name on either side, Species carries the Latin name."""
-    assert _parse_one("Parus major_", {"Parus major": ""}) == "Parus major"
-
-
-def _parse_full(species_name: str):
-    """Run _parse_row on a synthetic row, returning the full ParsedRow."""
-    return BirdnetRunner()._parse_row(
-        {
-            "species_name": species_name,
-            "input": "/tmp/x.WAV",
-            "start_time": 0.0,
-            "end_time": 3.0,
-            "confidence": 0.9,
-        },
-        preferred_lang_map={},
-        locale_maps={"en_us": {}},
-        settings=AnalysisSettings(min_conf=0.5, overlap=0.0, locales=("en_us",)),
-    )
-
-
-def test_a_superseded_v3_class_is_canonicalised() -> None:
-    """v3.0's label file still carries Charadrius dubius, the superseded
-    spelling of Thinornis dubius, as its own class. Canonicalising at the
-    boundary means a row emitted under either spelling lands on the same
-    name, so the geo allow-list, built from the current spelling, still
-    matches it.
-    """
-    parsed = _parse_full("Charadrius dubius_Little Ringed Plover")
-    assert parsed.scientific_name == "Thinornis dubius"
 
 
 @pytest.mark.slow

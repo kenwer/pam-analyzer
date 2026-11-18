@@ -24,7 +24,7 @@ from pam_analyzer.domain import (
     RunStatus,
 )
 from pam_analyzer.domain.analysis_run_result import CampaignRunResult
-from pam_analyzer.infrastructure.base_analysis_runner import BaseAnalysisRunner, _SegmentRanker
+from pam_analyzer.infrastructure.base_analysis_runner import BaseAnalysisRunner, _common_names, _SegmentRanker
 from pam_analyzer.infrastructure.http_download import DownloadError
 from pam_analyzer.infrastructure.model_store import Artifact, ModelPackage
 from tests.infrastructure.conftest import Route
@@ -76,9 +76,6 @@ class _StubRunner(BaseAnalysisRunner):
 
     def _open_predict_session(self, *args: Any, **kwargs: Any) -> Any:  # pragma: no cover
         raise AssertionError("_run_campaign is stubbed, so no session is opened")
-
-    def _parse_row(self, *args: Any, **kwargs: Any) -> Any:  # pragma: no cover
-        raise AssertionError("_run_campaign is stubbed, so no rows are parsed")
 
     def _run_campaign(self, campaign: Campaign, *_a: Any, **_k: Any) -> CampaignRunResult:
         if campaign.name == self._fail_on:
@@ -227,3 +224,41 @@ def test_run_does_not_download(tmp_path: Path, local_http_server) -> None:
     assert result.status is RunStatus.COMPLETED
     assert runner.events == ["load"]
     assert local_http_server.requests == []
+
+
+def test_the_default_parse_splits_birdnets_label_format() -> None:
+    row = {"species_name": "Parus major_Great Tit", "input": "x.WAV", "start_time": 0.0, "end_time": 3.0, "confidence": 0.9}
+
+    parsed = _StubRunner()._parse_row(row)
+
+    assert (parsed.label, parsed.emitted_en) == ("Parus major", "Great Tit")
+
+
+def test_blank_locale_name_falls_back_like_a_missing_one() -> None:
+    """An entry present but empty must not blank out the Species column.
+
+    Label files are vendor data. locale_label_map keeps every entry with a
+    non-empty scientific name, so a line carrying no common name ('Sci_')
+    lands in the map as an empty string rather than being absent.
+    """
+    assert _common_names("Parus major", "Great Tit", {}, {})[0] == "Great Tit"
+    assert _common_names("Parus major", "Great Tit", {"Parus major": ""}, {})[0] == "Great Tit"
+
+
+def test_scientific_name_is_the_last_resort() -> None:
+    assert _common_names("Parus major", "", {"Parus major": ""}, {})[0] == "Parus major"
+
+
+def test_english_column_comes_from_the_label_map() -> None:
+    """The map carries the reference taxonomy's name. The name a model prints
+    with a lumped class names the species as that model drew it.
+    """
+    _, commons = _common_names("Acanthis flammea", "Hoary Redpoll", {}, {"en_us": {"Acanthis flammea": "Redpoll"}})
+
+    assert commons == {"en_us": "Redpoll"}
+
+
+def test_english_column_falls_back_to_the_emitted_name() -> None:
+    _, commons = _common_names("Turdus merula", "Eurasian Blackbird", {}, {"en_us": {}, "de": {}})
+
+    assert commons == {"en_us": "Eurasian Blackbird", "de": ""}

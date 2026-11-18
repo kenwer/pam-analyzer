@@ -10,7 +10,13 @@ DEFAULT_MIN_CONF = 0.25
 # the runner, because the domain layer must not depend on infrastructure.
 # The panel falls back to its first runner if a project names a key that no
 # longer ships, so this string going stale degrades gracefully.
+# TODO: Switch to BirdNET-3.0 once a birdnet release on PyPI includes it.
 DEFAULT_ANALYSIS_MODEL = "BirdNET-2.4"
+
+# Model keys a later release of the same engine replaced, mapped to the key
+# that runs in their place. A project saved on the old key opens on its
+# successor. The old key's detection CSVs keep their own name and still load.
+MODEL_SUCCESSORS = {"BirdNET-3.0-preview3.1": "BirdNET-3.0"}
 
 # Species-name language a new project starts on, and the value a project
 # naming a language this build does not offer is corrected to. en_us is the

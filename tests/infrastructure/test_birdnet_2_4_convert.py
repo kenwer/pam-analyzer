@@ -4,11 +4,20 @@ from pathlib import Path
 
 import pytest
 
-from pam_analyzer.infrastructure import birdnet_2_4_convert, birdnet_2_4_keras_onnx
+from pam_analyzer.infrastructure import birdnet_2_4_convert, birdnet_2_4_keras_onnx, birdnet_2_4_runner
 from pam_analyzer.infrastructure.birdnet_2_4_runner import Birdnet24Runner
 from pam_analyzer.infrastructure.http_download import DownloadError
 from pam_analyzer.infrastructure.model_store import install, marker_path
 from tests.infrastructure.conftest import never, no_progress
+
+
+@pytest.fixture
+def no_v3_0_labels(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The package also carries the v3.0 label files its common names come
+    from. Installing those would reach the network, and they are not under test here.
+    """
+    monkeypatch.setattr(birdnet_2_4_runner, "v3_0_label_artifacts", lambda: ())
+    monkeypatch.setattr(birdnet_2_4_runner, "prepare_v3_0_labels", lambda: None)
 
 
 @pytest.fixture
@@ -43,12 +52,17 @@ def _place_verified_zip() -> Path:
     return source.dest
 
 
-def test_package_is_wired_to_the_converter() -> None:
-    assert Birdnet24Runner.package.artifacts is birdnet_2_4_convert.artifacts
-    assert Birdnet24Runner.package.prepare is birdnet_2_4_convert.prepare
-
-
 @pytest.mark.usefixtures("app_data")
+def test_package_lists_the_converter_artifacts() -> None:
+    """The v3.0 label half of the package is pinned in test_model_artifacts,
+    and the install tests below run its prepare step.
+    """
+    converter = {a.id for a in birdnet_2_4_convert.artifacts()}
+
+    assert converter <= {a.id for a in Birdnet24Runner.package.artifacts()}
+
+
+@pytest.mark.usefixtures("app_data", "no_v3_0_labels")
 def test_lists_the_zip_until_converted(conversions: list[Path]) -> None:
     assert [a.id for a in birdnet_2_4_convert.artifacts()] == ["birdnet-2.4-keras"]
     zip_path = _place_verified_zip()
@@ -69,7 +83,7 @@ def test_prepare_does_nothing_once_converted(conversions: list[Path]) -> None:
     assert len(conversions) == 1
 
 
-@pytest.mark.usefixtures("app_data")
+@pytest.mark.usefixtures("app_data", "no_v3_0_labels")
 def test_failed_conversion_keeps_the_zip(monkeypatch: pytest.MonkeyPatch) -> None:
     def broken_convert(_zip_path: Path, _app_data: Path) -> None:
         raise ValueError("unsupported layer")
