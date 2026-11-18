@@ -1,0 +1,66 @@
+# Corrections to BirdNET+ Taxonomy's aliases for the labels of the shipped
+# models. scripts/build_species_aliases.py merges these into the alias table,
+# and an entry here wins over the taxonomy's own alias for the same label.
+#
+# Format: one entry per line, fields separated by a single tab. Lines starting
+# with "#" and blank lines are ignored. Each entry has two or three fields:
+#
+#   superseded_name  the scientific name as a model's label spells it
+#   canonical_name   the name to write the species under
+#   ebird_code       optional, the taxonomy's eBird code for canonical_name.
+#                    When present, the script stops with an error if the
+#                    taxonomy no longer gives canonical_name this code, so a
+#                    bridge cannot silently go stale. Vetoes leave it out.
+#
+# A label mapped onto itself vetoes a wrong taxonomy alias and keeps the
+# model's spelling.
+#
+# The other entries bridge BirdNET v2.4 labels whose species the taxonomy
+# moved to another genus without listing the old name as an alias. Without
+# them, such a species is written under two names, the v2.4 one and the v3.0
+# one, and its rows from the two models do not line up.
+#
+# Each bridge matches the v2.4 label's eBird code (eBird_taxonomy_codes_2024E.json
+# from BirdNET-Analyzer) to the taxonomy's ebird_code, and is kept only where
+# the species epithet survives the move, allowing for a changed gender ending.
+# The script re-checks the code against the taxonomy on every run. The
+# epithet check matters because after a split the code stays with one
+# daughter species, and a code match alone would map the broader old species
+# onto it. These v2.4 labels are splits and keep their own spelling:
+# Pachycephala fulvotincta, Phaeomyias murina, Trachyphonus purpuratus and
+# Turdus poliocephalus.
+
+# Bos frontalis is the gayal (mithun), a domesticated bovine of South and
+# Southeast Asia that Perch has a label for. The taxonomy wrongly lists it as
+# an alias of Stenella frontalis, the Atlantic Spotted Dolphin, so this entry
+# keeps Perch's name.
+Bos frontalis	Bos frontalis
+
+# Genus moves of BirdNET v2.4 labels.
+Alophoixus finschii	Iole finschii	finbul1
+Anthropoides virgo	Grus virgo	demcra1
+Anurolimnas fasciatus	Rufirallus fasciatus	blbcra1
+Anurolimnas viridis	Rufirallus viridis	ruccra1
+Coracina caesia	Ceblepyris caesius	grycus1
+Coracina cinerea	Ceblepyris cinereus	ashcus2
+Coracina pectoralis	Ceblepyris pectoralis	whbcus2
+Corythaixoides concolor	Crinifer concolor	grygab1
+Corythaixoides leucogaster	Crinifer leucogaster	wbgbir1
+Crateroscelis murina	Origma murina	rumwar1
+Crateroscelis robusta	Origma robusta	momwar1
+Musophaga rossae	Tauraco rossae	rostur1
+Ochthoeca diadema	Silvicultrix diadema	yebcht1
+Ochthoeca frontalis	Silvicultrix frontalis	crocht1
+Ochthoeca jelskii	Silvicultrix jelskii	jelcht1
+Ochthoeca pulchella	Silvicultrix pulchella	gobcht1
+Phylloscartes eximius	Pogonotriccus eximius	sobtyr2
+Phylloscartes lanyoni	Pogonotriccus lanyoni	anbtyr1
+Phylloscartes ophthalmicus	Pogonotriccus ophthalmicus	mfbtyr1
+Phylloscartes poecilotis	Pogonotriccus poecilotis	vabtyr1
+Pitangus lictor	Philohydor lictor	leskis1
+Psophocichla litsitsirupa	Turdus litsitsirupa	grothr1
+Pycnonotus striatus	Alcurus striatus	strbul2
+Sericornis citreogularis	Neosericornis citreogularis	yetscr1
+Sericornis papuensis	Aethomyias papuensis	papscr1
+Tauraco leucotis	Menelikornis leucotis	whctur1
+Tauraco porphyreolophus	Gallirex porphyreolophus	puctur2

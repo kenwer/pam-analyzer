@@ -81,7 +81,7 @@ def test_perch_does_not_hand_out_the_label_set_the_model_holds() -> None:
 
     assert axis is not perch_onnx.labels()
     assert not hasattr(axis, "add"), "a mutable axis invites exactly that mistake"
-    assert axis == frozenset(perch_onnx.labels()), "narrowing must not drop names"
+    assert axis == canonical_set(perch_onnx.labels()), "narrowing must not drop names"
 
 
 @pytest.mark.slow

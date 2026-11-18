@@ -2,17 +2,15 @@
 
 A scientific name is only meaningful relative to the model that emitted it.
 BirdNET v2.4 calls the Eurasian Goshawk Accipiter gentilis and v3.0 calls it
-Astur gentilis, and v3.0's label file carries both Charadrius dubius and
-Thinornis dubius as separate classes for the Little Ringed Plover. Comparing
+Astur gentilis, and Perch carries some species under two spellings. Comparing
 raw labels across those sources is therefore unsound.
 
-This module defines the one namespace the rest of the app works in. The rule
-is: use the model's own label, except where the shipped table says a spelling
-has been superseded. It is not "BirdNET v3.0's taxonomy". The table happens to
-hold v2.4-to-v3.0 renames because that is the only divergence that has
-existed, and a supersession from any source belongs in it. Names nothing has
-an opinion about, such as Perch's insects and sound events, pass through
-untouched.
+This module defines the one namespace the rest of the app works in: the
+accepted scientific names of a pinned BirdNET+ Taxonomy release. The shipped
+table maps every model label the taxonomy lists as an alias onto its accepted
+name, lumps included, and scripts/build_species_aliases.py regenerates it.
+Names the taxonomy does not know, such as most of Perch's insects and sound
+events, pass through untouched.
 
 canonical() is applied at the boundary where a label enters the app, so no
 code downstream needs to know which model produced a name. See

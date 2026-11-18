@@ -9,7 +9,15 @@
   - New detections are saved to `detections-BirdNET-3.0.csv`. Detections from the preview still load.
   - A project whose model selection was the preview now selects 3.0.
   - When species are filtered by recording location, non-animal sounds such as engines and sirens are no longer filtered out.
+- Species names of every model follow [BirdNET+ Taxonomy](https://birdnet.cornell.edu/taxonomy/) v0.5 ([CSV/JSON download](https://birdnet.cornell.edu/taxonomy/api/download/zip)):
+  - A species has the same name no matter which model detected it.
+  - BirdNET v3.0 already uses this taxonomy. Detections from BirdNET v2.4 and Perch 2.0 are translated to it:
+    - Species with an outdated scientific name get the current one, e.g. `Emberiza schoeniclus` becomes `Schoeniclus schoeniclus`.
+    - Species the taxonomy lumps together are reported as one, e.g. BirdNET v2.4's separate redpoll species are all reported as `Acanthis flammea`.
+    - Common names in all languages are taken from the taxonomy for species BirdNET v3.0 also detects.
+    - Species the taxonomy splits, or does not list, keep the name the model gives them.
 - [Dev] `poe lint` also runs pyright and checks `scripts/`, and a pre-commit hook runs `poe lint`.
+- [Dev] `scripts/build_species_aliases.py` regenerates the species alias table from the pinned taxonomy release.
 ### Fixed
 - Downloading a newer version of a model no longer leaves the old version's checksum file in the models folder.
 - [Dev] `scripts/run_analysis.py --campaign` finds campaigns with non-ASCII names on macOS.

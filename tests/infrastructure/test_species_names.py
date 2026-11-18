@@ -46,15 +46,44 @@ def test_canonical_rewrites_only_superseded_spellings(name, expected):
 
 
 def test_canonical_set_collapses_two_spellings_of_one_bird():
-    """The v3.0 label file carries both spellings for 27 birds."""
+    """The v3.0 preview carried both spellings for 27 birds."""
     assert canonical_set(["Charadrius dubius", "Thinornis dubius"]) == frozenset(
         {"Thinornis dubius"}
     )
 
 
+def test_canonical_set_collapses_a_lump():
+    """BirdNET+ Taxonomy lumps the redpolls that v2.4 still keeps apart."""
+    assert canonical_set(["Acanthis flammea", "Acanthis hornemanni", "Acanthis cabaret"]) == frozenset(
+        {"Acanthis flammea"}
+    )
+
+
+@pytest.mark.parametrize(
+    "superseded, current",
+    [
+        ("Accipiter gentilis", "Astur gentilis"),
+        ("Charadrius dubius", "Thinornis dubius"),
+        ("Emberiza schoeniclus", "Schoeniclus schoeniclus"),
+        ("Troglodytes troglodytes", "Nannus troglodytes"),
+        ("Anthropoides virgo", "Grus virgo"),
+    ],
+    ids=["taxonomy", "preview-duplicate", "genus-split", "v2.4-on-v3.0", "supplement"],
+)
+def test_shipped_table_maps_onto_the_taxonomy(superseded, current):
+    assert _load_map()[superseded] == current
+
+
 def test_shipped_table_is_loadable_and_one_directional():
     table = _load_map()
-    assert len(table) == 175
-    assert table["Accipiter gentilis"] == "Astur gentilis"
-    assert table["Charadrius dubius"] == "Thinornis dubius"
     assert not set(table) & set(table.values())
+
+
+def test_shipped_table_keeps_a_vetoed_taxonomy_alias():
+    """The taxonomy lists Perch's gayal as an alias of the Atlantic Spotted Dolphin."""
+    assert "Bos frontalis" not in _load_map()
+
+
+def test_shipped_table_leaves_splits_alone():
+    """The eBird code of a split follows one daughter species, so mapping on it would be wrong."""
+    assert "Trachyphonus purpuratus" not in _load_map()

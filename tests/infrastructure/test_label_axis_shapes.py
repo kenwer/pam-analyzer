@@ -48,10 +48,7 @@ def test_v3_label_map_is_keyed_on_canonical_names() -> None:
 
 
 @pytest.mark.slow
-def test_the_canonical_entry_wins_over_the_superseded_one() -> None:
-    """Both v3.0 classes carry a German name, but only the canonical class
-    resolved against the taxonomy. The superseded one fell back to English.
-    """
+def test_v3_0_names_the_canonical_species() -> None:
     assert TAXONOMY_V3_0.locale_label_map("de")["Thinornis dubius"] == "Flussregenpfeifer"
 
 
@@ -65,12 +62,23 @@ def test_a_v2_4_translation_survives_being_promoted() -> None:
 
 
 @pytest.mark.slow
-def test_tyto_alba_german_name_is_corrected() -> None:
-    """Upstream's taxonomy gives Tyto alba (Western Barn Owl) the German name
-    of Tyto furcata. Drop this test when upstream corrects common_name_de.
-    """
-    assert TAXONOMY_V3_0.locale_label_map("de")["Tyto alba"] == "Schleiereule"
-    assert TAXONOMY_V3_0.locale_label_map("en_us")["Tyto alba"] == "Western Barn Owl"
+@pytest.mark.parametrize("lang", ["en_us", "de"])
+def test_v2_4_takes_its_common_names_from_the_reference_taxonomy(lang: str) -> None:
+    """One species gets one name, whichever engine found it."""
+    v2_4 = TAXONOMY_V2_4.locale_label_map(lang)
+    v3_0 = TAXONOMY_V3_0.locale_label_map(lang)
+
+    differing = {k: (v2_4[k], v3_0[k]) for k in v2_4.keys() & v3_0.keys() if v3_0[k] and v2_4[k] != v3_0[k]}
+
+    assert differing == {}
+    assert v2_4["Acanthis flammea"] == v3_0["Acanthis flammea"]
+
+
+@pytest.mark.slow
+def test_the_reference_names_do_not_widen_the_v2_4_axis() -> None:
+    """The known-species set derives from the map's keys, and v3.0 has thousands v2.4 lacks."""
+    assert "Abeillia abeillei" not in TAXONOMY_V2_4.locale_label_map("en_us")
+    assert "Abeillia abeillei" not in TAXONOMY_V2_4.known_species_scientific()
 
 
 @pytest.mark.slow

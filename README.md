@@ -56,7 +56,7 @@ Note: On any supported OS you can also easily run PAM Analyzer from source using
 ## Features
 * **Project & campaign management**: Organizes monitoring deployments into self-contained project folders. A project folder contains one or more campaigns, each supporting independent species filters (via geographic coordinates and/or custom species lists). Projects and campaigns store no absolute paths, so they are relocatable.
 * **SD card import**: As soon as the import mode for a Campaign is activated, the application detects ARU SD cards matching a configured volume name pattern and imports audio into the Project. Both AudioMoth and Wildlife Acoustics Song Meter Micro cards are supported. On import, WAV recordings are transcoded on-the-fly to FLAC to save disk space. Once the contents of an SD card have been imported, the card gets unmounted automatically.
-* **Species detection**: Run BirdNET-2.4, BirdNET-3.0-preview3.1 or Perch-2.0 on the data of a Campaign or the whole Project. Each model writes its own CSV per campaign, so output from various models can coexist and be reviewed together.
+* **Species detection**: Run BirdNET-2.4, BirdNET-3.0 or Perch-2.0 on the data of a Campaign or the whole Project. Each model writes its own CSV per campaign, so output from various models can coexist and be reviewed together.
 * **Detection review**: You can examine all detections in one large data table with multi-column sorting, filtering, inline annotation (verification status, species correction, comments), and integrated audio playback.
 * **Data export**: Allows to export CSV and creating annotated audio snippets for the filtered detections.
 
@@ -141,14 +141,14 @@ Analysis results are written directly into each campaign folder, next to the aud
 {project}/
 └── {campaign}/
     ├── detections-BirdNET-2.4.csv             # BirdNET-2.4 detections
-    ├── detections-BirdNET-3.0-preview3.1.csv  # BirdNET-3.0 preview detections
+    ├── detections-BirdNET-3.0.csv             # BirdNET-3.0 detections
     ├── detections-Perch-2.0.csv               # Perch-2.0 detections
     ├── applied-species-list-week-NN.txt       # location mode: geo model species list for that week plus the must-have species
     ├── must_have_species.txt                  # location mode input: the configured must-have species (if any)
     └── campaign.toml                          # holds the configuration of this campaign
 ```
 
-- For each campaign **`detections-{model_key}.csv`** is the file where the species detections are stored. The `{model_key}` suffix identifies the model (`BirdNET-2.4`, `BirdNET-3.0-preview3.1`, `Perch-2.0`). Every row carries a `Model` column identifying its source, plus the annotation columns (`Verified`, `Corrected_Species`, `Comment`). The Examine panel loads every model file it finds for the campaign and concatenates them. Annotations are written back to the file the row came from. The `File` column is stored relative to the campaign folder, so renaming or moving a campaign never breaks its CSVs.
+- For each campaign **`detections-{model_key}.csv`** is the file where the species detections are stored. The `{model_key}` suffix identifies the model (`BirdNET-2.4`, `BirdNET-3.0`, `Perch-2.0`). CSVs written by earlier builds, such as `detections-BirdNET-3.0-preview3.1.csv` from the v3.0 developer preview, keep loading as their own model. Every row carries a `Model` column identifying its source, plus the annotation columns (`Verified`, `Corrected_Species`, `Comment`). The Examine panel loads every model file it finds for the campaign and concatenates them. Annotations are written back to the file the row came from. The `File` column is stored relative to the campaign folder, so renaming or moving a campaign never breaks its CSVs.
 - **`applied-species-list*.txt`** is the merged list (geographic list plus an optional must-have species list, the latter tagged `# must-have`) the run actually filtered against, exported in location mode for reference. One file is written per `week_NN` folder, since the geographic list differs from week to week.
 
 ### Examine Detections
@@ -300,34 +300,34 @@ Example:
 ## Models
 PAM Analyzer runs the following models on the CPU through the [`birdnet`](https://github.com/birdnet-team/birdnet) library. All three run on ONNX Runtime, write the same per-detection CSV schema, and honour the campaign's species filter, so one campaign can be analyzed with several of them and the results reviewed side by side.
 
-| | **BirdNET-2.4** | **BirdNET-3.0-preview3.1** | **Perch-2.0** |
+| | **BirdNET-2.4** | **BirdNET-3.0** | **Perch-2.0** |
 |---|---|---|---|
-| About | The default. An older but established release. | A preview, not a final v3.0 release, so scores and label set may still change. A final v3.0 will get its own model key and its own CSV (separates preview and release detections). | An open-world classifier from Google, more sensitive to quiet and distant calls than BirdNET-2.4. It also detects insects and amphibians, but in location mode the region filter drops those. To keep them, run in species-list mode or add the names to the must-have list. |
-| Release | `BirdNET_GLOBAL_6K_V2.4` ([Zenodo](https://zenodo.org/records/15050749)) | `BirdNET+_V3.0-preview3.1_Global_11K` ([Zenodo](https://zenodo.org/records/20703646)) | Google's Perch v2, as `perch_v2_no_dft.onnx` from [justinchuby/Perch-onnx](https://huggingface.co/justinchuby/Perch-onnx) |
+| About | The default. An older but established release. | The current BirdNET release. | An open-world classifier from Google. It also detects insects and amphibians, but in location mode the region filter drops those. To keep them, run in species-list mode or add the names to the must-have list. |
+| Release | `BirdNET_GLOBAL_6K_V2.4` ([Zenodo](https://zenodo.org/records/15050749)) | `BirdNET+_V3.0_Global_12K` ([Zenodo](https://zenodo.org/records/24162518)) | Google's Perch v2, as `perch_v2_no_dft.onnx` from [justinchuby/Perch-onnx](https://huggingface.co/justinchuby/Perch-onnx) |
 | Audio window | 3 s | 3 s | 5 s |
 | Sample rate | 48 kHz (the library resamples other rates) | 32 kHz (the library resamples other rates) | 32 kHz (the library resamples other rates) |
-| Classes | [6,522](https://birdnet.cornell.edu/models/birdnet/labels/en_us.txt) (birds, plus a few amphibians and insects) | [11,560](https://zenodo.org/records/20703646/preview/BirdNET%2B_V3.0-preview3.1_Global_11K_Labels.csv) (birds, plus amphibians, insects and mammals) | [14,795](https://www.kaggle.com/api/v1/models/google/bird-vocalization-classifier/tensorFlow2/perch_v2_cpu/1/download/assets/labels.csv) (birds, other animals, and general sound events) |
-| Taxonomy | older eBird-based axis | shared with the v3.0 geographic model | shares 10,916 names with v3.0's axis |
+| Classes | [6,522](https://birdnet.cornell.edu/models/birdnet/labels/en_us.txt) (birds, plus a few amphibians and insects) | [11,725](https://zenodo.org/records/24162518/preview/BirdNET%2B_V3.0_Global_12K_Labels.csv) (birds, plus amphibians, insects, mammals and 16 sound classes) | [14,795](https://www.kaggle.com/api/v1/models/google/bird-vocalization-classifier/tensorFlow2/perch_v2_cpu/1/download/assets/labels.csv) (birds, other animals, and general sound events) |
+| Taxonomy | older eBird-based axis, mapped onto BirdNET+ Taxonomy | BirdNET+ Taxonomy v0.5 | iNaturalist and eBird, mapped onto BirdNET+ Taxonomy (shares 11,190 names with v3.0 after mapping) |
 | Region filtering | v2.4 geographic model | v3.0 geographic model | v3.0 geographic model |
-| Size | ~49 MB acoustic + ~28 MB geographic | ~542 MB acoustic + ~16 MB geographic | ~413 MB acoustic, no geographic model of its own |
-| Speed | fastest but least accurate | about 4.5x slower than BirdNET-2.4 | about 2x slower than BirdNET-2.4 |
+| Size | ~49 MB acoustic + ~28 MB geographic | ~345 MB acoustic + ~16 MB geographic | ~413 MB acoustic, no geographic model of its own |
+| Speed | fastest but least accurate | several times slower than BirdNET-2.4 (the preview measured 4.5x) | about 2x slower than BirdNET-2.4 |
 
 BirdNET v2.4 uses the geographic model of its own generation for [region filtering](#region-filtering), while BirdNET v3.0 and Perch share BirdNET v3.0's geo model.
 
 ### Species names
-BirdNET v3.0 names species under a newer taxonomy than v2.4 did, so a handful of birds changed genus: the Northern Goshawk is `Astur gentilis` where v2.4 called it `Accipiter gentilis`, and the same applies to `Charadrius`/`Anarhynchus` plovers, `Ciccaba`/`Strix` owls, `Ixobrychus`/`Botaurus` bitterns, and others.
+Each model names species under its own taxonomy. BirdNET v2.4 follows an older eBird list, Perch follows iNaturalist and eBird, and BirdNET v3.0 follows [BirdNET+ Taxonomy](https://birdnet.cornell.edu/taxonomy/) v0.5, which uses [AviList](https://www.avilist.org) for birds. So the Northern Goshawk is `Astur gentilis` in v3.0 where v2.4 calls it `Accipiter gentilis`, and the Common Reed Bunting is `Schoeniclus schoeniclus` where v2.4 says `Emberiza schoeniclus`.
 
-**Detections are written under one set of scientific names, whichever model produced them.** Each engine's labels are mapped through a bundled table (`infrastructure/data/species_aliases.tsv`, 175 pairs) as they leave the model, so the same bird appears under one spelling across all three engines and sorts together in the Examine grid. The `Model` column still records which engine produced each row.
+**Detections are written under the names of BirdNET+ Taxonomy v0.5, whichever model produced them.** Each engine's labels are mapped through a bundled table (`infrastructure/data/species_aliases.tsv`, generated from the taxonomy) as they leave the model, so the same bird appears under one spelling across all three engines and sorts together in the Examine grid. Common names in every language come from the same taxonomy, for the species BirdNET v3.0 also detects. Other classes keep the common name their model prints, and Perch, which prints none, shows the scientific name. The `Model` column still records which engine produced each row.
 
-Species lists work the same way. A name you type is mapped through the same table before it is matched, so `Accipiter gentilis` and `Astur gentilis` both match whichever model runs.
+The mapping also follows species the taxonomy merged (lumps). Where two species that BirdNET v2.4 still tells apart became one, such as the redpolls `Acanthis hornemanni` and `Acanthis cabaret` in `Acanthis flammea`, both v2.4 classes are written as the merged species, and a segment where both fire yields one row with the stronger detection. Splits are not mapped, because an older name covers several current species: v2.4's `Trachyphonus purpuratus` stays as it is. Names the taxonomy does not list, such as most of Perch's insects and its sound events, also keep the model's spelling.
 
-The bundled BirdNET v3.0 build is a developer preview, and its own release notes list "Species list needs cleanup" as a known limitation. It carries 27 birds as two separate classes, one under a current scientific name and one under a superseded one. Where both fire on the same segment the app keeps the stronger detection and discards the weaker duplicate, so a segment yields one row per species. The app also corrects the German name of `Tyto alba`, which upstream's taxonomy gives the name belonging to `Tyto furcata`. Both are worth knowing if you compare this app's CSVs against raw BirdNET output.
+Species lists work the same way. A name you type is mapped through the same table before it is matched, so `Accipiter gentilis` and `Astur gentilis` both match whichever model runs. Spellings of the retired v3.0 developer preview are mapped too.
 
 ### Perch confidence
 Perch's classification head emits raw logits, not probabilities, and they do not sit around zero the way BirdNET v2.4's do. Silence alone lands near +4.5 and real ambient noise higher still, so a plain sigmoid would report every window's top classes at about 0.99. The runner subtracts a fixed offset of 11.2 before the sigmoid, so the `Confidence` column means roughly what it means for the BirdNET runners. The **Min confidence** setting is translated into logit space the same way, so a threshold you set applies as you would expect.
 
 ### Region filtering
-In location mode the runner filters detections against a per-week species list from the geographic model of the same generation as the acoustic model, so both sides speak the same taxonomy. For v3.0 that model carries 14,082 classes to the acoustic model's 11,560. The overlap is 10,653 names, so **907 acoustic classes have no geographic entry and are always dropped in location mode**: mostly narrowly-distributed birds, genus-level entries such as `Acris`, and insects and frogs.
+In location mode the runner filters detections against a per-week species list from the geographic model of the same generation as the acoustic model, so both sides speak the same taxonomy. For v3.0 the overlap is 10,927 names, so **782 acoustic classes have no geographic entry and are always dropped in location mode**: mostly narrowly-distributed birds, insects and frogs. The 16 non-animal sound classes are the exception: they do not depend on location, so they pass the filter everywhere.
 
 To keep those detections, run in species-list mode, which applies no regional filter, or add the specific names to the must-have box in location mode. The debug log reports the split per campaign, for example `birdnet: per-week species filter dropped 412 row(s): 402 out-of-region, 10 absent from the model's axis entirely. 1391 kept`.
 
@@ -399,7 +399,7 @@ The changelog can be found at the [CHANGELOG page](CHANGELOG.md).
 ## Acknowledgements
 Many thanks to the people behind the projects PAM Analyzer builds on:
 
-* [BirdNET](https://github.com/birdnet-team/birdnet) / [v2.4](https://zenodo.org/records/15050749) [v3.0-prev3.1](https://zenodo.org/records/20703646)
+* [BirdNET](https://github.com/birdnet-team/birdnet) / [v2.4](https://zenodo.org/records/15050749) [v3.0](https://zenodo.org/records/24162518) / [BirdNET+ Taxonomy](https://github.com/birdnet-team/birdnet-taxonomy) (CC BY-SA 4.0)
 * [Perch 2.0](https://arxiv.org/pdf/2508.04665) / [Perch-onnx](https://huggingface.co/justinchuby/Perch-onnx)
 * [ONNX Runtime](https://onnxruntime.ai)
 * [ONNX](https://onnx.ai) / [h5py](https://www.h5py.org)
