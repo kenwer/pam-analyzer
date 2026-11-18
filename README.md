@@ -162,7 +162,7 @@ Review and annotate results. The detections are shown on the Examine panel. The 
 
 Exported audio snippets use the following file name scheme:
 ```
-Campaign__ARU__Species__YYYYMMDD_HHMMSS__start-end__confN.NN[__status][__comment_Text].flac
+Campaign__ARU__Species__YYYYMMDD_HHMMSS__start-end__Model__confN.NN[__status][__comment_Text].flac
 ```
 
 | Field | Content | Example |
@@ -172,6 +172,7 @@ Campaign__ARU__Species__YYYYMMDD_HHMMSS__start-end__confN.NN[__status][__comment
 | Species | Species name in the project's main language | `Long-eared_Owl` |
 | Timestamp | Start of the recording | `20260501_053000` |
 | Range | Start and end of the snippet within the recording in seconds, padding included | `12.0-15.0` |
+| Model | The model that made the detection | `BirdNET-2.4` |
 | Confidence | The model's score for the species it detected | `conf0.87` |
 | Status | Only present on annotated detections, see below | `confirmed` |
 | Comment | Only present when a comment is set: the first 20 characters of it | `comment_two_birds` |
@@ -183,13 +184,15 @@ The annotations are reflected in the file name as follows:
 
 For example, a confirmed `Long-eared Owl` detection with the comment `two birds` is exported as:
 ```
-CmpRot2_Zollhauser-Bach-Riedlingen__ID_106__Long-eared_Owl__20260501_053000__12.0-15.0__conf0.87__confirmed__comment_two_birds.flac
+CmpRot2_Zollhauser-Bach-Riedlingen__ID_106__Long-eared_Owl__20260501_053000__12.0-15.0__BirdNET-2.4__conf0.87__confirmed__comment_two_birds.flac
 ```
 
 A `Tawny Owl` detection that was marked as wrong and corrected to `Long-eared Owl` is exported as:
 ```
-CmpRot2_Zollhauser-Bach-Riedlingen__ID_106__Long-eared_Owl__20260501_053000__12.0-15.0__conf0.87__corrected.flac
+CmpRot2_Zollhauser-Bach-Riedlingen__ID_106__Long-eared_Owl__20260501_053000__12.0-15.0__BirdNET-2.4__conf0.87__corrected.flac
 ```
+
+If several snippets of one export would get the same name, the second and later ones get a counter such as `__2` before `.flac`.
 
 
 ## Keyboard shortcuts

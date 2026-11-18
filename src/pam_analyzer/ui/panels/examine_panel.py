@@ -513,6 +513,7 @@ class ExaminePanel(QWidget):
 
         ok = 0
         errors: list[str] = []
+        used_names: set[str] = set()
         for done, row in enumerate(rows):
             progress.setValue(done)
             if progress.wasCanceled():
@@ -526,7 +527,7 @@ class ExaminePanel(QWidget):
                 continue
             start = max(0.0, d.start_time - pad_before)
             end = d.end_time + pad_after
-            dst = folder / _snippet_filename(d, start, end)
+            dst = folder / _unique_snippet_filename(_snippet_filename(d, start, end), used_names)
             try:
                 extract_snippet(src, start, end, dst)
                 ok += 1
@@ -660,8 +661,24 @@ def _snippet_filename(d: Detection, start: float, end: float) -> str:
         corrected or _safe_field(d.species) or _safe_field(d.scientific_name) or "unknown",
         stamp,
         f"{start:.1f}-{end:.1f}",
+        _safe_field(d.model) or "unknown",
         f"conf{d.confidence:.2f}",
         status,
         f"comment_{comment}" if comment else "",
     ]
     return "__".join(p for p in parts if p) + ".flac"
+
+
+def _unique_snippet_filename(name: str, used: set[str]) -> str:
+    """Return *name*, or *name* with a "__2", "__3", ... counter if *used* holds it.
+
+    The result is added to *used*. Only names within one export count, so
+    exporting into the same folder again still replaces the earlier files.
+    """
+    stem, suffix = name.rsplit(".", 1)
+    candidate, n = name, 1
+    while candidate in used:
+        n += 1
+        candidate = f"{stem}__{n}.{suffix}"
+    used.add(candidate)
+    return candidate

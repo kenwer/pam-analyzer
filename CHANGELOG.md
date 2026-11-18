@@ -18,6 +18,7 @@
     - Common names in all languages are taken from the taxonomy for species BirdNET v3.0 also detects.
     - Species the taxonomy splits, or does not list, keep the name the model gives them.
 - [Dev] `poe lint` also runs pyright and checks `scripts/`, and a pre-commit hook runs `poe lint`.
+- Exported audio snippet names include the model, and snippets of one export no longer overwrite each other.
 - [Dev] `scripts/build_species_aliases.py` regenerates the species alias table from the pinned taxonomy release.
 ### Fixed
 - The Examine panel's filter inputs no longer show filters that stopped applying after switching campaigns or finishing an analysis.

@@ -6,9 +6,9 @@ import pytest
 
 from pam_analyzer.domain import Detection
 from pam_analyzer.domain.enums import VerifiedState
-from pam_analyzer.ui.panels.examine_panel import _snippet_filename
+from pam_analyzer.ui.panels.examine_panel import _snippet_filename, _unique_snippet_filename
 
-_BASE = "CmpRot2_Zollhauser-Bach-Riedlingen__ID_106__Long-eared_Owl__20260501_053000__12.0-15.0__conf0.87"
+_BASE = "CmpRot2_Zollhauser-Bach-Riedlingen__ID_106__Long-eared_Owl__20260501_053000__12.0-15.0__BirdNET-2.4__conf0.87"
 
 
 def _detection(**overrides) -> Detection:
@@ -24,6 +24,7 @@ def _detection(**overrides) -> Detection:
         "rank": None,
         "file": "ID 106/week_19/rec.flac",
         "recording_time": "2026-05-01 05:30:00",
+        "model": "BirdNET-2.4",
     }
     return Detection(**(fields | overrides))
 
@@ -36,7 +37,7 @@ def _species_field(species: str) -> str:
     return _name(species=species).split("__")[2]
 
 
-def test_unannotated_detection_has_six_fields() -> None:
+def test_unannotated_detection_has_seven_fields() -> None:
     assert _name() == _BASE + ".flac"
 
 
@@ -65,7 +66,7 @@ def test_correction_replaces_species_and_status(verified: VerifiedState) -> None
 
 def test_uncertain_correction_keeps_the_doubt() -> None:
     name = _name(verified=VerifiedState.UNCERTAIN, corrected_species="Tawny Owl")
-    assert name.endswith("__Tawny_Owl__20260501_053000__12.0-15.0__conf0.87__corrected_uncertain.flac")
+    assert name.endswith("__Tawny_Owl__20260501_053000__12.0-15.0__BirdNET-2.4__conf0.87__corrected_uncertain.flac")
 
 
 def test_comment_is_added_after_the_status() -> None:
@@ -135,3 +136,29 @@ def test_unparsable_recording_time_is_made_safe() -> None:
 
 def test_missing_recording_time() -> None:
     assert _name(recording_time="").split("__")[3] == "unknown_time"
+
+
+def test_model_tells_apart_equal_detections_of_two_models() -> None:
+    assert _name(model="BirdNET-2.4") != _name(model="Perch-2.0")
+    assert _name(model="Perch-2.0").split("__")[5] == "Perch-2.0"
+
+
+def test_missing_model_falls_back_to_unknown() -> None:
+    assert _name(model="").split("__")[5] == "unknown"
+
+
+def test_unique_name_is_unchanged_on_first_use() -> None:
+    used: set[str] = set()
+    assert _unique_snippet_filename("a__b.flac", used) == "a__b.flac"
+
+
+def test_repeated_name_gets_a_counter() -> None:
+    used: set[str] = set()
+    names = [_unique_snippet_filename("a__b.flac", used) for _ in range(3)]
+    assert names == ["a__b.flac", "a__b__2.flac", "a__b__3.flac"]
+
+
+def test_counter_skips_a_name_already_taken() -> None:
+    used = {"a__b__2.flac"}
+    assert _unique_snippet_filename("a__b.flac", used) == "a__b.flac"
+    assert _unique_snippet_filename("a__b.flac", used) == "a__b__3.flac"
