@@ -1,0 +1,3 @@
+#!/bin/sh
+# Runs ruff and pyright before allowing a commit.
+uv run poe lint

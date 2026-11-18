@@ -33,6 +33,7 @@ pam-analyzer = "pam_analyzer.app.__main__:main"
 dev = [
     "poethepoet>=0.29",
     "py-spy>=0.3",
+    "pyright>=1.1.414",
     "pytest>=9.0",
     "pytest-qt>=4.5",
     "ruff>=0.6",
@@ -83,6 +84,13 @@ select = [
     "UP",   # Pyupgrade (modernize Python code)
 ]
 
+[tool.pyright]
+include = ["src", "tests"]
+# Full checking reports false positives from the PySide6 stubs, so only rules that are clean today are enabled
+typeCheckingMode = "off"
+reportRedeclaration = "error"
+reportCallIssue = "error"
+
 [tool.poe.tasks]
 compile-ui = { cmd = "python scripts/compile_ui.py", help = "Compile Qt Designer .ui files to ui_*.py modules" }
 compile-qrc = { cmd = "python scripts/compile_qrc.py", help = "Compile Qt resource files to *_rc.py modules" }
@@ -96,9 +104,9 @@ profile = { cmd = "py-spy record -o spectrogram_profile.svg -- python -m pam_ana
 test = { cmd = "pytest", deps = ["compile-qt"], help = "Compile UI/resources, then run all tests" }
 test-fast = { cmd = "pytest -m 'not slow'", deps = ["compile-qt"], help = "Compile UI/resources, then run only fast tests" }
 test-slow = { cmd = "pytest -m slow", deps = ["compile-qt"], help = "Compile UI/resources, then run only the slow model tests" }
-lint = { cmd = "ruff check src tests", help = "Run the ruff linter" }
+lint = { sequence = ["ruff check src tests", "pyright"], default_item_type = "cmd", help = "Run the ruff linter and the pyright type checker" }
 fmt = { cmd = "ruff format src tests", help = "Run the ruff formatter" }
-install-hooks = { cmd = "git config core.hooksPath .githooks", help = "Point git at the repo's tracked hooks (pre-push runs test-fast)" }
+install-hooks = { cmd = "git config core.hooksPath .githooks", help = "Point git at the repo's tracked hooks (pre-commit runs lint, pre-push runs test-fast)" }
 build = { cmd = "uv run --script scripts/build.py", help = "Compile a standalone distributable for the current platform" }
 prewarm = { cmd = "python scripts/prewarm_models.py", help = "Download every engine's model files (into BIRDNET_APP_DATA, else the per-user folder) so the slow tests never download" }
 
