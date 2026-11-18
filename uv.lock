@@ -40,7 +40,7 @@ wheels = [
 [[package]]
 name = "birdnet"
 version = "1.4.0"
-source = { registry = "https://pypi.org/simple" }
+source = { git = "https://github.com/birdnet-team/birdnet?rev=ecaa044e#ecaa044ebce2cc4333a382707ac23f58a2aa5e42" }
 dependencies = [
     { name = "ai-edge-litert", marker = "sys_platform == 'never'" },
     { name = "numpy" },
@@ -53,10 +53,6 @@ dependencies = [
     { name = "scipy" },
     { name = "soundfile" },
     { name = "tqdm" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/00/38/9610454afa620c4933a868672e105ceb8fe9c700b1b011ff5dec04cc76ef/birdnet-1.4.0.tar.gz", hash = "sha256:06704303a5561859e07baed385a02f97e19e86a4e9230f4d44f1fad7cacfd37e", size = 221119, upload-time = "2026-10-31T00:23:13.982Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/17/51/ee645de2dbd3f00068636dce9a189434262f457d6403f6558a93bb759c2f/birdnet-1.4.0-py3-none-any.whl", hash = "sha256:960a10b228ab782237d2cfca5a0b7805512516a004740561aca72ba8b90274a2", size = 231196, upload-time = "2026-10-31T00:23:12.351Z" },
 ]
 
 [[package]]
@@ -413,7 +409,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "birdnet", specifier = ">=1.4,<1.5" },
+    { name = "birdnet", git = "https://github.com/birdnet-team/birdnet?rev=ecaa044e" },
     { name = "guano", specifier = ">=1.0.16" },
     { name = "h5py", specifier = ">=3.12" },
     { name = "mutagen", specifier = ">=1.48" },

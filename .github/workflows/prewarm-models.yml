@@ -32,16 +32,21 @@ jobs:
 
       # Keyed on the locked birdnet version rather than the whole of uv.lock,
       # which changes with every dependency upgrade, even ones that leave the
-      # models alone.
+      # models alone. A git source keeps the version number of its last release,
+      # so its commit is appended.
       - name: Read locked birdnet version
         id: birdnet
+        shell: python3 {0}
         run: |
-          version=$(awk '/^name = "birdnet"$/ { found = 1; next } found && /^version = / { gsub(/"/, "", $3); print $3; exit }' uv.lock)
-          if [ -z "$version" ]; then
-            echo "::error::birdnet not found in uv.lock"
-            exit 1
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+          import os, tomllib
+          with open("uv.lock", "rb") as f:
+              packages = tomllib.load(f)["package"]
+          birdnet = next((p for p in packages if p["name"] == "birdnet"), None)
+          if birdnet is None:
+              raise SystemExit("::error::birdnet not found in uv.lock")
+          commit = birdnet["source"].get("git", "").partition("#")[2][:12]
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"version={birdnet['version']}{'-' + commit if commit else ''}\n")
 
       - name: Look up BirdNET models
         id: models-cache

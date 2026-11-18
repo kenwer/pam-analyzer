@@ -58,6 +58,11 @@ override-dependencies = [
     "pyarrow; sys_platform == 'never'",
 ]
 
+[tool.uv.sources]
+# TODO: The final BirdNET v3.0 (Zenodo 24162518) is on birdnet main but not on PyPI yet.
+# Switch back to the PyPI release that ships once it becomes available in a birdnet release.
+birdnet = { git = "https://github.com/birdnet-team/birdnet", rev = "ecaa044e" }
+
 [build-system]
 requires = ["uv_build>=0.13.5,<0.14"]
 build-backend = "uv_build"
