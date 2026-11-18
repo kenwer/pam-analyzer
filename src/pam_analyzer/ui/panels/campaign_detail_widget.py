@@ -494,13 +494,12 @@ class CampaignDetailWidget(QWidget):
 
     # import lifecycle
 
+    @property
+    def _import_running(self) -> bool:
+        return self._is_watching or self._is_folder_importing
+
     def _on_watch_clicked(self) -> None:
-        # A folder import in progress has no button of its own, so this
-        # button doubles as its cancel control (see _apply_import_state).
-        if self._is_folder_importing:
-            self._orchestrator.stop_watching()
-            return
-        if self._is_watching:
+        if self._import_running:
             self._orchestrator.stop_watching()
             return
         if self._campaign is None or self._app_state.project is None:
@@ -517,8 +516,7 @@ class CampaignDetailWidget(QWidget):
         return (
             self._mode == "view"
             and self._campaign is not None
-            and not self._is_watching
-            and not self._is_folder_importing
+            and not self._import_running
         )
 
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
@@ -627,25 +625,19 @@ class CampaignDetailWidget(QWidget):
             self.ui.queue_label.setText(f"{n} cards queued: {names}")
 
     def _apply_import_state(self) -> None:
-        has_campaign = self._campaign is not None
+        running = self._import_running
 
         # watch_button doubles as the folder import's cancel control (there is
         # no dedicated button for that), so it must stay enabled while a
         # folder import is running rather than being disabled by it.
-        self.ui.watch_button.setEnabled(has_campaign or self._is_watching or self._is_folder_importing)
+        self.ui.watch_button.setEnabled(self._campaign is not None or running)
         if self._is_folder_importing:
             self.ui.watch_button.setText("Cancel Folder Import")
         elif self._is_watching:
             self.ui.watch_button.setText("Stop SD import")
         else:
             self.ui.watch_button.setText("Start SD import")
-        # The .ui's :checked stylesheet swaps to red while an import runs; we
-        # keep the button's checked state in sync with the import state
-        # machine so programmatic stops (e.g. request_shutdown) flip the
-        # visual too.
-        desired_checked = self._is_watching or self._is_folder_importing
-        if self.ui.watch_button.isChecked() != desired_checked:
-            self.ui.watch_button.setChecked(desired_checked)
+        self.ui.watch_button.setChecked(running)
 
         self.ui.overwrite_check.setEnabled(not self._is_copying)
         self.ui.clear_check.setEnabled(not self._is_copying)

@@ -78,6 +78,15 @@ def _make_panel(state: AppState, runners: dict[str, object] | None = None) -> Bi
     return p
 
 
+def _assert_idle_controls(panel: BirdNetPanel, model_key: str) -> None:
+    button = panel.ui.run_button
+    assert button.text() == f"Run {model_key}"
+    assert not button.isChecked()
+    assert button.isEnabled()
+    assert panel.ui.model_combo.isEnabled()
+    assert panel.ui.campaign_combo.isEnabled()
+
+
 @pytest.fixture
 def project_and_campaigns(tmp_path: Path):
     project_folder = tmp_path / "proj"
@@ -248,7 +257,54 @@ def test_run_over_reviewed_detections_asks_first_and_cancel_keeps_them(
     assert title == "Replace reviewed detections?"
     assert "alpha (2 reviewed)" in text
     assert DEFAULT_MODEL_KEY in text
-    assert not panel._state.running
+    assert not panel.is_busy()
+    _assert_idle_controls(panel, DEFAULT_MODEL_KEY)
+
+
+def test_no_campaigns_run_leaves_the_controls_idle(
+    panel: BirdNetPanel, state: AppState, toasts, monkeypatch
+):
+    # The combo still offers "All campaigns" while the state no longer has any
+    monkeypatch.setattr(state, "_campaigns", [])
+
+    panel.ui.run_button.click()
+
+    assert [title for _kind, title, *_ in toasts] == [DEFAULT_MODEL_KEY]
+    _assert_idle_controls(panel, DEFAULT_MODEL_KEY)
+
+
+def test_stop_disables_the_button_until_the_run_ends(qtbot, missing_panel: BirdNetPanel):
+    button = missing_panel.ui.run_button
+
+    button.click()
+    assert button.text() == f"Stop {DEFAULT_MODEL_KEY}"
+    assert button.isChecked()
+    assert button.isEnabled()
+    assert not missing_panel.ui.model_combo.isEnabled()
+
+    button.click()
+    assert missing_panel.is_busy()
+    assert button.isChecked()
+    assert not button.isEnabled()
+    assert missing_panel.ui.progress_label.text().startswith("Cancelling")
+
+    qtbot.waitUntil(lambda: not missing_panel.is_busy(), timeout=5000)
+    _assert_idle_controls(missing_panel, DEFAULT_MODEL_KEY)
+
+
+def test_campaign_change_during_a_run_keeps_stop_enabled(
+    qtbot, missing_panel: BirdNetPanel, state: AppState
+):
+    button = missing_panel.ui.run_button
+    button.click()
+
+    state.campaignsChanged.emit(list(state.campaigns))
+
+    assert button.text() == f"Stop {DEFAULT_MODEL_KEY}"
+    assert button.isEnabled()
+    assert not missing_panel.ui.campaign_combo.isEnabled()
+    button.click()
+    qtbot.waitUntil(lambda: not missing_panel.is_busy(), timeout=5000)
 
 
 def test_run_over_reviewed_detections_runs_when_confirmed(
@@ -268,8 +324,8 @@ def test_run_over_reviewed_detections_runs_when_confirmed(
     [(_parent, _title, text, *_)] = asked
     assert "beta (1 reviewed)" in text
     assert "alpha" not in text
-    assert panel._state.running
-    qtbot.waitUntil(lambda: not panel._state.running, timeout=5000)
+    assert panel.is_busy()
+    qtbot.waitUntil(lambda: not panel.is_busy(), timeout=5000)
 
 
 def test_run_does_not_ask_without_reviews_of_the_selected_model(
@@ -286,8 +342,8 @@ def test_run_does_not_ask_without_reviews_of_the_selected_model(
     panel.ui.run_button.click()
 
     assert asked == []
-    assert panel._state.running
-    qtbot.waitUntil(lambda: not panel._state.running, timeout=5000)
+    assert panel.is_busy()
+    qtbot.waitUntil(lambda: not panel.is_busy(), timeout=5000)
 
 
 def test_cancelled_run_still_shows_completed_campaigns(panel: BirdNetPanel, state: AppState):
@@ -636,7 +692,7 @@ def test_run_takes_over_a_background_download(qtbot, missing_panel: BirdNetPanel
     expected = f"Downloading {DEFAULT_MODEL_KEY} model  ·  3 / 10 MB"
     qtbot.waitUntil(lambda: missing_panel.ui.progress_label.text() == expected, timeout=5000)
     missing_panel._runner.release.set()
-    qtbot.waitUntil(lambda: not missing_panel._state.running, timeout=5000)
+    qtbot.waitUntil(lambda: not missing_panel.is_busy(), timeout=5000)
 
 
 def test_caption_has_licence_and_link(panel: BirdNetPanel):

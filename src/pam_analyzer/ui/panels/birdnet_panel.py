@@ -2,8 +2,7 @@
 
 import html
 from collections import Counter
-from dataclasses import dataclass
-from enum import IntEnum
+from enum import Enum, IntEnum, auto
 from pathlib import Path
 
 from PySide6.QtCore import QCoreApplication, Qt, QThread, QUrl, Signal
@@ -53,9 +52,16 @@ class _StatusPage(IntEnum):
     RESULTS = 2
 
 
-@dataclass
-class _PanelState:
-    running: bool = False
+class _RunPhase(Enum):
+    """Where the panel's analysis run stands.
+
+    IDLE -> RUNNING when a run starts, RUNNING -> CANCELLING on Stop, and
+    either of those -> IDLE when the worker reports its outcome.
+    """
+
+    IDLE = auto()
+    RUNNING = auto()
+    CANCELLING = auto()
 
 
 class BirdNetPanel(QWidget):
@@ -78,7 +84,7 @@ class BirdNetPanel(QWidget):
         self._runners = runners
         self._runner_key: str = next(iter(runners))
         self._runner: AnalysisRunner = runners[self._runner_key]
-        self._state = _PanelState()
+        self._phase = _RunPhase.IDLE
         self._thread: QThread | None = None
         self._worker: AnalysisWorker | None = None
         self._results_model = BirdnetResultsModel(self)
@@ -116,7 +122,7 @@ class BirdNetPanel(QWidget):
     def _select_runner(self, key: str) -> None:
         self._runner_key = key
         self._runner = self._runners[key]
-        self._update_run_label()
+        self._render_run_controls()
         self.ui.model_caption_label.setText(_model_caption_html(self._runner.model_info))
         self._refresh_model_status()
 
@@ -134,19 +140,25 @@ class BirdNetPanel(QWidget):
         # The message names the model already
         show_warning_toast(self.window(), "Model download failed", error)
 
-    def _update_run_label(self) -> None:
-        """Show the selected model on the Run button (idle state only).
+    def _set_phase(self, phase: _RunPhase) -> None:
+        self._phase = phase
+        self._render_run_controls()
 
-        During a run the button shows Stop, so leave it alone.
+    def _render_run_controls(self) -> None:
+        """Derive the Run/Stop button and the settings combos from the phase.
+
+        The only writer of their text, look and enabled state, so every
+        transition and every project or campaign change ends here.
         """
-        if not self._state.running:
-            self.ui.run_button.setText(self._idle_run_label())
-
-    def _idle_run_label(self) -> str:
-        return f"Run {self._runner_key}"
-
-    def _busy_run_label(self) -> str:
-        return f"Stop {self._runner_key}"
+        idle = self._phase is _RunPhase.IDLE
+        loaded = self._app_state.project is not None
+        can_start = idle and loaded and self.ui.campaign_combo.count() > 0
+        button = self.ui.run_button
+        button.setText(f"{'Run' if idle else 'Stop'} {self._runner_key}")
+        button.setChecked(not idle)
+        button.setEnabled(self._phase is _RunPhase.RUNNING or can_start)
+        for combo in (self.ui.model_combo, self.ui.campaign_combo):
+            combo.setEnabled(idle and loaded)
 
     def _wire_signals(self) -> None:
         self._app_state.projectChanged.connect(self._render_project)
@@ -171,14 +183,12 @@ class BirdNetPanel(QWidget):
         self._app_state.save_project_fields(analysis_model=key)
 
     def _render_project(self, project: Project | None) -> None:
-        loaded = project is not None
-        self._set_settings_enabled(loaded)
-        if not loaded:
+        if project is None:
             self.ui.campaign_combo.clear()
             self._set_campaign_caption("")
             self._set_status_page(_StatusPage.IDLE)
+            self._render_run_controls()
             return
-        assert project is not None
         self._restore_model_from_project(project)
         self._rebuild_campaign_combo(self._app_state.campaigns)
 
@@ -204,14 +214,6 @@ class BirdNetPanel(QWidget):
             self.ui.model_combo.blockSignals(False)
         self._select_runner(target)
 
-    def _set_settings_enabled(self, enabled: bool) -> None:
-        for w in (
-            self.ui.model_combo,
-            self.ui.campaign_combo,
-            self.ui.run_button,
-        ):
-            w.setEnabled(enabled)
-
     def _rebuild_campaign_combo(self, campaigns: list[Campaign]) -> None:
         combo = self.ui.campaign_combo
         combo.blockSignals(True)
@@ -229,7 +231,7 @@ class BirdNetPanel(QWidget):
             self._on_campaign_changed(0)
         else:
             self._set_campaign_caption("No campaigns found")
-            self.ui.run_button.setEnabled(False)
+            self._render_run_controls()
 
     def _on_campaign_changed(self, index: int) -> None:
         if index < 0:
@@ -242,7 +244,7 @@ class BirdNetPanel(QWidget):
         else:
             campaign = self._campaign_by_name(str(data))
             self._set_campaign_caption(self._campaign_info_text(campaign))
-        self.ui.run_button.setEnabled(self._can_run())
+        self._render_run_controls()
 
     def _set_campaign_caption(self, text: str, tooltip: str = "") -> None:
         self.ui.campaign_caption_label.setText(text)
@@ -264,16 +266,11 @@ class BirdNetPanel(QWidget):
             return f"● Location  {abs(loc.latitude):.2f}°{ns}, {abs(loc.longitude):.2f}°{ew}"
         return "● Species list"
 
-    def _can_run(self) -> bool:
-        if self._state.running or self._app_state.project is None:
-            return False
-        return self.ui.campaign_combo.count() > 0
-
     def _on_run_clicked(self) -> None:
-        if self._state.running:
+        if self._phase is _RunPhase.RUNNING:
             self._request_cancel()
-            return
-        self._start_run()
+        elif self._phase is _RunPhase.IDLE:
+            self._start_run()
 
     def _start_run(self) -> None:
         project = self._app_state.project
@@ -312,15 +309,11 @@ class BirdNetPanel(QWidget):
             self._thread.quit, Qt.ConnectionType.DirectConnection
         )
 
-        self._state.running = True
+        self._set_phase(_RunPhase.RUNNING)
         self._model_status.hide()  # the progress page shows the run's own download
         self._set_status_page(_StatusPage.PROGRESS)
         self.ui.progress_bar.setRange(0, 0)  # indeterminate while preparing
         self.ui.progress_label.setText("Preparing…")
-        self.ui.run_button.setText(self._busy_run_label())
-        self.ui.run_button.setChecked(True)
-        self._set_settings_enabled(False)
-        self.ui.run_button.setEnabled(True)  # keep Stop enabled
         self._app_state.analysisStarted.emit(self._runner_key)
         self._thread.start()
 
@@ -350,10 +343,10 @@ class BirdNetPanel(QWidget):
         return choice == QMessageBox.StandardButton.Yes
 
     def _request_cancel(self) -> None:
-        if self._thread is not None:
-            self._thread.requestInterruption()
+        assert self._thread is not None
+        self._thread.requestInterruption()
+        self._set_phase(_RunPhase.CANCELLING)
         self.ui.progress_label.setText("Cancelling… (waiting for current file)")
-        self.ui.run_button.setEnabled(False)
 
     def request_shutdown(self) -> None:
         """Cancel any running analysis and wait. Called on project switch.
@@ -361,7 +354,7 @@ class BirdNetPanel(QWidget):
         signal so it's handled while the panel is still in its current session,
         instead of leaking into the next one.
         """
-        if self._state.running:
+        if self._phase is _RunPhase.RUNNING:
             self._request_cancel()
         if self._thread is not None:
             self._thread.quit()  # safe to call from main thread; stops the event loop
@@ -438,7 +431,7 @@ class BirdNetPanel(QWidget):
 
     def _on_analysis_inventory_changed(self, results: AnalysisInventory | None) -> None:
         # A run currently in progress owns the status page; don't fight it.
-        if self._state.running:
+        if self.is_busy():
             return
         if results is None or not results.campaigns:
             self._results_model.clear()
@@ -450,13 +443,12 @@ class BirdNetPanel(QWidget):
             self._set_status_page(_StatusPage.RESULTS)
 
     def is_busy(self) -> bool:
-        return self._state.running
+        return self._phase is not _RunPhase.IDLE
 
     def busy_label(self) -> str | None:
-        return f"{self._runner_key} analysis" if self._state.running else None
+        return f"{self._runner_key} analysis" if self.is_busy() else None
 
     def _teardown_worker(self) -> None:
-        self._state.running = False
         self._model_status.show()
         if self._thread is not None:
             # wait() is safe here: quit() was already called via DirectConnection
@@ -468,10 +460,7 @@ class BirdNetPanel(QWidget):
         if self._worker is not None:
             self._worker.deleteLater()
             self._worker = None
-        self.ui.run_button.setText(self._idle_run_label())
-        self.ui.run_button.setChecked(False)
-        self._set_settings_enabled(True)
-        self.ui.run_button.setEnabled(self._can_run())
+        self._set_phase(_RunPhase.IDLE)
 
     def _render_results(self, result: AnalysisInventory) -> None:
         self._results_model.set_result(result)

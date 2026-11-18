@@ -247,9 +247,11 @@ def test_starting_watch_emits_importStarted(qtbot, panel: CampaignsPanel, state:
     assert blocker.args == ["alpha", ImportSource.SD_CARD]
     assert panel.is_busy() is True
     assert panel.busy_label() == "SD-card watcher"
+    assert panel._detail.ui.watch_button.isChecked()
 
     # Cleanup so the poll timer doesn't keep firing into other tests.
     panel._detail.request_shutdown()
+    assert not panel._detail.ui.watch_button.isChecked()
 
 
 def test_queue_label_shows_pending_cards(
