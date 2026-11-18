@@ -177,4 +177,5 @@ def _finalize(artifact: Artifact) -> None:
         for sibling in artifact.dest.parent.glob(artifact.stale_glob):
             if sibling != artifact.dest:
                 sibling.unlink()
+                sibling.with_name(sibling.name + ".sha256").unlink(missing_ok=True)
     marker_path(artifact).write_text(artifact.sha256 + "\n", encoding="ascii")

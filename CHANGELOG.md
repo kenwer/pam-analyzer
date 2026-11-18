@@ -4,6 +4,7 @@
 ### Changed
 - [Dev] `poe lint` also runs pyright, and a pre-commit hook runs `poe lint`.
 ### Fixed
+- Downloading a newer version of a model no longer leaves the old version's checksum file in the models folder.
 - [Dev] `scripts/run_analysis.py --campaign` finds campaigns with non-ASCII names on macOS.
 
 ## [0.10.2] - 2026-11-18

@@ -90,6 +90,8 @@ def test_cancel_keeps_part_for_resume(tmp_path: Path, local_http_server) -> None
 def test_stale_siblings_deleted(tmp_path: Path, local_http_server) -> None:
     stale = tmp_path / "model-fp32-aaaaaaaaaaaa.onnx"
     stale.write_bytes(b"old")
+    stale_marker = tmp_path / "model-fp32-aaaaaaaaaaaa.onnx.sha256"
+    stale_marker.write_text("aaaa\n")
     labels = tmp_path / "labels.txt"
     labels.write_text("keep")
     a = _serve(
@@ -97,6 +99,7 @@ def test_stale_siblings_deleted(tmp_path: Path, local_http_server) -> None:
     )
     download([a], no_progress, never)
     assert not stale.exists()
+    assert not stale_marker.exists()
     assert a.dest.exists()
     assert labels.exists()
 
