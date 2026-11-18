@@ -3,6 +3,8 @@
 ## [Unreleased]
 ### Changed
 - [Dev] `poe lint` also runs pyright, and a pre-commit hook runs `poe lint`.
+### Fixed
+- [Dev] `scripts/run_analysis.py --campaign` finds campaigns with non-ASCII names on macOS.
 
 ## [0.10.2] - 2026-11-18
 ### Fixed

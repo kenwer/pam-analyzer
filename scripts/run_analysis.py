@@ -23,6 +23,7 @@ import logging
 import os
 import signal
 import sys
+import unicodedata
 from pathlib import Path
 
 from pam_analyzer.domain import (
@@ -117,7 +118,9 @@ def _select_campaigns(project_folder: Path, wanted: list[str] | None) -> list[Ca
     if wanted is None:
         return campaigns
 
-    by_name = {c.name: c for c in campaigns}
+    # macOS returns folder names decomposed (NFD), a typed argument is composed (NFC).
+    by_name = {unicodedata.normalize("NFC", c.name): c for c in campaigns}
+    wanted = [unicodedata.normalize("NFC", name) for name in wanted]
     unknown = [name for name in wanted if name not in by_name]
     if unknown:
         _log.error(
