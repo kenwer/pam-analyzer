@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.10.2] - 2026-11-18
 ### Fixed
 - Issue v0.10.1 introduced that opening, creating or dropping a project failed.
 
