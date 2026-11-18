@@ -293,6 +293,40 @@ def test_column_filter_survives_max_per_change(panel: ExaminePanel) -> None:
     assert panel._model.rowCount() == 3
 
 
+def _filter_input(panel: ExaminePanel, name: str):
+    return panel.ui.detections_table._filter_row._slots[panel._model.index_of(name)]
+
+
+@pytest.mark.parametrize("reload", ["campaign switch", "inventory refresh"])
+def test_loading_detections_clears_the_filter_inputs_with_the_filters(panel: ExaminePanel, reload: str) -> None:
+    """A fresh load drops the model's filters, so no input may still show one."""
+    table = panel.ui.detections_table
+    table._filter_row.set_filter(panel._model.index_of("ARU"), "MSD-1", FilterOp.EQUALS)
+    table._filter_row.set_filter(panel._model.index_of("Verified"), "", FilterOp.BLANK)
+    assert panel._model.rowCount() == 3
+
+    if reload == "campaign switch":
+        panel.ui.campaign_combo.setCurrentIndex(panel.ui.campaign_combo.findData("alpha"))
+    else:
+        panel._schedule_reload()  # what a finished analysis triggers
+        QCoreApplication.processEvents()
+
+    assert not panel._model.has_filters()
+    aru, verified = _filter_input(panel, "ARU"), _filter_input(panel, "Verified")
+    assert aru.edit.text() == ""
+    assert not aru.active
+    assert verified.op is default_op(verified.kind)
+    assert not verified.active
+
+
+def test_filter_input_text_survives_a_reset_that_keeps_the_store(qtbot, panel: ExaminePanel) -> None:
+    """Text typed but not yet applied must outlive a sort or cap change."""
+    aru = _filter_input(panel, "ARU")
+    qtbot.keyClicks(aru.edit, "MSD")
+    _cap(panel, 1)
+    assert aru.edit.text() == "MSD"
+
+
 def test_max_per_caps_after_column_filter(panel: ExaminePanel) -> None:
     """The cap ranks only rows that survive the column filters (filter first, then cap)."""
     aru_col = COLUMNS_BY_NAME["ARU"]

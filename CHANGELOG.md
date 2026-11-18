@@ -20,6 +20,7 @@
 - [Dev] `poe lint` also runs pyright and checks `scripts/`, and a pre-commit hook runs `poe lint`.
 - [Dev] `scripts/build_species_aliases.py` regenerates the species alias table from the pinned taxonomy release.
 ### Fixed
+- The Examine panel's filter inputs no longer show filters that stopped applying after switching campaigns or finishing an analysis.
 - Downloading a newer version of a model no longer leaves the old version's checksum file in the models folder.
 - [Dev] `scripts/run_analysis.py --campaign` finds campaigns with non-ASCII names on macOS.
 

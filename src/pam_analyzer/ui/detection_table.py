@@ -151,6 +151,8 @@ class DetectionTable(QWidget):
         # Store and row id of _current_detection. Row ids restart in every
         # store, so the store identity keeps a reload from matching a stranger.
         self._current_row: tuple[DetectionStore, int] | None = None
+        # The store the filter row last reflected. See _on_model_reset.
+        self._filtered_store: DetectionStore | None = None
         self._suppressing_row_change = False
         self._pending_prepare: tuple[int, Detection] | None = None
         self._prepare_timer = QTimer(self)
@@ -469,6 +471,13 @@ class DetectionTable(QWidget):
 
     def _on_model_reset(self) -> None:
         self._refresh_layout_for_model()
+        if self._model is not None and self._model.store is not self._filtered_store:
+            # A new store comes without column filters, and an unchanged column
+            # layout skips the rebuild above, so the inputs are cleared here.
+            # Only on a new store, so a sort or cap change keeps typed text.
+            self._filtered_store = self._model.store
+            for col in range(self._model.columnCount()):
+                self._filter_row.clear_column(col)
         self._refresh_status()
         self._sync_player()
 
