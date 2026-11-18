@@ -9,6 +9,7 @@ from pam_analyzer.domain import detection_schema as schema
 from pam_analyzer.domain import detection_store as detection_store_module
 from pam_analyzer.domain.detection_schema import campaign_csv_for_model
 from pam_analyzer.domain.detection_store import (
+    annotated_row_count,
     empty_detections_frame,
     read_detections_csv,
     write_detections_csv,
@@ -69,6 +70,27 @@ def test_read_empty_file(tmp_path: Path) -> None:
     assert fieldnames == []
     assert frame.height == 0
     assert frame.schema == empty_detections_frame().schema
+
+
+def test_annotated_row_count_counts_rows_with_any_annotation(tmp_path: Path) -> None:
+    # The header lacks Corrected_Species, and a comment alone counts as review work
+    path = _write_raw(tmp_path / "east", [*_ROWS, _ROWS[0].removesuffix(",") + ",only a comment"])
+    assert annotated_row_count(path) == 4
+
+
+def test_annotated_row_count_ignores_blank_whitespace_cells(tmp_path: Path) -> None:
+    path = _write_raw(tmp_path / "east", [_ROWS[0].removesuffix(",,") + ",, "])
+    assert annotated_row_count(path) == 0
+
+
+def test_annotated_row_count_of_missing_empty_and_unannotated_files(tmp_path: Path) -> None:
+    assert annotated_row_count(tmp_path / "absent.csv") == 0
+    empty = tmp_path / "empty.csv"
+    empty.write_text("", encoding="utf-8")
+    assert annotated_row_count(empty) == 0
+    no_annotation_columns = tmp_path / "plain.csv"
+    no_annotation_columns.write_text("Campaign,Species\r\neast,Robin\r\n", encoding="utf-8")
+    assert annotated_row_count(no_annotation_columns) == 0
 
 
 _HEADERS = [

@@ -30,6 +30,8 @@ from ...domain import (
     Project,
     RunStatus,
 )
+from ...domain import detection_schema as schema
+from ...domain.detection_store import annotated_row_count
 from ...widgets.no_hover_style import disable_item_hover
 from ...workers import AnalysisWorker
 from ..app_state import AppState
@@ -288,6 +290,8 @@ class BirdNetPanel(QWidget):
         if not campaigns:
             show_warning_toast(self.window(), self._runner_key, "No campaigns to run.")
             return
+        if not self._confirm_replacing_reviews(campaigns):
+            return
 
         settings = project.analysis_settings
         # The run's own install takes over, resuming the partial file, so its
@@ -319,6 +323,31 @@ class BirdNetPanel(QWidget):
         self.ui.run_button.setEnabled(True)  # keep Stop enabled
         self._app_state.analysisStarted.emit(self._runner_key)
         self._thread.start()
+
+    def _confirm_replacing_reviews(self, campaigns: list[Campaign]) -> bool:
+        """Ask before a run rewrites detection CSVs that hold review work.
+
+        A run replaces the selected model's CSV of each campaign, and the
+        annotation columns live in that same file. Other models' CSVs are left
+        alone, so only this model's reviews count.
+        """
+        reviewed = {
+            c.name: n
+            for c in campaigns
+            if (n := annotated_row_count(schema.campaign_csv_for_model(c.folder, self._runner_key)))
+        }
+        if not reviewed:
+            return True
+        listed = ", ".join(f"{name} ({n:,} reviewed)" for name, n in reviewed.items())
+        choice = QMessageBox.question(
+            self,
+            "Replace reviewed detections?",
+            f"Running {self._runner_key} replaces its detections in {listed}. "
+            "Their Verified, Corrected_Species and Comment entries will be lost.\n\nRun anyway?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        return choice == QMessageBox.StandardButton.Yes
 
     def _request_cancel(self) -> None:
         if self._thread is not None:

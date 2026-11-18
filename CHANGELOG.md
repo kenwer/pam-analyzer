@@ -9,6 +9,7 @@
   - New detections are saved to `detections-BirdNET-3.0.csv`. Detections from the preview still load.
   - A project whose model selection was the preview now selects 3.0.
   - When species are filtered by recording location, non-animal sounds such as engines and sirens are no longer filtered out.
+- Running a model again on a campaign with reviewed detections asks before replacing them.
 - Species names of every model follow [BirdNET+ Taxonomy](https://birdnet.cornell.edu/taxonomy/) v0.5 ([CSV/JSON download](https://birdnet.cornell.edu/taxonomy/api/download/zip)):
   - A species has the same name no matter which model detected it.
   - BirdNET v3.0 already uses this taxonomy. Detections from BirdNET v2.4 and Perch 2.0 are translated to it:

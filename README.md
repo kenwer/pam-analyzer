@@ -119,7 +119,7 @@ Create and manage the Campaigns that belong to this project. The panel on the le
 When the application loads a Project, Campaigns are discovered automatically from the project folder: any subdirectory containing a `campaign.toml` sidecar is treated as a campaign. This is especially handy as Campaign folders are relocatable.
 
 ### Run bird species detection
-Analyses can be run per-campaign or across all campaigns. Choose the [Model](#models) and which campaign(s) to run against. The min confidence, overlap, and species language settings are taken from the [Project Settings](#project-settings). The output is one or more CSV files that contain the (bird) detections. One CSV per model and Campaign. Keep that in mind (especially when you already annotated your data) that subsequent runs of the very same model will create new ouptus CSV(s) and there overwrite the output.
+Analyses can be run per-campaign or across all campaigns. Choose the [Model](#models) and which campaign(s) to run against. The min confidence, overlap, and species language settings are taken from the [Project Settings](#project-settings). The output is one or more CSV files that contain the (bird) detections. One CSV per model and Campaign. Running the same model again on a campaign replaces its CSV, including any annotations in it. If that CSV holds annotations, the app asks before the run starts.
 
 Each detection is assigned a within-segment `Rank` (1 = highest-confidence species in that window), useful for deprioritising detections that are consistently outcompeted by other species in the same clip. See [Output files](#output-files) for what is written to disk.
 

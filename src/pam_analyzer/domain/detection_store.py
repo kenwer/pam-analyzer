@@ -68,6 +68,25 @@ def read_detections_csv(path: Path) -> tuple[pl.DataFrame, list[str]]:
     return frame, fieldnames
 
 
+def annotated_row_count(path: Path) -> int:
+    """Rows of the detections CSV at *path* with any annotation cell filled in.
+
+    0 for a missing, empty or unreadable file, so a caller asking whether a
+    rewrite would lose review work is never stopped by the question itself.
+    """
+    try:
+        if path.stat().st_size == 0:
+            return 0
+        frame = pl.scan_csv(path, infer_schema=False, truncate_ragged_lines=True)
+        present = [c for c in schema.ANNOTATION_COLUMNS if c in frame.collect_schema().names()]
+        if not present:
+            return 0
+        filled = pl.any_horizontal(pl.col(c).str.strip_chars().fill_null("") != "" for c in present)
+        return frame.filter(filled).select(pl.len()).collect().item()
+    except (OSError, pl.exceptions.PolarsError):
+        return 0
+
+
 _GETTERS = {c.name: c.get for c in schema.COLUMNS}
 
 

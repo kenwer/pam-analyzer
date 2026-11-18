@@ -208,6 +208,88 @@ def test_failed_run_stays_modal(panel: BirdNetPanel, monkeypatch, toasts):
     assert toasts == []
 
 
+def _write_reviewed_csv(campaign_folder: Path, model_key: str, verified: list[str]) -> None:
+    rows = "".join(f"{campaign_folder.name},Robin,{v}\r\n" for v in verified)
+    path = campaign_folder / f"detections-{model_key}.csv"
+    path.write_text("Campaign,Species,Verified\r\n" + rows, encoding="utf-8")
+
+
+@pytest.fixture
+def questions(monkeypatch):
+    """Records each QMessageBox.question and answers with the next queued button."""
+    from PySide6.QtWidgets import QMessageBox
+
+    asked: list[tuple] = []
+    answers = [QMessageBox.StandardButton.Cancel]
+
+    def question(*args):
+        asked.append(args)
+        return answers[0]
+
+    monkeypatch.setattr("pam_analyzer.ui.panels.birdnet_panel.QMessageBox.question", question)
+    return asked, answers
+
+
+def _select_campaign(panel: BirdNetPanel, name: str) -> None:
+    panel.ui.campaign_combo.setCurrentIndex(panel.ui.campaign_combo.findData(name))
+
+
+def test_run_over_reviewed_detections_asks_first_and_cancel_keeps_them(
+    panel: BirdNetPanel, project_and_campaigns, questions
+):
+    _, campaigns = project_and_campaigns
+    _write_reviewed_csv(campaigns[0].folder, DEFAULT_MODEL_KEY, ["true", "", "false"])
+    asked, _ = questions
+    _select_campaign(panel, "alpha")
+
+    panel.ui.run_button.click()
+
+    [(_parent, title, text, *_)] = asked
+    assert title == "Replace reviewed detections?"
+    assert "alpha (2 reviewed)" in text
+    assert DEFAULT_MODEL_KEY in text
+    assert not panel._state.running
+
+
+def test_run_over_reviewed_detections_runs_when_confirmed(
+    qtbot, panel: BirdNetPanel, project_and_campaigns, questions
+):
+    from PySide6.QtWidgets import QMessageBox
+
+    _, campaigns = project_and_campaigns
+    _write_reviewed_csv(campaigns[1].folder, DEFAULT_MODEL_KEY, ["uncertain"])
+    asked, answers = questions
+    answers[0] = QMessageBox.StandardButton.Yes
+    _select_campaign(panel, "__all__")
+    panel._runner.release.set()
+
+    panel.ui.run_button.click()
+
+    [(_parent, _title, text, *_)] = asked
+    assert "beta (1 reviewed)" in text
+    assert "alpha" not in text
+    assert panel._state.running
+    qtbot.waitUntil(lambda: not panel._state.running, timeout=5000)
+
+
+def test_run_does_not_ask_without_reviews_of_the_selected_model(
+    qtbot, panel: BirdNetPanel, project_and_campaigns, questions
+):
+    _, campaigns = project_and_campaigns
+    _write_reviewed_csv(campaigns[0].folder, DEFAULT_MODEL_KEY, ["", ""])
+    # Another model's reviews survive this run, so they are no reason to ask
+    _write_reviewed_csv(campaigns[0].folder, ALT_MODEL_KEY, ["true"])
+    asked, _ = questions
+    _select_campaign(panel, "alpha")
+    panel._runner.release.set()
+
+    panel.ui.run_button.click()
+
+    assert asked == []
+    assert panel._state.running
+    qtbot.waitUntil(lambda: not panel._state.running, timeout=5000)
+
+
 def test_cancelled_run_still_shows_completed_campaigns(panel: BirdNetPanel, state: AppState):
     """A cancelled run must surface the campaigns that finished before the
     cancel. Their CSVs are already on disk, so the panel shows the results
