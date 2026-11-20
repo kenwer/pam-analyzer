@@ -27,7 +27,7 @@ class ModelDownloadWorker(QObject):
             self._runner.install_model(self._emit_progress, self.thread().isInterruptionRequested)
         except CancelledError:
             pass
-        except Exception as exc:  # noqa: BLE001  a dead worker thread would leave the link stuck on Cancel
+        except Exception as exc:  # a dead worker thread would leave the link stuck on Cancel
             # str(): a record holding exc would keep its traceback, and this worker, alive
             _log.warning("%s: model download failed: %s", self._runner.model_key, str(exc))
             error = str(exc)

@@ -107,7 +107,7 @@ class AcousticOnnxBackendFP32PerchV2(OnnxBackend, VersionedAcousticBackendProtoc
 
 
 @cache
-def labels():  # noqa: ANN201
+def labels():
     """Perch's 14795 class names, in model output order, as the lib's OrderedSet.
 
     Plain scientific names, unlike BirdNET's 'Scientific_Common' entries: Perch
@@ -164,7 +164,7 @@ def require_weights(path: Path) -> Path:
     return path
 
 
-def load_acoustic():  # noqa: ANN201
+def load_acoustic():
     """Load Perch v2 on onnxruntime, paired with the lib's own model class.
 
     `AcousticModelPerchV2` supplies the preprocessing contract (32 kHz, 5 s,

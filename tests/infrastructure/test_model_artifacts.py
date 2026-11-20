@@ -31,8 +31,8 @@ def test_v3_0_artifacts_follow_lib_pins() -> None:
 def test_v3_0_label_inputs_download_to_the_lib_paths() -> None:
     """The lib then finds its inputs in place and only generates the locale files."""
     inputs = (
-        AcousticOnnxDownloaderV3_0._labels_input(),  # noqa: SLF001
-        GeoOnnxDownloaderV3_0._labels_input(),  # noqa: SLF001
+        AcousticOnnxDownloaderV3_0._labels_input(),
+        GeoOnnxDownloaderV3_0._labels_input(),
         get_taxonomy_v3_input(),
     )
     assert {(a.dest, a.url, a.size, a.sha256) for a in label_artifacts()} == {

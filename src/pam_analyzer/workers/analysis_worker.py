@@ -64,7 +64,7 @@ class AnalysisWorker(QObject):
             # A cancelled model download. The real runners return a CANCELLED
             # outcome rather than raising, a test fake may raise.
             outcome = AnalysisRunResult(status=RunStatus.CANCELLED)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             # Load-bearing: install_model's DownloadError, and setup before the
             # runner's own try/except (_load_model, file counting), raise straight out.
             # Turn that into a FAILED outcome instead of a dead worker thread

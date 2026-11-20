@@ -435,7 +435,7 @@ class MainWindow(QMainWindow):
             finally:
                 # Restore before any dialog so the message box gets a normal cursor.
                 QApplication.restoreOverrideCursor()
-        except Exception as exc:  # noqa: BLE001  surface any filesystem failure to the user
+        except Exception as exc:  # surface any filesystem failure to the user
             QMessageBox.warning(self, "Migration failed", str(exc))
             return
         _log.debug(
@@ -612,7 +612,7 @@ class MainWindow(QMainWindow):
         """Worker threads still running. Deleting the window while any runs would abort."""
         return [t for t in self.findChildren(QThread) if t.isRunning()]
 
-    def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802  Qt API
+    def closeEvent(self, event: QCloseEvent) -> None:
         """Hide at once, then close once every writing worker thread has finished.
 
         Every worker thread parented under the window is interrupted and the close

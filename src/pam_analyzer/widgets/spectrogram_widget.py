@@ -257,12 +257,12 @@ class SpectrogramWidget(QWidget):
         self._context_detections = list(context_detections)
         self.update()
 
-    def mousePressEvent(self, event) -> None:  # noqa: N802
+    def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             self._dragging = True
             self._move_marker(event.position().x())
 
-    def mouseMoveEvent(self, event) -> None:  # noqa: N802
+    def mouseMoveEvent(self, event) -> None:
         if self._dragging:
             self._move_marker(event.position().x())
             return
@@ -274,7 +274,7 @@ class SpectrogramWidget(QWidget):
                     return
         QToolTip.hideText()
 
-    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+    def mouseReleaseEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton and self._dragging:
             self._dragging = False
             self._move_marker(event.position().x())
@@ -295,7 +295,7 @@ class SpectrogramWidget(QWidget):
         yield self._detect_start_s, self._detect_end_s, self._detect_label
         yield from self._context_detections
 
-    def paintEvent(self, _event) -> None:  # noqa: N802
+    def paintEvent(self, _event) -> None:
         if self._pixmap is None:
             painter = QPainter(self)
             painter.setPen(_ERROR_TEXT_COLOR)

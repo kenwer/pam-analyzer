@@ -189,7 +189,7 @@ def test_concurrent_installs_of_a_shared_artifact_fetch_it_once(tmp_path: Path, 
     def second() -> None:
         try:
             install(package, no_progress, never)
-        except BaseException as exc:  # noqa: BLE001
+        except BaseException as exc:
             errors.append(exc)
 
     other = threading.Thread(target=second)
@@ -211,12 +211,12 @@ def test_waiting_for_another_install_can_be_cancelled(tmp_path: Path, local_http
     from pam_analyzer.infrastructure import model_store
 
     a = _serve(local_http_server, "/a", BLOB_A, tmp_path / "a.onnx")
-    model_store._install_lock.acquire()  # noqa: SLF001
+    model_store._install_lock.acquire()
     try:
         with pytest.raises(DownloadCancelled):
             install(ModelPackage(_INFO, lambda: (a,)), no_progress, lambda: True)
     finally:
-        model_store._install_lock.release()  # noqa: SLF001
+        model_store._install_lock.release()
 
 
 def test_prepare_never_runs_twice_at_once() -> None:

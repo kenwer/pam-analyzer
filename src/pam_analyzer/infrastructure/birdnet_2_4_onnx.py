@@ -144,7 +144,7 @@ def model_path(kind: str) -> Path:
     return get_model_path(kind, "2.4", "onnx", MODEL_PRECISION)
 
 
-def labels(kind: str, lang: str):  # noqa: ANN201
+def labels(kind: str, lang: str):
     """The species list for one model and locale, as the lib's OrderedSet.
 
     Read the way the lib reads its official labels: one entry per model

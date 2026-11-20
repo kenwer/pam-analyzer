@@ -234,7 +234,7 @@ class BaseAnalysisRunner(ABC):
             except CancelledError:
                 status = RunStatus.CANCELLED
                 break
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logging.exception(
                     "%s: campaign %s failed: %s", self.log_prefix, campaign.name, exc
                 )
@@ -585,7 +585,7 @@ class BaseAnalysisRunner(ABC):
         try:
             shutil.copyfile(birdnet_log, dest)
             logging.info("%s: copied birdnet session log to %s", self.log_prefix, dest)
-        except Exception as exc:  # noqa: BLE001  best-effort: never shadow the real error
+        except Exception as exc:  # best-effort: never shadow the real error
             logging.warning("%s: failed to copy birdnet session log: %s", self.log_prefix, exc)
 
     def _known_output_species(self) -> AbstractSet[str]:

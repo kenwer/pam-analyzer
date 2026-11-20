@@ -100,7 +100,7 @@ class _PlayDelegate(QStyledItemDelegate):
         painter.drawText(option.rect, Qt.AlignmentFlag.AlignCenter, icon)
         painter.restore()
 
-    def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex):  # noqa: N802
+    def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex):
         hint = super().sizeHint(option, index)
         hint.setWidth(28)
         return hint
@@ -114,7 +114,7 @@ class _PersistentCheckMenu(QMenu):
     Clicking outside or pressing Escape still closes it normally.
     """
 
-    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+    def mouseReleaseEvent(self, event) -> None:
         action = self.activeAction()
         if action and action.isCheckable():
             action.trigger()
@@ -234,7 +234,7 @@ class DetectionTable(QWidget):
         self._setup_shortcuts()
 
     # public API
-    def setModel(self, model: DetectionsTableModel) -> None:  # noqa: N802, Qt API
+    def setModel(self, model: DetectionsTableModel) -> None:
         self._model = model
         self._play_delegate.set_model(model)
         self._table.setSourceModel(model)
@@ -278,7 +278,7 @@ class DetectionTable(QWidget):
             if idx >= 0:
                 self._table.setItemDelegateForColumn(idx, delegate)
 
-    def setSortPriority(  # noqa: N802 (Qt-style)
+    def setSortPriority(
         self, priority: list[tuple[str, Qt.SortOrder]]
     ) -> None:
         """Apply a sort priority by column name.
@@ -296,7 +296,7 @@ class DetectionTable(QWidget):
                 idx_priority.append((idx, order))
         self._table.setSortPriority(idx_priority)
 
-    def sortPriority(self) -> list[tuple[str, Qt.SortOrder]]:  # noqa: N802 (Qt-style)
+    def sortPriority(self) -> list[tuple[str, Qt.SortOrder]]:
         """Return the current sort priority as (column_name, order) pairs.
 
         Names survive set_store inserting Species_<locale> extras
@@ -312,10 +312,10 @@ class DetectionTable(QWidget):
                 out.append((names[col], order))
         return out
 
-    def setAudioRoot(self, path: Path | None) -> None:  # noqa: N802, Qt-style camelCase
+    def setAudioRoot(self, path: Path | None) -> None:
         self._audio_root = path
 
-    def setSpeciesChoices(self, choices: list[str]) -> None:  # noqa: N802, Qt-style camelCase
+    def setSpeciesChoices(self, choices: list[str]) -> None:
         """Set the option list backing the Corrected_Species combo editor.
 
         Always prepends an empty entry so the user can clear the field.
@@ -323,7 +323,7 @@ class DetectionTable(QWidget):
         deduped = sorted({c for c in choices if c})
         self._species_choices = ("", *deduped)
 
-    def fitColumnsToContents(self) -> None:  # noqa: N802, Qt-style camelCase
+    def fitColumnsToContents(self) -> None:
         """Resize all columns to fit visible-data widths (sampled per resizeContentsPrecision)."""
         self._table.resizeColumnsToContents()
 
@@ -331,7 +331,7 @@ class DetectionTable(QWidget):
         """Expose the inner table for callers that need to set delegates, edit triggers, etc."""
         return self._table
 
-    def focusTable(self) -> bool:  # noqa: N802, Qt-style camelCase
+    def focusTable(self) -> bool:
         """Move focus to the inner table so the single-key shortcuts are armed."""
         if self._table.model().rowCount() == 0:
             return False
@@ -545,7 +545,7 @@ class DetectionTable(QWidget):
             return
         self.statusChanged.emit(self._model.rowCount())
 
-    def addRowMenuAction(self, action: QAction) -> None:  # noqa: N802 (Qt-style)
+    def addRowMenuAction(self, action: QAction) -> None:
         """Append a host-owned action to the row context menu.
 
         The action is enabled while at least one row is selected. Read the
@@ -553,7 +553,7 @@ class DetectionTable(QWidget):
         """
         self._row_menu_actions.append(action)
 
-    def selectedRows(self) -> list[int]:  # noqa: N802 (Qt-style)
+    def selectedRows(self) -> list[int]:
         """Model rows of the selected table rows, in display order."""
         return [self._table.mapToSourceRow(row) for row in self._selected_view_rows()]
 
@@ -568,7 +568,7 @@ class DetectionTable(QWidget):
             rows.update(range(selected.top(), selected.bottom() + 1))
         return sorted(rows)
 
-    def clearFilters(self) -> None:  # noqa: N802 (Qt-style)
+    def clearFilters(self) -> None:
         """Drop every column filter, in the filter row and in the model."""
         if self._model is None:
             return
@@ -663,7 +663,7 @@ class DetectionTable(QWidget):
         text = _cell_text(index)
         self._filter_row.set_filter(index.column(), text, FilterOp.EQUALS if text else FilterOp.BLANK)
 
-    def makeColumnsMenu(  # noqa: N802 (Qt-style)
+    def makeColumnsMenu(
         self, parent: QWidget | None = None
     ) -> QMenu:
         """Create a persistent checkable menu pre-wired to this table's columns.
@@ -684,7 +684,7 @@ class DetectionTable(QWidget):
         self.populateColumnsMenu(menu)
         menu.exec(header.viewport().mapToGlobal(pos))
 
-    def populateColumnsMenu(self, menu: QMenu) -> None:  # noqa: N802 (Qt-style)
+    def populateColumnsMenu(self, menu: QMenu) -> None:
         """Fill *menu* with one checkable action per data column.
 
         Reused by the toolbar columns button and the header's right-click
@@ -701,7 +701,7 @@ class DetectionTable(QWidget):
             action.toggled.connect(lambda checked, col=logical: self._toggle_column(col, checked))
             menu.addAction(action)
 
-    def setHiddenColumnNames(  # noqa: N802 (Qt-style)
+    def setHiddenColumnNames(
         self, hidden_names: list[str] | set[str]
     ) -> None:
         """Programmatically apply a saved hidden-column set without emitting
@@ -721,7 +721,7 @@ class DetectionTable(QWidget):
                 self._filter_row.clear_column(logical)
             self._filter_row.set_column_visible(logical, visible)
 
-    def hiddenColumnNames(self) -> list[str]:  # noqa: N802 (Qt-style)
+    def hiddenColumnNames(self) -> list[str]:
         """Return the header names of currently hidden columns."""
         if self._model is None:
             return []
@@ -732,7 +732,7 @@ class DetectionTable(QWidget):
                 names.append(str(name))
         return names
 
-    def setPlaybackPadding(  # noqa: N802 (Qt-style)
+    def setPlaybackPadding(
         self, before: float, after: float
     ) -> None:
         """Forward to the embedded audio player so playback honors the new padding."""

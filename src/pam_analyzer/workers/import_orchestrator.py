@@ -205,7 +205,7 @@ class ImportOrchestrator(QObject):
 
         try:
             files = self._importer.list_card_files(card.mountpoint)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _log.debug("_start_next: list_card_files failed for %r", card.name, exc_info=True)
             self._current_card = None
             self.result_ready.emit(

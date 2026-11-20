@@ -68,7 +68,7 @@ class Bridge:
 
 def _download(url: str, sha256: str) -> bytes:
     print(f"Downloading {url}", file=sys.stderr)
-    with urllib.request.urlopen(url) as response:  # noqa: S310
+    with urllib.request.urlopen(url) as response:
         data = response.read()
     actual = hashlib.sha256(data).hexdigest()
     if actual != sha256:

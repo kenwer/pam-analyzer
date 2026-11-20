@@ -479,7 +479,7 @@ class AudioImporter:
                 files_empty += 1
                 # Nothing to keep, so clearing the card may delete it.
                 copied_sources.append(src)
-            except Exception as exc:  # noqa: BLE001  one bad file must not strand the rest
+            except Exception as exc:  # one bad file must not strand the rest
                 error = error or f"{src.name}: {exc}"  # report the first failure, keep going
             else:
                 files_copied += 1

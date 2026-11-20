@@ -47,7 +47,7 @@ class RecordingWindow(MainWindow):
 
     closed = False
 
-    def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802  Qt API
+    def closeEvent(self, event: QCloseEvent) -> None:
         super().closeEvent(event)
         self.closed = event.isAccepted()
 

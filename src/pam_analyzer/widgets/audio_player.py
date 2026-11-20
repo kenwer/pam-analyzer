@@ -163,7 +163,7 @@ class AudioPlayerPanel(QWidget):
         self.setVisible(False)
         self.playbackStopped.emit()
 
-    def setPadding(self, before: float, after: float) -> None:  # noqa: N802 (Qt-style)
+    def setPadding(self, before: float, after: float) -> None:
         """Update the playback padding window.
 
         If a bounded clip is currently playing, re-arms the stop timer so the

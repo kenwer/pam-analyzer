@@ -191,7 +191,7 @@ def main(argv: list[str] | None = None) -> int:
     _log.info("Running %s on %d campaign(s) in %s.", model_key, len(selected), project_folder)
     progress = _ConsoleProgress()
 
-    def _on_sigint(signum, frame) -> None:  # noqa: ARG001
+    def _on_sigint(signum, frame) -> None:
         _log.warning("Cancel requested, stopping...")
         progress.request_cancel()
 

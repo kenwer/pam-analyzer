@@ -25,7 +25,7 @@ class ProjectLoadWorker(QObject):
     def run(self) -> None:
         try:
             result = load_project(self._folder)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self.failed.emit(f"Failed to open {self._folder.name}: {exc}")
             return
         self.succeeded.emit(result)

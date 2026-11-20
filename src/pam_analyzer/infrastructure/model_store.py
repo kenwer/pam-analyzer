@@ -148,7 +148,7 @@ def install(
         if package.prepare is not None:
             try:
                 package.prepare()
-            except Exception as exc:  # noqa: BLE001  prepare runs third-party code with its own error types
+            except Exception as exc:  # prepare runs third-party code with its own error types
                 raise DownloadError(f"Preparing the downloaded files failed: {exc}") from exc
     finally:
         _install_lock.release()

@@ -37,7 +37,7 @@ if sys.platform == "win32":
 # so spawned worker processes inherit the guard too. On a normal console
 # run both streams are non-None and this is a no-op.
 if sys.stdout is None or sys.stderr is None:
-    _null = open(os.devnull, "w")  # noqa: SIM115  (lives for the process)
+    _null = open(os.devnull, "w")  # lives for the process
     if sys.stdout is None:
         sys.stdout = _null
     if sys.stderr is None:

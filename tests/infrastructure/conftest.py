@@ -38,7 +38,7 @@ def _handler(server_state: FakeServer) -> type[BaseHTTPRequestHandler]:
         def log_message(self, *_args) -> None:
             pass
 
-        def do_GET(self) -> None:  # noqa: N802  http.server API
+        def do_GET(self) -> None:
             server_state.requests.append({"path": self.path, **dict(self.headers)})
             route = server_state.routes.get(self.path)
             if route is None:

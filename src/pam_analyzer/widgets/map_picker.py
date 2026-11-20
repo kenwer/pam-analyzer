@@ -46,7 +46,7 @@ class MapPickerWidget(QWidget):
             root.locationPicked.connect(self._on_location_picked)
             root.zoomChanged.connect(self._on_zoom_changed)
 
-    def showEvent(self, event: QShowEvent) -> None:  # noqa: N802
+    def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
         # QQuickWidget inside QStackedWidget doesn't repaint on first show;
         # a deferred update forces the scene graph to render once the event

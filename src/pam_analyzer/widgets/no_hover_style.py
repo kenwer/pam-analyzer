@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QAbstractItemView, QProxyStyle, QStyle, QStyleOpti
 
 
 class NoHoverProxyStyle(QProxyStyle):
-    def drawControl(self, element, option, painter, widget=None) -> None:  # noqa: N802 (Qt API)
+    def drawControl(self, element, option, painter, widget=None) -> None:
         if element == QStyle.ControlElement.CE_ItemViewItem:
             opt = QStyleOptionViewItem(option)
             opt.state &= ~QStyle.StateFlag.State_MouseOver
@@ -32,4 +32,4 @@ def disable_item_hover(view: QAbstractItemView) -> None:
     """
     style = NoHoverProxyStyle()
     view.setStyle(style)
-    view._no_hover_style = style  # noqa: SLF001 (intentional retention)
+    view._no_hover_style = style  # intentional retention

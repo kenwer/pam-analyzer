@@ -39,7 +39,7 @@ class ComboDelegate(QStyledItemDelegate):
         parent: QWidget,
         option: QStyleOptionViewItem,
         index: QModelIndex,
-    ) -> QWidget:  # noqa: N802 (Qt API)
+    ) -> QWidget:
         del option, index
         combo = QComboBox(parent)
         combo.setEditable(False)
@@ -60,21 +60,21 @@ class ComboDelegate(QStyledItemDelegate):
         self.commitData.emit(editor)
         self.closeEditor.emit(editor)
 
-    def setEditorData(self, editor: QWidget, index: QModelIndex) -> None:  # noqa: N802 (Qt API)
+    def setEditorData(self, editor: QWidget, index: QModelIndex) -> None:
         if not isinstance(editor, QComboBox):
             return
         value = "" if index.data(Qt.EditRole) is None else str(index.data(Qt.EditRole))
         pos = editor.findText(value)
         editor.setCurrentIndex(pos if pos >= 0 else 0)
 
-    def setModelData(  # noqa: N802 (Qt API)
+    def setModelData(
         self, editor: QWidget, model, index: QModelIndex
     ) -> None:
         if not isinstance(editor, QComboBox):
             return
         model.setData(index, editor.currentText(), Qt.EditRole)
 
-    def updateEditorGeometry(  # noqa: N802 (Qt API)
+    def updateEditorGeometry(
         self, editor: QWidget, option: QStyleOptionViewItem, index: QModelIndex
     ) -> None:
         editor.setGeometry(option.rect)

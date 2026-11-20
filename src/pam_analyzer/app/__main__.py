@@ -11,12 +11,12 @@ from pathlib import Path
 os.environ.setdefault("ORT_DISABLE_TELEMETRY", "1")
 
 # PySide6 before ..domain pulls in polars, or the frozen build recurses in PySide's import hook
-import shiboken6  # noqa: E402
-from PySide6.QtCore import QTimer  # noqa: E402
-from PySide6.QtGui import QAction, QIcon  # noqa: E402
-from PySide6.QtWidgets import QApplication  # noqa: E402
+import shiboken6
+from PySide6.QtCore import QTimer
+from PySide6.QtGui import QAction, QIcon
+from PySide6.QtWidgets import QApplication
 
-from ..domain import paths  # noqa: E402
+from ..domain import paths
 
 
 def _configure_frozen_model_dir() -> None:

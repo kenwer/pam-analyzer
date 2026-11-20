@@ -26,7 +26,7 @@ VERSION = "3.0"
 SOUND_CLASS_GROUPS = frozenset({"Anthropogenic", "Geophony", "Human", "Music", "Soundscape"})
 
 
-def _downloader(kind: Literal["acoustic", "geo"]):  # noqa: ANN202
+def _downloader(kind: Literal["acoustic", "geo"]):
     if kind == "acoustic":
         from birdnet.acoustic.models.v3_0.onnx import AcousticOnnxDownloaderV3_0
 
@@ -36,7 +36,7 @@ def _downloader(kind: Literal["acoustic", "geo"]):  # noqa: ANN202
     return GeoOnnxDownloaderV3_0
 
 
-def labels(lang: str, kind: Literal["acoustic", "geo"] = "acoustic"):  # noqa: ANN201
+def labels(lang: str, kind: Literal["acoustic", "geo"] = "acoustic"):
     """One BirdNET v3.0 model's 'Scientific_Common' entries for one locale, in output order.
 
     Label files only: the lib generates them from its label and taxonomy
@@ -78,7 +78,7 @@ class _Taxonomy(TaxonomyServices):
 
         downloader = _downloader("acoustic")
         downloader.ensure_labels_available()
-        path = downloader._labels_input().path  # noqa: SLF001
+        path = downloader._labels_input().path
         with open(path, encoding="utf-8-sig", newline="") as f:
             return canonical_set(
                 row["scientific_name"].strip() for row in csv.DictReader(f) if row["taxon_group"] in SOUND_CLASS_GROUPS
@@ -129,8 +129,8 @@ def label_artifacts() -> tuple[Artifact, ...]:
     from birdnet.utils.taxonomy_v3 import get_taxonomy_v3_input
 
     inputs = {
-        "birdnet-3.0-acoustic-labels": _downloader("acoustic")._labels_input(),  # noqa: SLF001
-        "birdnet-3.0-geo-labels": _downloader("geo")._labels_input(),  # noqa: SLF001
+        "birdnet-3.0-acoustic-labels": _downloader("acoustic")._labels_input(),
+        "birdnet-3.0-geo-labels": _downloader("geo")._labels_input(),
         "birdnet-3.0-taxonomy": get_taxonomy_v3_input(),
     }
     return tuple(

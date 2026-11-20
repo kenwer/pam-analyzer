@@ -32,5 +32,5 @@ class StateButton(QPushButton):
         self.setCheckable(True)
         self.setStyleSheet(_STYLE)
 
-    def nextCheckState(self) -> None:  # noqa: N802 (Qt API)
+    def nextCheckState(self) -> None:
         pass

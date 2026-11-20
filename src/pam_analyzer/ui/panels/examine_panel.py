@@ -159,7 +159,7 @@ class ExaminePanel(QWidget):
         # across set_store, so loads only re-apply the spread (see _reload_detections).
         self._apply_best_detections()
 
-    def showEvent(self, event: QShowEvent) -> None:  # noqa: N802, Qt API
+    def showEvent(self, event: QShowEvent) -> None:
         """Arm the table shortcuts when the user navigates to this panel.
 
         Loading a project pre-selects a row and primes the player, but the

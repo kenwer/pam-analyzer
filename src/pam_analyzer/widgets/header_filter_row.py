@@ -52,18 +52,18 @@ class _FilterEdit(QLineEdit):
     escapePressed = Signal()
     focusChanged = Signal()
 
-    def keyPressEvent(self, event) -> None:  # noqa: N802 (Qt API)
+    def keyPressEvent(self, event) -> None:
         if event.key() == Qt.Key.Key_Escape:
             self.escapePressed.emit()
             event.accept()
             return
         super().keyPressEvent(event)
 
-    def focusInEvent(self, event) -> None:  # noqa: N802 (Qt API)
+    def focusInEvent(self, event) -> None:
         super().focusInEvent(event)
         self.focusChanged.emit()
 
-    def focusOutEvent(self, event) -> None:  # noqa: N802 (Qt API)
+    def focusOutEvent(self, event) -> None:
         super().focusOutEvent(event)
         self.focusChanged.emit()
 
@@ -96,13 +96,13 @@ class _FunnelButton(QToolButton):
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._active = False
 
-    def setActive(self, active: bool) -> None:  # noqa: N802 (Qt-style)
+    def setActive(self, active: bool) -> None:
         if self._active == active:
             return
         self._active = active
         self.update()
 
-    def paintEvent(self, event) -> None:  # noqa: N802 (Qt API)
+    def paintEvent(self, event) -> None:
         # Qt-required signature. We always repaint the whole widget.
         del event
         painter = QPainter(self)
@@ -199,15 +199,15 @@ class _FilterCell(QWidget):
     def _refresh_clear(self) -> None:
         self.clear.setVisible(self.active and (self.underMouse() or self.edit.hasFocus()))
 
-    def enterEvent(self, event) -> None:  # noqa: N802 (Qt API)
+    def enterEvent(self, event) -> None:
         super().enterEvent(event)
         self._refresh_clear()
 
-    def leaveEvent(self, event) -> None:  # noqa: N802 (Qt API)
+    def leaveEvent(self, event) -> None:
         super().leaveEvent(event)
         self._refresh_clear()
 
-    def resizeEvent(self, event) -> None:  # noqa: N802 (Qt API)
+    def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         w, h, size = self.width(), self.height(), self._button_size
         self.edit.setGeometry(0, 0, w, h)

@@ -47,14 +47,14 @@ class AudioImportWorker(QObject):
                 is_cancelled=self.thread().isInterruptionRequested,
                 clear_after=self._clear_after,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self.failed.emit(str(exc))
             return
 
         if not result.error and self._card.source is ImportSource.SD_CARD:
             try:
                 self._scanner.eject(self._card)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 # Eject failure is a warning; the copy result stands as success.
                 pass
 
