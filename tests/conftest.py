@@ -161,5 +161,8 @@ def _stop_qt_threads():
         except RuntimeError:
             continue  # underlying C++ object already gone
         if running:
+            # A test that failed mid-run leaves its worker busy in run(), which
+            # only an interruption request stops. quit() alone deadlocks wait().
+            obj.requestInterruption()
             obj.quit()
             obj.wait()
