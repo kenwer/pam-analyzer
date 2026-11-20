@@ -30,7 +30,7 @@ engine.
 
 Perch's species axis converges with BirdNET v3.0's: 11063 of v3.0's 11725
 classes are spelled identically in Perch's 14795, and 11190 match once both
-are canonicalised. That is why this runner can reuse TAXONOMY_V3_0 for the
+are canonicalised. That is why this runner can reuse BirdNET v3.0's taxonomy for the
 geo allow-list and the common-name maps rather than needing a
 Perch-specific crosswalk. The classes Perch adds and v3.0 lacks are
 mostly non-birds, and a per-week allow-list drops them the same way it drops
@@ -47,14 +47,9 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from ..domain import AnalysisSettings, ModelInfo
+from . import birdnet_3_0_taxonomy
 from ._analysis_helpers import workers_for
 from .base_analysis_runner import BaseAnalysisRunner, ParsedRow
-from .birdnet_lib import (
-    TAXONOMY_V3_0,
-    prepare_v3_0_labels,
-    v3_0_geo_artifact,
-    v3_0_label_artifacts,
-)
 from .model_store import Artifact, ModelPackage
 
 # Hardcoded rather than derived from the model, because this string is part of
@@ -104,7 +99,7 @@ def _artifacts() -> tuple[Artifact, ...]:
     """Perch's weights plus the BirdNET v3.0 files its taxonomy and location filter read."""
     from .perch_onnx import perch_artifact  # lazy, perch_onnx imports the birdnet lib
 
-    return (perch_artifact(), v3_0_geo_artifact(), *v3_0_label_artifacts())
+    return (perch_artifact(), birdnet_3_0_taxonomy.geo_artifact(), *birdnet_3_0_taxonomy.label_artifacts())
 
 
 class PerchRunner(BaseAnalysisRunner):
@@ -117,7 +112,7 @@ class PerchRunner(BaseAnalysisRunner):
 
     model_key: ClassVar[str] = MODEL_KEY
     log_prefix: ClassVar[str] = "perch"
-    taxonomy = TAXONOMY_V3_0
+    taxonomy = birdnet_3_0_taxonomy.TAXONOMY
     package: ClassVar[ModelPackage] = ModelPackage(
         info=ModelInfo(
             name="Perch 2.0",
@@ -125,7 +120,7 @@ class PerchRunner(BaseAnalysisRunner):
             licence="Apache 2.0",
         ),
         artifacts=_artifacts,
-        prepare=prepare_v3_0_labels,
+        prepare=birdnet_3_0_taxonomy.prepare_labels,
     )
 
     def _model_classes(self) -> AbstractSet[str]:

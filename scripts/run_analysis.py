@@ -35,7 +35,7 @@ from pam_analyzer.domain import (
     detection_schema,
     paths,
 )
-from pam_analyzer.infrastructure import BirdnetRunner
+from pam_analyzer.infrastructure import Birdnet30Runner
 
 _log = logging.getLogger("run_model_on_project_folder")
 
@@ -164,7 +164,7 @@ def main(argv: list[str] | None = None) -> int:
     project = Project.load(project_folder)
 
     # Same runner class the GUI uses, which is what keeps output identical.
-    runner = BirdnetRunner()
+    runner = Birdnet30Runner()
     model_key = runner.model_key
 
     campaigns = _select_campaigns(project_folder, args.campaign)

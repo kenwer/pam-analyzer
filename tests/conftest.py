@@ -20,7 +20,7 @@ from pam_analyzer.domain import ModelInfo
 from pam_analyzer.domain.audio_import import CardImportResult, DetectedCard, ImportSource
 from pam_analyzer.infrastructure import AudioImporter
 from pam_analyzer.infrastructure.birdnet_2_4_runner import MODEL_KEY as MODEL_KEY_V2_4
-from pam_analyzer.infrastructure.birdnet_runner import MODEL_KEY as MODEL_KEY_V3_0
+from pam_analyzer.infrastructure.birdnet_3_0_runner import MODEL_KEY as MODEL_KEY_V3_0
 from pam_analyzer.infrastructure.update.feed import Update
 from pam_analyzer.infrastructure.update.install import LinuxAppInstall
 

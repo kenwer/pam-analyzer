@@ -1,4 +1,4 @@
-"""End-to-end smoke tests for BirdnetRunner.
+"""End-to-end smoke tests for Birdnet30Runner.
 
 The end-to-end cases are marked slow because they load the BirdNET v3.0
 ONNX model and pay the session startup cost. They read the model from the
@@ -35,7 +35,7 @@ from pam_analyzer.domain import (
     RunStatus,
 )
 from pam_analyzer.infrastructure.base_analysis_runner import ParsedRow
-from pam_analyzer.infrastructure.birdnet_runner import MODEL_KEY, BirdnetRunner
+from pam_analyzer.infrastructure.birdnet_3_0_runner import MODEL_KEY, Birdnet30Runner
 
 
 class _RecordingProgress:
@@ -90,7 +90,7 @@ def minute_run(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Analysis
     """One unfiltered run over a minute of noise, shared because each run spawns the model pipeline."""
     camp_dir = _campaign_with_one_wav(tmp_path_factory.mktemp("minute"), seconds=60.0)
     progress = _RecordingProgress()
-    result = BirdnetRunner().run(
+    result = Birdnet30Runner().run(
         campaigns=[Campaign(name="c1", folder=camp_dir, species_filter_mode=FilterMode.LIST)],
         settings=AnalysisSettings(min_conf=0.001, overlap=0.0, locales=("en_us",)),
         preferred_lang="en_us",
@@ -113,7 +113,7 @@ def test_recording_time_comes_from_the_flac_guano(tmp_path: Path) -> None:
     settings = AnalysisSettings(min_conf=0.001, overlap=0.0, locales=("en_us",))
     campaign = Campaign(name="c1", folder=aru_dir.parent, species_filter_mode=FilterMode.LIST)
 
-    result = BirdnetRunner().run(
+    result = Birdnet30Runner().run(
         campaigns=[campaign], settings=settings, preferred_lang="en_us", progress=_RecordingProgress()
     )
 
@@ -152,13 +152,13 @@ def test_written_rows_are_on_the_v3_axis(minute_run) -> None:
     Guards the upgrade: rows carrying legacy (v2.4-era) spellings would mean
     the runner is normalizing names it should be passing through.
     """
-    from pam_analyzer.infrastructure.birdnet_lib import TAXONOMY_V3_0
+    from pam_analyzer.infrastructure import birdnet_3_0_taxonomy
 
     _, result, _ = minute_run
     with open(result.campaigns[0].detections_csv, newline="", encoding="utf-8") as f:
         names = {r["Scientific_Name"] for r in _csv.DictReader(f)}
     assert names, "expected at least one row at min_conf=0.001"
-    assert names <= TAXONOMY_V3_0.known_species_scientific()
+    assert names <= birdnet_3_0_taxonomy.TAXONOMY.known_species_scientific()
 
 
 @pytest.mark.slow
@@ -187,7 +187,7 @@ def test_list_mode_filters_to_supplied_species(campaign_with_minute_wav: Path) -
     # Mixed format: plain Latin on one line, 'Sci_Common' on the other.
     campaign.write_species_filter("Parus major\nPseudobird fakensis_Made Up Bird\n", "")
 
-    result = BirdnetRunner().run(
+    result = Birdnet30Runner().run(
         campaigns=[campaign],
         settings=settings,
         preferred_lang="en_us",
@@ -217,7 +217,7 @@ def test_legacy_species_name_still_matches(campaign_with_minute_wav: Path) -> No
     )
     campaign.write_species_filter("Accipiter gentilis\n", "")
 
-    result = BirdnetRunner().run(
+    result = Birdnet30Runner().run(
         campaigns=[campaign],
         settings=settings,
         preferred_lang="en_us",
@@ -251,7 +251,7 @@ def test_honors_cancellation(tmp_path: Path) -> None:
     # run() converts the internal CancelledError into a CANCELLED outcome so
     # campaigns finished before the cancel are still returned. This single
     # campaign never finished, so campaigns is empty.
-    result = BirdnetRunner().run(
+    result = Birdnet30Runner().run(
         campaigns=[campaign],
         settings=settings,
         preferred_lang="en_us",
@@ -273,7 +273,7 @@ def test_digital_silence_gets_only_low_confidences(tmp_path: Path) -> None:
     settings = AnalysisSettings(min_conf=0.001, overlap=0.0, locales=("en_us",))
     campaign = Campaign(name="c1", folder=camp_dir, species_filter_mode=FilterMode.LIST)
 
-    result = BirdnetRunner().run(
+    result = Birdnet30Runner().run(
         campaigns=[campaign],
         settings=settings,
         preferred_lang="en_us",
@@ -287,7 +287,7 @@ def test_digital_silence_gets_only_low_confidences(tmp_path: Path) -> None:
     assert all(math.isfinite(c) and c < 0.1 for c in confidences)
 
 
-class _NanScoringRunner(BirdnetRunner):
+class _NanScoringRunner(Birdnet30Runner):
     """Scores every row NaN, the degenerate output a model can give."""
 
     def _parse_row(self, raw_row: Any) -> ParsedRow:

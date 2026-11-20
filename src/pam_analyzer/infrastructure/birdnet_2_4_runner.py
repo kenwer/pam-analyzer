@@ -28,10 +28,9 @@ from contextlib import AbstractContextManager
 from typing import Any, ClassVar
 
 from ..domain import AnalysisSettings, ModelInfo
-from . import birdnet_2_4_convert
+from . import birdnet_2_4_convert, birdnet_2_4_taxonomy, birdnet_3_0_taxonomy
 from ._analysis_helpers import workers_for
 from .base_analysis_runner import BaseAnalysisRunner
-from .birdnet_lib import TAXONOMY_V2_4, prepare_v3_0_labels, v3_0_label_artifacts
 from .model_store import Artifact, ModelPackage
 
 MODEL_KEY = "BirdNET-2.4"
@@ -46,12 +45,12 @@ THREADS_PER_WORKER = 2
 
 def _artifacts() -> tuple[Artifact, ...]:
     """The converted weights plus the BirdNET v3.0 label files the common names come from."""
-    return (*birdnet_2_4_convert.artifacts(), *v3_0_label_artifacts())
+    return (*birdnet_2_4_convert.artifacts(), *birdnet_3_0_taxonomy.label_artifacts())
 
 
 def _prepare() -> None:
     birdnet_2_4_convert.prepare()
-    prepare_v3_0_labels()
+    birdnet_3_0_taxonomy.prepare_labels()
 
 
 class Birdnet24Runner(BaseAnalysisRunner):
@@ -66,7 +65,7 @@ class Birdnet24Runner(BaseAnalysisRunner):
 
     model_key: ClassVar[str] = MODEL_KEY
     log_prefix: ClassVar[str] = "birdnet2.4"
-    taxonomy = TAXONOMY_V2_4
+    taxonomy = birdnet_2_4_taxonomy.TAXONOMY
     package: ClassVar[ModelPackage] = ModelPackage(
         info=ModelInfo(
             name="BirdNET v2.4",

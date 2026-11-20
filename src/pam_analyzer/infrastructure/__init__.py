@@ -7,7 +7,7 @@ from .audio_inventory_discovery import (
     resolve_audio_sizes,
 )
 from .birdnet_2_4_runner import Birdnet24Runner
-from .birdnet_runner import BirdnetRunner
+from .birdnet_3_0_runner import Birdnet30Runner
 from .model_store import models_folder
 from .pamproj_migration import (
     AudioRootNotFound,
@@ -25,7 +25,7 @@ __all__ = [
     "AudioImporter",
     "AudioRootNotFound",
     "Birdnet24Runner",
-    "BirdnetRunner",
+    "Birdnet30Runner",
     "LegacyProject",
     "MigrationReport",
     "PerchRunner",

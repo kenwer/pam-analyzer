@@ -13,14 +13,14 @@ from __future__ import annotations
 import pytest
 
 from pam_analyzer.infrastructure.birdnet_2_4_runner import Birdnet24Runner
-from pam_analyzer.infrastructure.birdnet_runner import BirdnetRunner
+from pam_analyzer.infrastructure.birdnet_3_0_runner import Birdnet30Runner
 from pam_analyzer.infrastructure.perch_runner import PerchRunner
 from pam_analyzer.infrastructure.species_names import canonical_set
 
 
 @pytest.mark.slow
 def test_perch_reports_its_own_axis_not_the_borrowed_v3_one() -> None:
-    """PerchRunner binds TAXONOMY_V3_0 for geo lookups and locale maps, but its
+    """PerchRunner binds the v3.0 taxonomy for geo lookups and locale maps, but its
     model emits thousands of classes v3.0 has no name for. Reporting v3.0's
     axis here would file every one of them as a name the model cannot emit.
     """
@@ -34,8 +34,8 @@ def test_perch_reports_its_own_axis_not_the_borrowed_v3_one() -> None:
 
 @pytest.mark.slow
 def test_a_birdnet_runner_reports_its_own_taxonomy() -> None:
-    assert BirdnetRunner()._known_output_species() == BirdnetRunner().taxonomy.known_species_scientific()
-    assert "Acoustic_guitar" not in BirdnetRunner()._known_output_species()
+    assert Birdnet30Runner()._known_output_species() == Birdnet30Runner().taxonomy.known_species_scientific()
+    assert "Acoustic_guitar" not in Birdnet30Runner()._known_output_species()
 
 
 @pytest.mark.slow
@@ -47,7 +47,7 @@ def test_the_two_birdnet_generations_report_different_axes() -> None:
     Abeillia abeillei is a species v3.0 added outright, so it still tells
     the axes apart.
     """
-    v3 = BirdnetRunner()._known_output_species()
+    v3 = Birdnet30Runner()._known_output_species()
     v2 = Birdnet24Runner()._known_output_species()
 
     assert v3 != v2
@@ -63,7 +63,7 @@ def test_known_species_scientific_does_not_rebuild_its_set_per_call() -> None:
     of names each time cost minutes on a large campaign, and the label map
     underneath was already cached, so the cost hid one layer down.
     """
-    taxonomy = BirdnetRunner().taxonomy
+    taxonomy = Birdnet30Runner().taxonomy
 
     assert taxonomy.known_species_scientific() is taxonomy.known_species_scientific()
 

@@ -1,7 +1,7 @@
 """Tests for PerchRunner, focused on what differs from the BirdNET runners.
 
 The shared pipeline (progress phases, CSV schema, cancellation, species
-filtering) is covered once in test_birdnet_runner.py and lives in
+filtering) is covered once in test_birdnet_3_0_runner.py and lives in
 BaseAnalysisRunner, so it is not repeated here.
 
 Two things are specific to this runner. Perch emits raw class logits rather
@@ -33,7 +33,7 @@ from pam_analyzer.infrastructure.perch_runner import (
     _perch_logit_threshold,
     _perch_logit_to_prob,
 )
-from tests.infrastructure.test_birdnet_runner import (
+from tests.infrastructure.test_birdnet_3_0_runner import (
     _campaign_with_one_wav,
     _RecordingProgress,
 )

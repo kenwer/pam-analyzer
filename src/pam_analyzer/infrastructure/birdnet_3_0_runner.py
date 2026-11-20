@@ -1,6 +1,6 @@
 """BirdNET v3.0 infrastructure adapter.
 
-BirdnetRunner is the AnalysisRunner implementation, backed by BirdNET v3.0
+Birdnet30Runner is the AnalysisRunner implementation, backed by BirdNET v3.0
 on the ONNX backend via the birdnet>=1.5 library. Audio I/O, 3 s window
 framing, batched inference, sigmoid scoring, and the confidence threshold
 all live inside the lib's predict_session pipeline. Per-campaign
@@ -16,14 +16,10 @@ from contextlib import AbstractContextManager
 from typing import Any, ClassVar
 
 from ..domain import AnalysisSettings, ModelInfo
+from . import birdnet_3_0_taxonomy
 from .base_analysis_runner import BaseAnalysisRunner
-from .birdnet_lib import (
-    MODEL_PRECISION,
-    TAXONOMY_V3_0,
-    prepare_v3_0_labels,
-    v3_0_artifacts,
-)
-from .model_store import ModelPackage
+from .birdnet_taxonomy import MODEL_PRECISION
+from .model_store import Artifact, ModelPackage
 
 # Hardcoded rather than derived from the library because this string is part of
 # the CSV filename on the user's disk. The version suffix has to name the release
@@ -31,7 +27,16 @@ from .model_store import ModelPackage
 MODEL_KEY = "BirdNET-3.0"
 
 
-class BirdnetRunner(BaseAnalysisRunner):
+def _artifacts() -> tuple[Artifact, ...]:
+    """Both v3.0 models and their label inputs."""
+    return (
+        birdnet_3_0_taxonomy.model_artifact("acoustic"),
+        birdnet_3_0_taxonomy.geo_artifact(),
+        *birdnet_3_0_taxonomy.label_artifacts(),
+    )
+
+
+class Birdnet30Runner(BaseAnalysisRunner):
     """AnalysisRunner implementation backed by BirdNET v3.0 (ONNX).
 
     Loads the model once per run and reuses it across campaigns. Writes
@@ -41,15 +46,15 @@ class BirdnetRunner(BaseAnalysisRunner):
 
     model_key: ClassVar[str] = MODEL_KEY
     log_prefix: ClassVar[str] = "birdnet"
-    taxonomy = TAXONOMY_V3_0
+    taxonomy = birdnet_3_0_taxonomy.TAXONOMY
     package: ClassVar[ModelPackage] = ModelPackage(
         info=ModelInfo(
             name="BirdNET v3.0",
             info_url="https://zenodo.org/records/24362980",
             licence="Apache 2.0",
         ),
-        artifacts=v3_0_artifacts,
-        prepare=prepare_v3_0_labels,
+        artifacts=_artifacts,
+        prepare=birdnet_3_0_taxonomy.prepare_labels,
     )
 
     def _load_model(self) -> Any:
@@ -64,7 +69,7 @@ class BirdnetRunner(BaseAnalysisRunner):
         from .onnx_telemetry import disable_in_workers
 
         return disable_in_workers(
-            birdnet.load("acoustic", "3.0", "onnx", lang="en_us", precision=MODEL_PRECISION)
+            birdnet.load("acoustic", birdnet_3_0_taxonomy.VERSION, "onnx", lang="en_us", precision=MODEL_PRECISION)
         )
 
     def _open_predict_session(

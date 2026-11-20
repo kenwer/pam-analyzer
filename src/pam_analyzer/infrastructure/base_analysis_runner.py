@@ -65,7 +65,7 @@ from ._analysis_helpers import (
     write_species_list_files,
 )
 from .audio_import import recording_time_of
-from .birdnet_lib import TaxonomyServices, normalize_lang_code, split_sci_common
+from .birdnet_taxonomy import TaxonomyServices, normalize_lang_code, split_sci_common
 from .http_download import DownloadError
 from .model_store import ModelPackage
 from .species_names import canonical, canonical_set

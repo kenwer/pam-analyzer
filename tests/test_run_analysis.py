@@ -23,7 +23,7 @@ def test_a_campaign_name_matches_in_either_unicode_form(tmp_path: Path) -> None:
 
 
 class _EndingRunner:
-    """Stands in for BirdnetRunner and ends every run with one status."""
+    """Stands in for Birdnet30Runner and ends every run with one status."""
 
     model_key = "Stub-1.0"
     status = RunStatus.COMPLETED
@@ -44,6 +44,6 @@ def test_exit_code_follows_how_the_run_ended(
     (tmp_path / "c1").mkdir()
     Campaign(name="c1", folder=tmp_path / "c1").save()
     monkeypatch.setattr(_EndingRunner, "status", status)
-    monkeypatch.setattr(run_analysis, "BirdnetRunner", _EndingRunner)
+    monkeypatch.setattr(run_analysis, "Birdnet30Runner", _EndingRunner)
 
     assert run_analysis.main(["--project", str(tmp_path)]) == exit_code

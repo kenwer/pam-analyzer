@@ -1,7 +1,7 @@
 """Tests for Birdnet24Runner, focused on what differs from the v3.0 runner.
 
 The shared pipeline (progress phases, CSV schema, cancellation, species
-filtering) is covered once in test_birdnet_runner.py and lives in
+filtering) is covered once in test_birdnet_3_0_runner.py and lives in
 BaseAnalysisRunner, so it is not repeated here. What is specific to this
 runner is that v2.4 emits names on the older eBird axis, and every name it
 writes has to land on the app's canonical axis.
@@ -22,7 +22,7 @@ from pam_analyzer.infrastructure.birdnet_2_4_runner import (
     MODEL_KEY,
     Birdnet24Runner,
 )
-from tests.infrastructure.test_birdnet_runner import (
+from tests.infrastructure.test_birdnet_3_0_runner import (
     _campaign_with_one_wav,
     _RecordingProgress,
 )
@@ -36,7 +36,7 @@ def test_run_writes_its_own_csv_on_the_current_axis(tmp_path: Path) -> None:
     already has detections-BirdNET-2.4.csv on disk and the app has to keep
     treating that file as this engine's output rather than orphaning it.
     """
-    from pam_analyzer.infrastructure.birdnet_lib import TAXONOMY_V3_0
+    from pam_analyzer.infrastructure import birdnet_3_0_taxonomy
 
     folder = _campaign_with_one_wav(tmp_path, seconds=60.0)
     campaign = Campaign(name="c1", folder=folder, species_filter_mode=FilterMode.LIST)
@@ -54,5 +54,5 @@ def test_run_writes_its_own_csv_on_the_current_axis(tmp_path: Path) -> None:
         rows = list(_csv.DictReader(f))
     names = {r["Scientific_Name"] for r in rows}
     assert names, "expected at least one row at min_conf=0.001"
-    assert names <= TAXONOMY_V3_0.known_species_scientific()
+    assert names <= birdnet_3_0_taxonomy.TAXONOMY.known_species_scientific()
     assert {r["Model"] for r in rows} == {MODEL_KEY}

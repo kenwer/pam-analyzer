@@ -32,7 +32,9 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from pam_analyzer.infrastructure.birdnet_lib import SOUND_CLASS_GROUPS, split_sci_common, v3_0_labels
+from pam_analyzer.infrastructure.birdnet_3_0_taxonomy import SOUND_CLASS_GROUPS
+from pam_analyzer.infrastructure.birdnet_3_0_taxonomy import labels as v3_0_labels
+from pam_analyzer.infrastructure.birdnet_taxonomy import split_sci_common
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = REPO_ROOT / "src" / "pam_analyzer" / "infrastructure" / "data" / "species_aliases.tsv"

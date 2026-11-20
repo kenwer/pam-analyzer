@@ -17,7 +17,8 @@ from __future__ import annotations
 
 import pytest
 
-from pam_analyzer.infrastructure.birdnet_lib import TAXONOMY_V2_4, TAXONOMY_V3_0
+from pam_analyzer.infrastructure.birdnet_2_4_taxonomy import TAXONOMY as TAXONOMY_V2_4
+from pam_analyzer.infrastructure.birdnet_3_0_taxonomy import TAXONOMY as TAXONOMY_V3_0
 from pam_analyzer.infrastructure.perch_onnx import label_set
 
 

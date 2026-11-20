@@ -1,6 +1,6 @@
 """Ports and value objects for the BirdNET analysis boundary.
 
-AnalysisRunner is the structural seam for analysis: BirdnetRunner
+AnalysisRunner is the structural seam for analysis: Birdnet30Runner
 implements it for production, and tests supply a FakeRunner that satisfies
 the protocol structurally (duck typing).
 """

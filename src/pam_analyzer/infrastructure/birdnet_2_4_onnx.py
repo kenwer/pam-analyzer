@@ -29,7 +29,7 @@ uses for its own downloads. Labels are read from the onnx directory rather than
 the tf one so that resolving a species name never triggers the 51 MB TFLite
 download this engine no longer uses.
 
-Unlike birdnet_lib, this module imports birdnet at module load. It can afford
+Unlike the taxonomy modules, this module imports birdnet at module load. It can afford
 to: nothing imports it until a v2.4 model is actually wanted, and by then the
 lib is being loaded regardless. The backend classes have to be defined at module
 level rather than built on demand, because the inference pipeline spawns worker
@@ -55,7 +55,7 @@ from birdnet.core.backends import (
 from birdnet.utils.local_data import get_lang_dir, get_model_path
 from birdnet.utils.species_lists import read_official_labels
 
-from .birdnet_lib import MODEL_PRECISION
+from .birdnet_taxonomy import MODEL_PRECISION
 from .onnx_telemetry import disable_in_workers
 
 # v2.4 analyses 3 s at 48 kHz. Only consulted when a model's declared output

@@ -61,7 +61,7 @@ _install_lock = threading.Lock()
 
 def models_folder() -> Path:
     """The folder every engine downloads into, BIRDNET_APP_DATA or the lib's per-user default."""
-    # Lazy: importing birdnet configures its logging and is slow, see birdnet_lib
+    # Lazy: importing birdnet configures its logging and is slow, see birdnet_taxonomy
     from birdnet.utils.local_data import get_birdnet_app_data_folder
 
     return get_birdnet_app_data_folder()

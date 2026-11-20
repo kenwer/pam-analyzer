@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from pam_analyzer.infrastructure import birdnet_2_4_convert, birdnet_2_4_keras_onnx, birdnet_2_4_runner
+from pam_analyzer.infrastructure import birdnet_2_4_convert, birdnet_2_4_keras_onnx, birdnet_3_0_taxonomy
 from pam_analyzer.infrastructure.birdnet_2_4_runner import Birdnet24Runner
 from pam_analyzer.infrastructure.http_download import DownloadError
 from pam_analyzer.infrastructure.model_store import install, marker_path
@@ -16,8 +16,8 @@ def no_v3_0_labels(monkeypatch: pytest.MonkeyPatch) -> None:
     """The package also carries the v3.0 label files its common names come
     from. Installing those would reach the network, and they are not under test here.
     """
-    monkeypatch.setattr(birdnet_2_4_runner, "v3_0_label_artifacts", lambda: ())
-    monkeypatch.setattr(birdnet_2_4_runner, "prepare_v3_0_labels", lambda: None)
+    monkeypatch.setattr(birdnet_3_0_taxonomy, "label_artifacts", lambda: ())
+    monkeypatch.setattr(birdnet_3_0_taxonomy, "prepare_labels", lambda: None)
 
 
 @pytest.fixture

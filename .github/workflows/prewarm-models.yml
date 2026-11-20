@@ -62,7 +62,7 @@ jobs:
           lookup-only: true
           # Everything that decides which files land in the cache: the birdnet
           # version, the store, and the modules that pin each engine's artifacts.
-          key: birdnet-models-${{ steps.birdnet.outputs.version }}-${{ hashFiles('scripts/prewarm_models.py', 'src/pam_analyzer/infrastructure/model_store.py', 'src/pam_analyzer/infrastructure/birdnet_lib.py', 'src/pam_analyzer/infrastructure/perch_onnx.py', 'src/pam_analyzer/infrastructure/birdnet_2_4_onnx.py', 'src/pam_analyzer/infrastructure/birdnet_2_4_convert.py', 'src/pam_analyzer/infrastructure/birdnet_2_4_keras_onnx.py', 'src/pam_analyzer/infrastructure/*_runner.py') }}
+          key: birdnet-models-${{ steps.birdnet.outputs.version }}-${{ hashFiles('scripts/prewarm_models.py', 'src/pam_analyzer/infrastructure/model_store.py', 'src/pam_analyzer/infrastructure/*taxonomy.py', 'src/pam_analyzer/infrastructure/perch_onnx.py', 'src/pam_analyzer/infrastructure/birdnet_2_4_onnx.py', 'src/pam_analyzer/infrastructure/birdnet_2_4_convert.py', 'src/pam_analyzer/infrastructure/birdnet_2_4_keras_onnx.py', 'src/pam_analyzer/infrastructure/*_runner.py') }}
 
       - name: Install uv
         if: steps.models-cache.outputs.cache-hit != 'true'

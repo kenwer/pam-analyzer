@@ -8,13 +8,8 @@ from birdnet.utils.taxonomy_v3 import get_taxonomy_v3_input
 
 from pam_analyzer.infrastructure import perch_onnx
 from pam_analyzer.infrastructure.birdnet_2_4_runner import Birdnet24Runner
-from pam_analyzer.infrastructure.birdnet_lib import (
-    prepare_v3_0_labels,
-    v3_0_artifacts,
-    v3_0_geo_artifact,
-    v3_0_label_artifacts,
-)
-from pam_analyzer.infrastructure.birdnet_runner import BirdnetRunner
+from pam_analyzer.infrastructure.birdnet_3_0_runner import Birdnet30Runner
+from pam_analyzer.infrastructure.birdnet_3_0_taxonomy import geo_artifact, label_artifacts, prepare_labels
 from pam_analyzer.infrastructure.perch_runner import PerchRunner
 
 PERCH_COMMIT_URL_PREFIX = "https://huggingface.co/justinchuby/Perch-onnx/resolve/"
@@ -23,8 +18,8 @@ PERCH_SHA256 = "4dcf71c18a147198545944bb5149697e89e3ad2e16637fa8f0edf6d13035a017
 
 def test_v3_0_artifacts_follow_lib_pins() -> None:
     for artifact, info in (
-        (next(a for a in v3_0_artifacts() if a.id == "birdnet-3.0-acoustic"), v3_acoustic_models["fp32"]),
-        (v3_0_geo_artifact(), v3_geo_models["fp32"]),
+        (next(a for a in Birdnet30Runner.package.artifacts() if a.id == "birdnet-3.0-acoustic"), v3_acoustic_models["fp32"]),
+        (geo_artifact(), v3_geo_models["fp32"]),
     ):
         assert artifact.url == info.dl_url
         assert artifact.sha256 == info.sha256
@@ -40,7 +35,7 @@ def test_v3_0_label_inputs_download_to_the_lib_paths() -> None:
         GeoOnnxDownloaderV3_0._labels_input(),  # noqa: SLF001
         get_taxonomy_v3_input(),
     )
-    assert {(a.dest, a.url, a.size, a.sha256) for a in v3_0_label_artifacts()} == {
+    assert {(a.dest, a.url, a.size, a.sha256) for a in label_artifacts()} == {
         (i.path, i.url, i.size, i.sha256) for i in inputs
     }
 
@@ -54,16 +49,16 @@ def test_perch_artifact_is_pinned_to_a_commit() -> None:
 
 
 def test_v3_0_and_perch_share_geo_and_label_files() -> None:
-    shared = {a.id for a in (v3_0_geo_artifact(), *v3_0_label_artifacts())}
-    assert shared <= {a.id for a in BirdnetRunner.package.artifacts()}
+    shared = {a.id for a in (geo_artifact(), *label_artifacts())}
+    assert shared <= {a.id for a in Birdnet30Runner.package.artifacts()}
     assert shared <= {a.id for a in PerchRunner.package.artifacts()}
 
 
 def test_v2_4_reads_the_v3_0_labels_for_its_common_names() -> None:
-    labels = {a.id for a in v3_0_label_artifacts()}
+    labels = {a.id for a in label_artifacts()}
     assert labels <= {a.id for a in Birdnet24Runner.package.artifacts()}
 
 
 def test_v3_0_and_perch_generate_labels_after_download() -> None:
-    assert BirdnetRunner.package.prepare is prepare_v3_0_labels
-    assert PerchRunner.package.prepare is prepare_v3_0_labels
+    assert Birdnet30Runner.package.prepare is prepare_labels
+    assert PerchRunner.package.prepare is prepare_labels

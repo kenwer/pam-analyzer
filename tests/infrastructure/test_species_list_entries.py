@@ -24,12 +24,12 @@ import pytest
 
 from pam_analyzer.domain import FilterMode, SpeciesFilter
 from pam_analyzer.infrastructure.birdnet_2_4_runner import Birdnet24Runner
-from pam_analyzer.infrastructure.birdnet_runner import BirdnetRunner
+from pam_analyzer.infrastructure.birdnet_3_0_runner import Birdnet30Runner
 from pam_analyzer.infrastructure.perch_runner import PerchRunner
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("runner", [BirdnetRunner(), Birdnet24Runner()], ids=["v3.0", "v2.4"])
+@pytest.mark.parametrize("runner", [Birdnet30Runner(), Birdnet24Runner()], ids=["v3.0", "v2.4"])
 @pytest.mark.parametrize(
     ("line", "expected"),
     [
@@ -81,7 +81,7 @@ def test_perch_leaves_a_plain_name_alone() -> None:
         # matches the v3.0 name the running model emits, because both sides
         # of the comparison are canonical.
         pytest.param(
-            BirdnetRunner(),
+            Birdnet30Runner(),
             "Accipiter gentilis_Northern Goshawk",
             {"Astur gentilis"},
             marks=pytest.mark.slow,

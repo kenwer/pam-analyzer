@@ -19,14 +19,10 @@ from __future__ import annotations
 
 import pytest
 
-from pam_analyzer.infrastructure import birdnet_2_4_onnx
-from pam_analyzer.infrastructure.birdnet_lib import (
-    TAXONOMY_V2_4,
-    TAXONOMY_V3_0,
-    _BirdnetV3_0,
-    split_sci_common,
-    v3_0_labels,
-)
+from pam_analyzer.infrastructure import birdnet_2_4_onnx, birdnet_3_0_taxonomy
+from pam_analyzer.infrastructure.birdnet_2_4_taxonomy import TAXONOMY as TAXONOMY_V2_4
+from pam_analyzer.infrastructure.birdnet_3_0_taxonomy import TAXONOMY as TAXONOMY_V3_0
+from pam_analyzer.infrastructure.birdnet_taxonomy import split_sci_common
 from pam_analyzer.infrastructure.perch_onnx import label_set
 from pam_analyzer.infrastructure.species_names import canonical
 
@@ -40,7 +36,7 @@ def _v3_0_raw_scientific_names(kind: str) -> set[str]:
     """Read from the label file, because TaxonomyServices canonicalises every
     name before handing it over.
     """
-    return {split_sci_common(e)[0] for e in v3_0_labels("en_us", kind)}
+    return {split_sci_common(e)[0] for e in birdnet_3_0_taxonomy.labels("en_us", kind)}
 
 
 def _v2_4_raw_scientific_names() -> set[str]:
@@ -120,4 +116,4 @@ def test_v3_label_lookup_does_not_need_the_model(monkeypatch) -> None:
     monkeypatch.setattr(AcousticOnnxDownloaderV3_0, "_check_acoustic_model_available", classmethod(lambda cls, p: False))
     monkeypatch.setattr(AcousticOnnxDownloaderV3_0, "_download_model", classmethod(_no_download))
     # A fresh instance, so no map cached by an earlier test hides the read
-    assert _BirdnetV3_0().locale_label_map("de")
+    assert birdnet_3_0_taxonomy._Taxonomy().locale_label_map("de")

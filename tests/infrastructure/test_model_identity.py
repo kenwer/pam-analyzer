@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from birdnet.acoustic.models.v3_0 import onnx as v3_onnx
 
-from pam_analyzer.infrastructure.birdnet_runner import (
+from pam_analyzer.infrastructure.birdnet_3_0_runner import (
     MODEL_KEY,
     MODEL_PRECISION,
 )
@@ -24,7 +24,7 @@ def test_model_key_names_the_shipped_release():
     """The version suffix of MODEL_KEY is the release token in the model file.
 
     When this fails, birdnet has changed the model file. Re-label MODEL_KEY in
-    birdnet_runner.py and note in the changelog that new runs write to a
+    birdnet_3_0_runner.py and note in the changelog that new runs write to a
     different CSV. This also covers preview status: while the library ships a
     preview build, a key that drops "preview" stops matching, so detections
     from a preview cannot be mistaken for a release run.

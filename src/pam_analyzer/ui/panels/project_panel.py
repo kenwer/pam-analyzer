@@ -9,7 +9,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QCheckBox, QWidget
 
 from ...domain import DEFAULT_MIN_CONF, DEFAULT_SPECIES_LANG, MAX_OVERLAP_S, Project, paths
-from ...infrastructure.birdnet_lib import normalize_lang_code
+from ...infrastructure.birdnet_taxonomy import normalize_lang_code
 from ..app_state import AppState
 from ..links import link
 from .ui_project_panel import Ui_ProjectPanel

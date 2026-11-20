@@ -14,7 +14,7 @@ from collections.abc import Iterable
 
 from pam_analyzer.infrastructure import model_store
 from pam_analyzer.infrastructure.birdnet_2_4_runner import Birdnet24Runner
-from pam_analyzer.infrastructure.birdnet_runner import BirdnetRunner
+from pam_analyzer.infrastructure.birdnet_3_0_runner import Birdnet30Runner
 from pam_analyzer.infrastructure.http_download import DownloadError
 from pam_analyzer.infrastructure.model_store import ModelPackage
 from pam_analyzer.infrastructure.perch_runner import PerchRunner
@@ -46,7 +46,7 @@ def prewarm(packages: Iterable[ModelPackage], retry_delay_s: float = 10) -> None
 
 
 def main() -> int:
-    prewarm(runner.package for runner in (Birdnet24Runner, BirdnetRunner, PerchRunner))
+    prewarm(runner.package for runner in (Birdnet24Runner, Birdnet30Runner, PerchRunner))
     print("All models cached.", file=sys.stderr)
     return 0
 
