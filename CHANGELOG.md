@@ -10,8 +10,6 @@
   - A project whose model selection was the preview now selects 3.0.
   - More species have a Chinese common name
   - When species are filtered by recording location, non-animal sounds such as engines and sirens are no longer filtered out.
-- [Dev] Upgrade birdnet to 1.5.1
-- [Dev] Tests fail instead of downloading a model `poe prewarm` did not cache.
 - Running a model again on a campaign with reviewed detections asks before replacing them.
 - Species names of every model follow [BirdNET+ Taxonomy](https://birdnet.cornell.edu/taxonomy/) v0.5 ([CSV/JSON download](https://birdnet.cornell.edu/taxonomy/api/download/zip)):
   - A species has the same name no matter which model detected it.
@@ -20,10 +18,12 @@
     - Species the taxonomy lumps together are reported as one, e.g. BirdNET v2.4's separate redpoll species are all reported as `Acanthis flammea`.
     - Common names in all languages are taken from the taxonomy for species BirdNET v3.0 also detects.
     - Species the taxonomy splits, or does not list, keep the name the model gives them.
+- [Dev] Tests fail instead of downloading a model `poe prewarm` did not cache.
 - [Dev] `poe lint` also runs pyright and checks `scripts/`, and a pre-commit hook runs `poe lint`.
 - Exported audio snippet names include the model, and snippets of one export no longer overwrite each other.
 - [Dev] `scripts/build_species_aliases.py` regenerates the species alias table from the pinned taxonomy release.
 - [Dev] BirdNET module names state which model version they belong to.
+- [Dev] Upgrade dependencies.
 ### Fixed
 - The Examine panel's filter inputs no longer show filters that stopped applying after switching campaigns or finishing an analysis.
 - A review edit in the Examine panel is saved even when switching campaigns, closing the project or quitting within half a second of it.
