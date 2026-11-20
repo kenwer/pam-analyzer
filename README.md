@@ -306,10 +306,10 @@ PAM Analyzer runs the following models on the CPU through the [`birdnet`](https:
 | | **BirdNET-2.4** | **BirdNET-3.0** | **Perch-2.0** |
 |---|---|---|---|
 | About | The default. An older but established release. | The current BirdNET release. | An open-world classifier from Google. It also detects insects and amphibians, but in location mode the region filter drops those. To keep them, run in species-list mode or add the names to the must-have list. |
-| Release | `BirdNET_GLOBAL_6K_V2.4` ([Zenodo](https://zenodo.org/records/15050749)) | `BirdNET+_V3.0_Global_12K` ([Zenodo](https://zenodo.org/records/24162518)) | Google's Perch v2, as `perch_v2_no_dft.onnx` from [justinchuby/Perch-onnx](https://huggingface.co/justinchuby/Perch-onnx) |
+| Release | `BirdNET_GLOBAL_6K_V2.4` ([Zenodo](https://zenodo.org/records/15050749)) | `BirdNET+_V3.0_Global_12K` ([Zenodo](https://zenodo.org/records/24362980)) | Google's Perch v2, as `perch_v2_no_dft.onnx` from [justinchuby/Perch-onnx](https://huggingface.co/justinchuby/Perch-onnx) |
 | Audio window | 3 s | 3 s | 5 s |
 | Sample rate | 48 kHz (the library resamples other rates) | 32 kHz (the library resamples other rates) | 32 kHz (the library resamples other rates) |
-| Classes | [6,522](https://birdnet.cornell.edu/models/birdnet/labels/en_us.txt) (birds, plus a few amphibians and insects) | [11,725](https://zenodo.org/records/24162518/preview/BirdNET%2B_V3.0_Global_12K_Labels.csv) (birds, plus amphibians, insects, mammals and 16 sound classes) | [14,795](https://www.kaggle.com/api/v1/models/google/bird-vocalization-classifier/tensorFlow2/perch_v2_cpu/1/download/assets/labels.csv) (birds, other animals, and general sound events) |
+| Classes | [6,522](https://birdnet.cornell.edu/models/birdnet/labels/en_us.txt) (birds, plus a few amphibians and insects) | [11,725](https://zenodo.org/records/24362980/preview/BirdNET%2B_V3.0_Global_12K_Labels.csv) (birds, plus amphibians, insects, mammals and 16 sound classes) | [14,795](https://www.kaggle.com/api/v1/models/google/bird-vocalization-classifier/tensorFlow2/perch_v2_cpu/1/download/assets/labels.csv) (birds, other animals, and general sound events) |
 | Taxonomy | older eBird-based axis, mapped onto BirdNET+ Taxonomy | BirdNET+ Taxonomy v0.5 | iNaturalist and eBird, mapped onto BirdNET+ Taxonomy (shares 11,190 names with v3.0 after mapping) |
 | Region filtering | v2.4 geographic model | v3.0 geographic model | v3.0 geographic model |
 | Size | ~49 MB acoustic + ~28 MB geographic | ~345 MB acoustic + ~16 MB geographic | ~413 MB acoustic, no geographic model of its own |
@@ -402,7 +402,7 @@ The changelog can be found at the [CHANGELOG page](CHANGELOG.md).
 ## Acknowledgements
 Many thanks to the people behind the projects PAM Analyzer builds on:
 
-* [BirdNET](https://github.com/birdnet-team/birdnet) / [v2.4](https://zenodo.org/records/15050749) [v3.0](https://zenodo.org/records/24162518) / [BirdNET+ Taxonomy](https://github.com/birdnet-team/birdnet-taxonomy) (CC BY-SA 4.0)
+* [BirdNET](https://github.com/birdnet-team/birdnet) / [v2.4](https://zenodo.org/records/15050749) [v3.0](https://zenodo.org/records/24362980) / [BirdNET+ Taxonomy](https://github.com/birdnet-team/birdnet-taxonomy) (CC BY-SA 4.0)
 * [Perch 2.0](https://arxiv.org/pdf/2508.04665) / [Perch-onnx](https://huggingface.co/justinchuby/Perch-onnx)
 * [ONNX Runtime](https://onnxruntime.ai)
 * [ONNX](https://onnx.ai) / [h5py](https://www.h5py.org)

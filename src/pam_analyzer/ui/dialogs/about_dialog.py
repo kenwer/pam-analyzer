@@ -16,7 +16,7 @@ from .ui_about_dialog import Ui_AboutDialog
 _ACKNOWLEDGEMENTS_MARKDOWN = """\
 Many thanks to the people behind the projects PAM Analyzer builds on:
 
-- [BirdNET](https://github.com/birdnet-team/birdnet) / [v2.4](https://zenodo.org/records/15050749) [v3.0](https://zenodo.org/records/24162518) / [BirdNET+ Taxonomy](https://github.com/birdnet-team/birdnet-taxonomy) (CC BY-SA 4.0)
+- [BirdNET](https://github.com/birdnet-team/birdnet) / [v2.4](https://zenodo.org/records/15050749) [v3.0](https://zenodo.org/records/24362980) / [BirdNET+ Taxonomy](https://github.com/birdnet-team/birdnet-taxonomy) (CC BY-SA 4.0)
 - [Perch 2.0](https://arxiv.org/pdf/2508.04665) / [Perch-onnx](https://huggingface.co/justinchuby/Perch-onnx)
 - [ONNX Runtime](https://onnxruntime.ai)
 - [ONNX](https://onnx.ai) / [h5py](https://www.h5py.org)

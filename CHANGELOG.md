@@ -8,7 +8,10 @@
   - The v3.0 model is downloaded on its first run or from the BirdNET panel. The preview's model files are then deleted.
   - New detections are saved to `detections-BirdNET-3.0.csv`. Detections from the preview still load.
   - A project whose model selection was the preview now selects 3.0.
+  - More species have a Chinese common name
   - When species are filtered by recording location, non-animal sounds such as engines and sirens are no longer filtered out.
+- [Dev] Upgrade birdnet to 1.5.1
+- [Dev] Tests fail instead of downloading a model `poe prewarm` did not cache.
 - Running a model again on a campaign with reviewed detections asks before replacing them.
 - Species names of every model follow [BirdNET+ Taxonomy](https://birdnet.cornell.edu/taxonomy/) v0.5 ([CSV/JSON download](https://birdnet.cornell.edu/taxonomy/api/download/zip)):
   - A species has the same name no matter which model detected it.

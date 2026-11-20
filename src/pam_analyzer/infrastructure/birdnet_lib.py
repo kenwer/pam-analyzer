@@ -1,4 +1,4 @@
-"""Adapter helpers wrapping the birdnet>=1.4 library.
+"""Adapter helpers wrapping the birdnet>=1.5 library.
 
 An AnalysisRunner needs three pieces of taxonomy data from this library:
 

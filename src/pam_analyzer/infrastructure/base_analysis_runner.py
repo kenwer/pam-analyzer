@@ -439,12 +439,9 @@ class BaseAnalysisRunner(ABC):
             parsed = self._parse_row(raw_row)
 
             # A model can hand back a non-finite score for degenerate
-            # input. BirdNET v3.0 normalizes each window by its own
-            # standard deviation, so a digitally constant window (a dead
-            # ARU channel, a dropout, a muted track) divides by zero and
-            # every class comes back NaN. Dropping those rows keeps one
-            # bad file from aborting the whole campaign when the CSV
-            # writer tries to format the value.
+            # input, as the first BirdNET v3.0 files did for digital silence.
+            # Dropping those rows keeps one bad file from aborting the whole
+            # campaign when the CSV writer tries to format the value.
             if not math.isfinite(parsed.confidence):
                 nonfinite_count += 1
                 continue
@@ -520,7 +517,7 @@ class BaseAnalysisRunner(ABC):
 
         if nonfinite_count:
             logging.warning(
-                "%s: dropped %d row(s) with a non-finite confidence. Some audio has windows of constant amplitude",
+                "%s: dropped %d row(s) with a non-finite confidence",
                 self.log_prefix,
                 nonfinite_count,
             )

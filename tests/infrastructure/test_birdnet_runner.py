@@ -1,8 +1,8 @@
 """End-to-end smoke tests for BirdnetRunner.
 
-The end-to-end cases are marked slow because they download the BirdNET v3.0
-ONNX model on first run (~541 MB, cached afterwards) and pay the session
-startup cost. Run them on demand with:
+The end-to-end cases are marked slow because they load the BirdNET v3.0
+ONNX model and pay the session startup cost. They read the model from the
+cache `uv run poe prewarm` fills. Run them on demand with:
 
     uv run poe test-slow
 
@@ -15,7 +15,10 @@ framing live inside the birdnet library, so nothing here covers them.
 from __future__ import annotations
 
 import csv as _csv
+import math
+from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -31,6 +34,7 @@ from pam_analyzer.domain import (
     FilterMode,
     RunStatus,
 )
+from pam_analyzer.infrastructure.base_analysis_runner import ParsedRow
 from pam_analyzer.infrastructure.birdnet_runner import MODEL_KEY, BirdnetRunner
 
 
@@ -51,10 +55,8 @@ class _RecordingProgress:
 def _write_noise_wav(path: Path, seconds: float, sample_rate: int = 48000) -> None:
     """Write a mono WAV of low-level white noise at the given sample rate.
 
-    Noise rather than digital silence: v3.0 normalizes each window by its own
-    standard deviation, so a constant-amplitude window yields NaN for every
-    class (see test_constant_audio_does_not_abort_the_campaign). Noise keeps
-    these tests on the path real recordings take.
+    Noise rather than digital silence, so these tests take the path real
+    recordings take.
 
     48 kHz is intentional, not v3.0's native 32 kHz: it exercises the
     library's internal resampler that real ARU recordings will hit.
@@ -260,14 +262,12 @@ def test_honors_cancellation(tmp_path: Path) -> None:
 
 
 @pytest.mark.slow
-def test_constant_audio_does_not_abort_the_campaign(tmp_path: Path) -> None:
-    """Digitally constant audio yields NaN confidences, which must be dropped.
+def test_digital_silence_gets_only_low_confidences(tmp_path: Path) -> None:
+    """A dead ARU channel or a recorder dropout must not produce confident detections.
 
-    v3.0 normalizes each window by its standard deviation, so a window of
-    constant amplitude divides by zero and every class returns NaN. Left
-    alone those rows reach the CSV writer and raise, taking the whole
-    campaign down. A dead ARU channel or a recorder dropout produces exactly
-    this input, so the run has to survive it and still write a valid CSV.
+    The first v3.0 files scored digital silence NaN for every class. The 3.0.1
+    files score it with finite values near the model's prior, about 0.035 at
+    most, so a usual threshold keeps them out of the CSV.
     """
     camp_dir = _campaign_with_one_wav(tmp_path, seconds=20.0, silent=True)
     settings = AnalysisSettings(min_conf=0.001, overlap=0.0, locales=("en_us",))
@@ -281,8 +281,41 @@ def test_constant_audio_does_not_abort_the_campaign(tmp_path: Path) -> None:
     )
 
     assert result.status is RunStatus.COMPLETED
+    with result.campaigns[0].detections_csv.open(encoding="utf-8", newline="") as f:
+        confidences = [float(row["Confidence"]) for row in _csv.DictReader(f)]
+    assert confidences
+    assert all(math.isfinite(c) and c < 0.1 for c in confidences)
+
+
+class _NanScoringRunner(BirdnetRunner):
+    """Scores every row NaN, the degenerate output a model can give."""
+
+    def _parse_row(self, raw_row: Any) -> ParsedRow:
+        return replace(super()._parse_row(raw_row), confidence=math.nan)
+
+
+@pytest.mark.slow
+def test_nonfinite_confidences_do_not_abort_the_campaign(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """Rows with a non-finite confidence are dropped and the CSV stays valid.
+
+    Left alone they reach the CSV writer and raise, taking the whole campaign
+    down for one bad file.
+    """
+    camp_dir = _campaign_with_one_wav(tmp_path, seconds=20.0)
+    settings = AnalysisSettings(min_conf=0.001, overlap=0.0, locales=("en_us",))
+    campaign = Campaign(name="c1", folder=camp_dir, species_filter_mode=FilterMode.LIST)
+
+    result = _NanScoringRunner().run(
+        campaigns=[campaign],
+        settings=settings,
+        preferred_lang="en_us",
+        progress=_RecordingProgress(),
+    )
+
+    assert result.status is RunStatus.COMPLETED
+    # Proves rows reached the guard, not that the noise scored nothing.
+    assert "non-finite confidence" in caplog.text
     camp = result.campaigns[0]
-    assert camp.detections_csv.exists()
     assert camp.detection_count == 0
     # Header written, no data rows.
     assert len(camp.detections_csv.read_text(encoding="utf-8").splitlines()) == 1

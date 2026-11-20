@@ -1,7 +1,7 @@
 """BirdNET v3.0 infrastructure adapter.
 
 BirdnetRunner is the AnalysisRunner implementation, backed by BirdNET v3.0
-on the ONNX backend via the birdnet>=1.4 library. Audio I/O, 3 s window
+on the ONNX backend via the birdnet>=1.5 library. Audio I/O, 3 s window
 framing, batched inference, sigmoid scoring, and the confidence threshold
 all live inside the lib's predict_session pipeline. Per-campaign
 sequencing, progress reporting, species filtering, and CSV writing come
@@ -45,7 +45,7 @@ class BirdnetRunner(BaseAnalysisRunner):
     package: ClassVar[ModelPackage] = ModelPackage(
         info=ModelInfo(
             name="BirdNET v3.0",
-            info_url="https://zenodo.org/records/24162518",
+            info_url="https://zenodo.org/records/24362980",
             licence="Apache 2.0",
         ),
         artifacts=v3_0_artifacts,

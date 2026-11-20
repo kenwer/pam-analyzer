@@ -25,6 +25,9 @@ from pam_analyzer.infrastructure.update.feed import Update
 from pam_analyzer.infrastructure.update.install import LinuxAppInstall
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+# Models come from `poe prewarm`, so a lib download during tests means a file it
+# missed. This fails that test with the URL instead of fetching it silently.
+os.environ.setdefault("BIRDNET_OFFLINE", "1")
 
 # The model key a run writes by default
 DEFAULT_MODEL_KEY = MODEL_KEY_V2_4
