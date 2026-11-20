@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 ### Added
-- Initial support for the final BirdNET v3.0 model release, which replaces the BirdNET v3.0 preview 3.1 model.
+- Initial support for the final BirdNET v3.0 model release.
 ### Changed
 - BirdNET v3.0 replaces the BirdNET v3.0 preview 3.1 model:
   - The v3.0 model is downloaded on its first run or from the BirdNET panel. The preview's model files are then deleted.
@@ -18,9 +18,9 @@
     - Species the taxonomy lumps together are reported as one, e.g. BirdNET v2.4's separate redpoll species are all reported as `Acanthis flammea`.
     - Common names in all languages are taken from the taxonomy for species BirdNET v3.0 also detects.
     - Species the taxonomy splits, or does not list, keep the name the model gives them.
+- Exported audio snippet names include the model, and snippets of one export no longer overwrite each other.
 - [Dev] Tests fail instead of downloading a model `poe prewarm` did not cache.
 - [Dev] `poe lint` also runs pyright and checks `scripts/`, and a pre-commit hook runs `poe lint`.
-- Exported audio snippet names include the model, and snippets of one export no longer overwrite each other.
 - [Dev] `scripts/build_species_aliases.py` regenerates the species alias table from the pinned taxonomy release.
 - [Dev] BirdNET module names state which model version they belong to.
 - [Dev] Upgrade dependencies.
