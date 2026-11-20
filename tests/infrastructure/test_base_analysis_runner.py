@@ -262,3 +262,78 @@ def test_english_column_falls_back_to_the_emitted_name() -> None:
     _, commons = _common_names("Turdus merula", "Eurasian Blackbird", {}, {"en_us": {}, "de": {}})
 
     assert commons == {"en_us": "Eurasian Blackbird", "de": ""}
+
+
+class _FakeTaxonomy:
+    """The three taxonomy lookups _run_campaign makes, without any label download."""
+
+    def known_species_scientific(self) -> frozenset[str]:
+        return frozenset({"Parus major", "Turdus merula"})
+
+    def region_species_scientific(self, lat: float, lon: float, week: int) -> frozenset[str]:  # pragma: no cover
+        raise AssertionError("LIST mode does not consult the geo model")
+
+    def locale_label_map(self, lang: str) -> dict[str, str]:
+        return {}
+
+
+class _FakeSession:
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self._rows = rows
+
+    def __enter__(self) -> _FakeSession:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        pass
+
+    def run(self, files: list[Path]) -> _FakeSession:
+        return self
+
+    def to_structured_array(self) -> list[dict[str, Any]]:
+        return self._rows
+
+
+class _RowLoopRunner(BaseAnalysisRunner):
+    """Runs the real _run_campaign row loop over canned result rows."""
+
+    model_key = "Stub-1.0"
+    log_prefix = "stub"
+    taxonomy = _FakeTaxonomy()  # type: ignore[assignment]
+    package = ModelPackage(_STUB_INFO, lambda: (), lambda: None)
+
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self._rows = rows
+        self.known_species_builds = 0
+
+    def _load_model(self) -> Any:
+        return object()
+
+    def _open_predict_session(self, *args: Any, **kwargs: Any) -> Any:
+        return _FakeSession(self._rows)
+
+    def _known_output_species(self):
+        self.known_species_builds += 1
+        return super()._known_output_species()
+
+
+def _known_species_builds(tmp_path: Path, dropped_rows: int) -> int:
+    tmp_path.mkdir()
+    campaign = _campaigns(tmp_path, ["c1"])[0]
+    audio = campaign.folder / "aru1" / "20260301_060000.wav"
+    audio.parent.mkdir()
+    audio.write_bytes(b"")
+    campaign.write_species_filter("Parus major\n", "")
+    row = {"input": str(audio), "end_time": 3.0, "confidence": 0.5, "species_name": "Turdus merula_Eurasian Blackbird"}
+    runner = _RowLoopRunner([{**row, "start_time": float(i)} for i in range(dropped_rows)])
+
+    result = _run(runner, [campaign], _CountingProgress())
+
+    assert result.status is RunStatus.COMPLETED
+    assert result.campaigns[0].detection_count == 0
+    return runner.known_species_builds
+
+
+def test_known_species_builds_do_not_grow_with_dropped_rows(tmp_path: Path) -> None:
+    """Rebuilding the canonical axis per dropped row cost minutes on a large campaign."""
+    assert _known_species_builds(tmp_path / "one", 1) == _known_species_builds(tmp_path / "many", 50)

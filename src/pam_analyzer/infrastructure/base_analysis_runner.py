@@ -435,6 +435,8 @@ class BaseAnalysisRunner(ABC):
         # segment is merged away. See _SegmentRanker.
         ranker = _SegmentRanker()
         recording_times: dict[Path, str] = {}
+        # Built once, as canonicalising the whole axis per dropped row cost minutes on a large campaign
+        known_species = self._known_output_species()
         for raw_row in arr:
             parsed = self._parse_row(raw_row)
 
@@ -453,7 +455,7 @@ class BaseAnalysisRunner(ABC):
             name = canonical(parsed.label)
             allowed = resolved.allowed_for(parsed.file_path)
             if allowed is not None and name not in allowed:
-                if name in self._known_output_species():
+                if name in known_species:
                     out_of_region_count += 1
                 else:
                     unknown_species_count += 1
