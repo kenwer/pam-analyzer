@@ -220,7 +220,7 @@ def test_failed_run_stays_modal(panel: BirdNetPanel, monkeypatch, toasts):
 def _write_reviewed_csv(campaign_folder: Path, model_key: str, verified: list[str]) -> None:
     rows = "".join(f"{campaign_folder.name},Robin,{v}\r\n" for v in verified)
     path = campaign_folder / f"detections-{model_key}.csv"
-    path.write_text("Campaign,Species,Verified\r\n" + rows, encoding="utf-8")
+    path.write_text("Campaign,Species,Verified\r\n" + rows, encoding="utf-8", newline="")
 
 
 @pytest.fixture
