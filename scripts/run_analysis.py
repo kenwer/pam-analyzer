@@ -31,10 +31,10 @@ from pam_analyzer.domain import (
     AnalysisRunResult,
     Campaign,
     Project,
+    RunStatus,
     detection_schema,
     paths,
 )
-from pam_analyzer.domain.analysis import CancelledError
 from pam_analyzer.infrastructure import BirdnetRunner
 
 _log = logging.getLogger("run_model_on_project_folder")
@@ -43,10 +43,8 @@ _log = logging.getLogger("run_model_on_project_folder")
 class _ConsoleProgress:
     """AnalysisProgress that logs one line per phase change.
 
-    is_cancelled() reports a flag flipped by a SIGINT handler so Ctrl-C asks the
-    runner to stop at the next checkpoint. Cancelling mid session.run() can hang
-    on some platforms (birdnet issue 51), so the handler stays minimal and never
-    forces teardown itself.
+    is_cancelled() reports a flag flipped by a SIGINT handler, so Ctrl-C stops
+    the run the way the app's Stop button does and keeps finished campaigns.
     """
 
     def __init__(self) -> None:
@@ -194,7 +192,7 @@ def main(argv: list[str] | None = None) -> int:
     progress = _ConsoleProgress()
 
     def _on_sigint(signum, frame) -> None:  # noqa: ARG001
-        _log.warning("Cancel requested, stopping after the current file...")
+        _log.warning("Cancel requested, stopping...")
         progress.request_cancel()
 
     signal.signal(signal.SIGINT, _on_sigint)
@@ -205,14 +203,17 @@ def main(argv: list[str] | None = None) -> int:
             preferred_lang=project.preferred_species_lang,
             progress=progress,
         )
-    except CancelledError:
-        _log.warning("Run cancelled.")
-        return 130
     except Exception:
         _log.exception("Analysis failed.")
         return 1
 
     _print_summary(result)
+    if result.status is RunStatus.CANCELLED:
+        _log.warning("Run cancelled.")
+        return 130
+    if result.status is RunStatus.FAILED:
+        _log.error("Analysis failed: %s", result.error)
+        return 1
     return 0
 
 

@@ -28,6 +28,7 @@
 - A review edit in the Examine panel is saved even when switching campaigns, closing the project or quitting within half a second of it.
 - Downloading a newer version of a model no longer leaves the old version's checksum file in the models folder.
 - [Dev] `scripts/run_analysis.py --campaign` finds campaigns with non-ASCII names on macOS.
+- [Dev] `scripts/run_analysis.py` exits with a non-zero code when a run is cancelled or fails.
 
 ## [0.10.2] - 2026-11-18
 ### Fixed
