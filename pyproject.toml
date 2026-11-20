@@ -163,6 +163,7 @@ addopts = [
 ]
 # Dump all-thread tracebacks to stderr when a single test exceeds this many
 # seconds, so a hang identifies itself in CI logs (it does not kill the test).
+# A failing test cancels the dump, so a hang in its teardown stays silent.
 faulthandler_timeout = 120
 qt_api = "pyside6"
 markers = [
