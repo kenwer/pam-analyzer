@@ -38,6 +38,7 @@ from collections.abc import Callable
 from collections.abc import Set as AbstractSet
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -47,6 +48,7 @@ from ..domain import (
     Campaign,
     CancelledError,
     Detection,
+    FilterMode,
     ModelInfo,
     paths,
     week_from_path,
@@ -69,6 +71,8 @@ from .birdnet_taxonomy import TaxonomyServices, normalize_lang_code, split_sci_c
 from .http_download import DownloadError
 from .model_store import ModelPackage
 from .species_names import canonical, canonical_set
+
+_PARSE_REPORT_EVERY = 10_000
 
 
 @dataclass(frozen=True)
@@ -265,16 +269,15 @@ class BaseAnalysisRunner(ABC):
         # Analysis artifacts live inside the campaign folder itself, so a
         # campaign stays self-contained and relocatable.
         output_dir = campaign.folder
-
-        emit_progress(
+        report = partial(
+            emit_progress,
             progress,
             campaign=campaign_name,
             campaign_index=campaign_index,
             total_campaigns=total_campaigns,
-            files_done=0,
-            files_total=0,
-            phase="preparing",
         )
+
+        report(files_done=0, files_total=0, phase="preparing", phase_detail="Finding audio files")
 
         wav_files = list_audio_files(campaign.folder)
         wav_count = len(wav_files)
@@ -284,7 +287,15 @@ class BaseAnalysisRunner(ABC):
         # Resolve the species filter before opening the inference session.
         # In LOCATION mode this pre-warms the geo model and computes per-week allowlists,
         # so any geo lookup cost is paid during 'preparing'.
-        resolved = campaign.load_species_filter().resolve(
+        species_filter = campaign.load_species_filter()
+        by_location = species_filter.mode is FilterMode.LOCATION and species_filter.location is not None
+        report(
+            files_done=0,
+            files_total=0,
+            phase="preparing",
+            phase_detail="Looking up the species expected at this location" if by_location else "Reading the species list",
+        )
+        resolved = species_filter.resolve(
             wav_files,
             self.taxonomy.region_species_scientific,
             resolve_names=self._resolve_list_names,
@@ -307,15 +318,7 @@ class BaseAnalysisRunner(ABC):
 
         if wav_count == 0:
             write_detections_csv(detections_csv, [], fieldnames)
-            emit_progress(
-                progress,
-                campaign=campaign_name,
-                campaign_index=campaign_index,
-                total_campaigns=total_campaigns,
-                files_done=0,
-                files_total=0,
-                phase="done",
-            )
+            report(files_done=0, files_total=0, phase="done")
             return CampaignRunResult(
                 campaign_name=campaign_name,
                 detections_csv=detections_csv,
@@ -325,15 +328,8 @@ class BaseAnalysisRunner(ABC):
                 elapsed=time.monotonic() - t0,
             )
 
-        emit_progress(
-            progress,
-            campaign=campaign_name,
-            campaign_index=campaign_index,
-            total_campaigns=total_campaigns,
-            files_done=0,
-            files_total=wav_count,
-            phase="analyzing",
-        )
+        # The lib's first stats callback replaces this detail with the ETA
+        report(files_done=0, files_total=wav_count, phase="analyzing", phase_detail="Starting workers")
 
         # session_ref is a one-slot list so the progress callback (built
         # before the session exists) can reach the session via closure once
@@ -393,6 +389,7 @@ class BaseAnalysisRunner(ABC):
                 self.log_prefix,
                 campaign_name,
             )
+            report(files_done=wav_count, files_total=wav_count, phase="analyzing", phase_detail="Stopping workers")
         logging.info(
             "%s: predict session closed for campaign %s.",
             self.log_prefix,
@@ -402,15 +399,7 @@ class BaseAnalysisRunner(ABC):
         if progress.is_cancelled():
             raise CancelledError()
 
-        emit_progress(
-            progress,
-            campaign=campaign_name,
-            campaign_index=campaign_index,
-            total_campaigns=total_campaigns,
-            files_done=wav_count,
-            files_total=wav_count,
-            phase="parsing",
-        )
+        report(files_done=wav_count, files_total=wav_count, phase="parsing", phase_detail="Collecting results")
 
         preferred_lang_map = self.taxonomy.locale_label_map(preferred_lang)
         locale_maps = {loc: self.taxonomy.locale_label_map(loc) for loc in settings.locales}
@@ -437,7 +426,16 @@ class BaseAnalysisRunner(ABC):
         recording_times: dict[Path, str] = {}
         # Built once, as canonicalising the whole axis per dropped row cost minutes on a large campaign
         known_species = self._known_output_species()
-        for raw_row in arr:
+        row_total = len(arr)
+        for row_index, raw_row in enumerate(arr):
+            # Every row would flood the UI thread with queued signals
+            if row_index % _PARSE_REPORT_EVERY == 0:
+                report(
+                    files_done=wav_count,
+                    files_total=wav_count,
+                    phase="parsing",
+                    phase_detail=f"Filtering {row_index:,} / {row_total:,} results",
+                )
             parsed = self._parse_row(raw_row)
 
             # A model can hand back a non-finite score for degenerate
@@ -515,6 +513,12 @@ class BaseAnalysisRunner(ABC):
             detections.append(detection)
             detection_count += 1
 
+        report(
+            files_done=wav_count,
+            files_total=wav_count,
+            phase="parsing",
+            phase_detail=f"Saving {detection_count:,} detections",
+        )
         write_detections_csv(detections_csv, detections, fieldnames)
 
         if nonfinite_count:
@@ -542,15 +546,7 @@ class BaseAnalysisRunner(ABC):
                 merged_duplicate_count,
             )
 
-        emit_progress(
-            progress,
-            campaign=campaign_name,
-            campaign_index=campaign_index,
-            total_campaigns=total_campaigns,
-            files_done=wav_count,
-            files_total=wav_count,
-            phase="done",
-        )
+        report(files_done=wav_count, files_total=wav_count, phase="done")
 
         return CampaignRunResult(
             campaign_name=campaign_name,

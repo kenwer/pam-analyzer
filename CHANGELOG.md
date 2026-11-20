@@ -3,6 +3,7 @@
 ## [Unreleased]
 ### Changed
 - Analyses with a species filter finish faster.
+- The analysis progress shows more details about what each step doing.
 
 ## [0.11.0] - 2026-11-20
 ### Added

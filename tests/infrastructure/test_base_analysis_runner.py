@@ -24,6 +24,7 @@ from pam_analyzer.domain import (
     RunStatus,
 )
 from pam_analyzer.domain.analysis_run_result import CampaignRunResult
+from pam_analyzer.infrastructure import base_analysis_runner
 from pam_analyzer.infrastructure.base_analysis_runner import BaseAnalysisRunner, _common_names, _SegmentRanker
 from pam_analyzer.infrastructure.http_download import DownloadError
 from pam_analyzer.infrastructure.model_store import Artifact, ModelPackage
@@ -337,3 +338,39 @@ def _known_species_builds(tmp_path: Path, dropped_rows: int) -> int:
 def test_known_species_builds_do_not_grow_with_dropped_rows(tmp_path: Path) -> None:
     """Rebuilding the canonical axis per dropped row cost minutes on a large campaign."""
     assert _known_species_builds(tmp_path / "one", 1) == _known_species_builds(tmp_path / "many", 50)
+
+
+class _DetailRecordingProgress(_CountingProgress):
+    def __init__(self) -> None:
+        super().__init__()
+        self.details: list[tuple[str, str | None]] = []
+
+    def report(self, snapshot: AnalysisProgressSnapshot) -> None:
+        self.details.append((snapshot.phase, snapshot.phase_detail))
+
+
+def test_each_phase_tells_the_user_what_it_is_doing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(base_analysis_runner, "_PARSE_REPORT_EVERY", 2)
+    campaign = _campaigns(tmp_path, ["c1"])[0]
+    audio = campaign.folder / "aru1" / "20260301_060000.wav"
+    audio.parent.mkdir()
+    audio.write_bytes(b"")
+    campaign.write_species_filter("Parus major\n", "")
+    row = {"input": str(audio), "end_time": 3.0, "confidence": 0.5, "species_name": "Parus major_Great Tit"}
+    runner = _RowLoopRunner([{**row, "start_time": float(i)} for i in range(5)])
+    progress = _DetailRecordingProgress()
+
+    _run(runner, [campaign], progress)
+
+    assert progress.details == [
+        ("preparing", "Finding audio files"),
+        ("preparing", "Reading the species list"),
+        ("analyzing", "Starting workers"),
+        ("analyzing", "Stopping workers"),
+        ("parsing", "Collecting results"),
+        ("parsing", "Filtering 0 / 5 results"),
+        ("parsing", "Filtering 2 / 5 results"),
+        ("parsing", "Filtering 4 / 5 results"),
+        ("parsing", "Saving 5 detections"),
+        ("done", None),
+    ]
