@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.11.0] - 2026-11-20
 ### Added
 - Initial support for the final BirdNET v3.0 model release.
 ### Changed
