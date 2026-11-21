@@ -3,6 +3,7 @@
 ## [Unreleased]
 ### Added
 - [Dev] The log records how long each startup phase takes.
+- [Dev] Upgrade dependencies.
 ### Changed
 - Analyses with a species filter finish faster.
 - The analysis progress shows more details about what each step is doing.
