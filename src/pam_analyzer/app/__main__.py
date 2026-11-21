@@ -6,17 +6,23 @@ import sys
 import threading
 from pathlib import Path
 
+from .startup_timer import StartupTimer
+
+_STARTUP = StartupTimer()
+
 # Disable onnxruntime telemetry on macOS and Linux
 # Windows is covered by infrastructure/onnx_telemetry, which also reaches the workers
 os.environ.setdefault("ORT_DISABLE_TELEMETRY", "1")
 
 # PySide6 before ..domain pulls in polars, or the frozen build recurses in PySide's import hook
-import shiboken6
-from PySide6.QtCore import QTimer
-from PySide6.QtGui import QAction, QIcon
-from PySide6.QtWidgets import QApplication
+import shiboken6  # noqa: E402
+from PySide6.QtCore import QTimer  # noqa: E402
+from PySide6.QtGui import QAction, QIcon  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from ..domain import paths
+_STARTUP.mark("qt imports")
+
+from ..domain import paths  # noqa: E402
 
 
 def _configure_frozen_model_dir() -> None:
@@ -36,6 +42,9 @@ _configure_frozen_model_dir()
 
 from .. import __version__  # noqa: E402
 from ..domain import logging_setup  # noqa: E402
+
+_STARTUP.mark("domain imports")
+
 from ..infrastructure import (  # noqa: E402
     AudioImporter,
     Birdnet24Runner,
@@ -47,12 +56,17 @@ from ..infrastructure.legacy_onefile_cache import legacy_cache_dir, remove_legac
 from ..infrastructure.running_mutex import hold_running_mutex  # noqa: E402
 from ..infrastructure.update.feed import DEFAULT_FEED_URL, release_asset_name  # noqa: E402
 from ..infrastructure.update.install import detect_install  # noqa: E402
+
+_STARTUP.mark("infrastructure imports")
+
 from ..ui import resources_rc  # noqa: F401, E402  registers :/icons/* resources
 from ..ui.app_state import AppState  # noqa: E402
 from ..ui.main_window import MainWindow  # noqa: E402
 from ..ui.settings import AppSettings  # noqa: E402
 from ..ui.update_controller import UpdateController  # noqa: E402
 from ..workers import ImportOrchestrator  # noqa: E402
+
+_STARTUP.mark("ui imports")
 
 
 def build_main_window(settings: AppSettings) -> MainWindow:
@@ -106,18 +120,24 @@ def main() -> int:
     # An explicit env var is the developer override. It wins over the persisted choice and locks the menu.
     locked = env_level in levels
     level = levels[env_level] if locked else levels[settings.log_level]
+    _STARTUP.mark("settings")
     logging_setup.configure(paths.log_dir() / "pam-analyzer.log", level, locked=locked)
-    logging.getLogger(__name__).debug(
+    log = logging.getLogger(__name__)
+    log.debug(
         "BIRDNET_APP_DATA=%s", os.environ.get("BIRDNET_APP_DATA", "<unset, per-user cache>")
     )
+    _STARTUP.mark("logging")
 
     # Held until the process exits, so the installer waits for this instance
     hold_running_mutex()
+    _STARTUP.mark("mutex")
     app = QApplication(sys.argv)
     app.setApplicationName("PAM Analyzer")
     app.setOrganizationName("PAM Analyzer")
     app.setWindowIcon(QIcon(":/icons/icon.svg"))
+    _STARTUP.mark("qt app")
     window = build_main_window(settings)
+    _STARTUP.mark("main window")
 
     if "__compiled__" in globals():
         # A daemon thread, so gigabytes of deletion never hold up startup or exit
@@ -126,8 +146,19 @@ def main() -> int:
         ).start()
 
     updater = attach_updater(window, settings, compiled="__compiled__" in globals())
+    _STARTUP.mark("updater")
 
     window.show()
+    _STARTUP.mark("show")
+
+    def log_startup() -> None:
+        _STARTUP.mark("first paint")
+        log.info(_STARTUP.summary())
+
+    # show() only posts the paint events, so the first event loop pass is the
+    # closest a callback gets to the window appearing on screen. Queued before
+    # the update check so a slow feed does not land in the measurement.
+    QTimer.singleShot(0, log_startup)
     if settings.check_updates_at_startup:
         QTimer.singleShot(0, updater.check)
     exit_code = app.exec()

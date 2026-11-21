@@ -1,9 +1,11 @@
 # Changelog
 
 ## [Unreleased]
+### Added
+- [Dev] The log records how long each startup phase takes.
 ### Changed
 - Analyses with a species filter finish faster.
-- The analysis progress shows more details about what each step doing.
+- The analysis progress shows more details about what each step is doing.
 
 ## [0.11.0] - 2026-11-20
 ### Added
