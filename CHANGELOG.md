@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.11.1] - 2026-11-21
 ### Added
 - [Dev] The log records how long each startup phase takes.
 - [Dev] Upgrade dependencies.
