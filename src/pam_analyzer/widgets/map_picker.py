@@ -1,11 +1,14 @@
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QSettings, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QShowEvent
 from PySide6.QtNetwork import QSslSocket
-from PySide6.QtQuickWidgets import QQuickWidget
 from PySide6.QtWidgets import QVBoxLayout, QWidget
+
+if TYPE_CHECKING:
+    from PySide6.QtQuickWidgets import QQuickWidget
 
 _ZOOM_KEY = "map/zoom_level"
 _DEFAULT_ZOOM = 10.0
@@ -26,28 +29,43 @@ def _resolve_qml_path() -> Path:
 
 
 class MapPickerWidget(QWidget):
+    """An OpenStreetMap view for picking a location.
+
+    The QML view is built on first show, as loading Qt Quick and the QML
+    modules costs seconds on a cold Windows start. Until then set_location()
+    and clear() only record the marker that the view shows once it exists.
+    """
+
     locationPicked = Signal(float, float)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._settings = QSettings()
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        self._qw: QQuickWidget | None = None
+        self._marker: tuple[float, float] | None = None
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
 
-        self._qw = QQuickWidget(self)
-        self._qw.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
-        qml_path = _resolve_qml_path()
-        self._qw.setSource(QUrl.fromLocalFile(str(qml_path)))
+    def _build_view(self) -> QQuickWidget:
+        from PySide6.QtQuickWidgets import QQuickWidget
 
-        layout.addWidget(self._qw)
-
-        root = self._qw.rootObject()
+        qw = QQuickWidget(self)
+        qw.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
+        qw.setSource(QUrl.fromLocalFile(str(_resolve_qml_path())))
+        self._layout.addWidget(qw)
+        root = qw.rootObject()
         if root:
             root.locationPicked.connect(self._on_location_picked)
             root.zoomChanged.connect(self._on_zoom_changed)
+        return qw
 
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
+        if self._qw is None:
+            self._qw = self._build_view()
+            # A child added to a visible parent stays hidden until shown
+            self._qw.show()
+            self._apply_marker()
         # QQuickWidget inside QStackedWidget doesn't repaint on first show;
         # a deferred update forces the scene graph to render once the event
         # loop processes the visibility change.
@@ -65,11 +83,18 @@ class MapPickerWidget(QWidget):
         return float(self._settings.value(_ZOOM_KEY, _DEFAULT_ZOOM))  # type: ignore[arg-type]
 
     def set_location(self, lat: float, lon: float) -> None:
-        root = self._qw.rootObject()
-        if root:
-            root.setMarker(lat, lon, self._saved_zoom())  # type: ignore[attr-defined]
+        self._marker = (lat, lon)
+        self._apply_marker()
 
     def clear(self) -> None:
-        root = self._qw.rootObject()
-        if root:
+        self._marker = None
+        self._apply_marker()
+
+    def _apply_marker(self) -> None:
+        root = self._qw.rootObject() if self._qw is not None else None
+        if not root:
+            return
+        if self._marker is None:
             root.clearMarker()  # type: ignore[attr-defined]
+        else:
+            root.setMarker(*self._marker, self._saved_zoom())  # type: ignore[attr-defined]

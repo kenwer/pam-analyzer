@@ -6,14 +6,16 @@ import functools
 import logging
 import time
 from collections.abc import Iterator
+from typing import TYPE_CHECKING
 
 import numpy as np
 import soundfile as sf
 from PySide6.QtCore import QObject, QRect, Qt, QThread, Signal, Slot
 from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QToolTip, QWidget
-from scipy.signal import ShortTimeFFT
-from scipy.signal.windows import hann
+
+if TYPE_CHECKING:
+    from scipy.signal import ShortTimeFFT
 
 log = logging.getLogger(__name__)
 
@@ -102,6 +104,11 @@ class _RenderSpectroWorker(QObject):
             t1 = time.perf_counter()
 
             if self._sft is None or self._sft_sr != sr:
+                # Imported on the first render, as scipy.signal is most of the
+                # app's import time and its many extension files slow a cold start
+                from scipy.signal import ShortTimeFFT
+                from scipy.signal.windows import hann
+
                 self._sft = ShortTimeFFT(hann(1024), hop=512, fs=sr)
                 self._sft_sr = sr
             Sx_db = 10.0 * np.log10(self._sft.spectrogram(data) + 1e-10)
