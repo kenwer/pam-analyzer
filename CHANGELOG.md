@@ -3,6 +3,7 @@
 ## [Unreleased]
 ### Changed
 - Faster app startup due to lazy loading of the spectrogram and the map code.
+- [Dev] Upgrade dependencies.
 
 ## [0.11.1] - 2026-11-21
 ### Added
