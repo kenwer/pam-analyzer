@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.11.3] - 2026-11-24
 ### Fixed
 - The location filter on the Campaigns panel no longer shows the map twice.
 
