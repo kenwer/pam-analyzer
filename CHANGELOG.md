@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+### Fixed
+- The location filter on the Campaigns panel no longer shows the map twice.
+
 ## [0.11.2] - 2026-11-24
 ### Changed
 - Faster app startup due to lazy loading of the spectrogram and the map code.

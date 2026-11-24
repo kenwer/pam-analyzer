@@ -49,10 +49,9 @@ class MapPickerWidget(QWidget):
     def _build_view(self) -> QQuickWidget:
         from PySide6.QtQuickWidgets import QQuickWidget
 
-        qw = QQuickWidget(self)
+        qw = QQuickWidget()  # No parent yet, see showEvent()
         qw.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
         qw.setSource(QUrl.fromLocalFile(str(_resolve_qml_path())))
-        self._layout.addWidget(qw)
         root = qw.rootObject()
         if root:
             root.locationPicked.connect(self._on_location_picked)
@@ -62,7 +61,10 @@ class MapPickerWidget(QWidget):
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
         if self._qw is None:
+            # Parenting the first QQuickWidget to a shown window recreates the
+            # native window and re-enters showEvent(), so set _qw before addWidget().
             self._qw = self._build_view()
+            self._layout.addWidget(self._qw)
             # A child added to a visible parent stays hidden until shown
             self._qw.show()
             self._apply_marker()
