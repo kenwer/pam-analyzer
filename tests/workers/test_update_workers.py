@@ -16,7 +16,7 @@ from tests.conftest import UPDATE, linux_install
 
 
 def _offer(monkeypatch: pytest.MonkeyPatch, update=UPDATE) -> None:
-    monkeypatch.setattr(feed, "fetch_latest_release", lambda url: {"url": url})
+    monkeypatch.setattr(feed, "fetch_releases", lambda url: {"url": url})
     monkeypatch.setattr(feed, "find_update", lambda release, version, asset: update)
 
 
@@ -66,7 +66,7 @@ def test_check_worker_emits_failed_on_update_error(monkeypatch: pytest.MonkeyPat
     def offline(url: str) -> dict:
         raise UpdateError("offline")
 
-    monkeypatch.setattr(feed, "fetch_latest_release", offline)
+    monkeypatch.setattr(feed, "fetch_releases", offline)
     assert _check(None) == ([], ["offline"])
 
 
@@ -74,7 +74,7 @@ def test_check_worker_reports_unexpected_errors_as_failed(monkeypatch: pytest.Mo
     def broken(release, version, asset):
         raise RuntimeError("bug in the parser")
 
-    monkeypatch.setattr(feed, "fetch_latest_release", lambda url: {})
+    monkeypatch.setattr(feed, "fetch_releases", lambda url: {})
     monkeypatch.setattr(feed, "find_update", broken)
     assert _check(None) == ([], ["bug in the parser"])
 
@@ -86,7 +86,7 @@ def test_check_worker_cleans_up_even_when_offline(monkeypatch: pytest.MonkeyPatc
     def offline(url: str) -> dict:
         raise UpdateError("offline")
 
-    monkeypatch.setattr(feed, "fetch_latest_release", offline)
+    monkeypatch.setattr(feed, "fetch_releases", offline)
     _check(linux_install(tmp_path))
     assert not (tmp_path / "stage" / "0.8.0").exists()
 
