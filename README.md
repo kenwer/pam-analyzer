@@ -7,7 +7,6 @@ Automated bird species detection from acoustic recordings.
 - [Download](#download)
 - [Features](#features)
 - [Usage](#usage)
-  - [Migrating legacy projects](#migrating-legacy-projects)
 - [Workflow](#workflow)
   - [Project Settings](#project-settings)
   - [Campaigns](#campaigns)
@@ -24,12 +23,8 @@ Automated bird species detection from acoustic recordings.
   - [ARU (Autonomous Recording Unit)](#aru-autonomous-recording-unit)
 - [Models](#models)
   - [Species names](#species-names)
-  - [Perch confidence](#perch-confidence)
+  - [Confidence scores](#confidence-scores)
   - [Region filtering](#region-filtering)
-- [Troubleshooting](#troubleshooting)
-  - [Changing the log level](#changing-the-log-level)
-    - [Overriding the level from the environment](#overriding-the-level-from-the-environment)
-- [Privacy policy](#privacy-policy)
 - [Changelog](#changelog)
 - [Acknowledgements](#acknowledgements)
 - [Citation](#citation)
@@ -44,13 +39,15 @@ PAM Analyzer is a cross-platform desktop application designed to help researcher
 ![Examine panel of the application interface](https://github.com/user-attachments/assets/613c7c67-abaf-4425-b2dc-15d194037eee)
 
 ## Download
-Installers are available for the following platforms:
+PAM Analyzer is available for the following platforms:
 * macOS (Apple Silicon): [PAM-Analyzer-macos-arm64.dmg](https://github.com/kenwer/pam-analyzer/releases/latest/download/PAM-Analyzer-macos-arm64.dmg)
+  * Open the DMG and drag `PAM Analyzer` into `Applications`. The app is not notarized by Apple, so the first launch shows "PAM Analyzer Not Opened". Select `Done`, open `System Settings > Privacy & Security`, select `Open Anyway`, then open the app again and confirm.
 * Windows (x86_64): [PAM-Analyzer-windows-x86_64-setup.exe](https://github.com/kenwer/pam-analyzer/releases/latest/download/PAM-Analyzer-windows-x86_64-setup.exe)
+  * Run the setup. The installer is not code-signed, so SmartScreen shows "Windows protected your PC" the first time. Select `More info`, then `Run anyway`. The app installs for the current user only and needs no admin rights.
 * Linux (x86_64): [PAM-Analyzer-linux-x86_64.AppImage](https://github.com/kenwer/pam-analyzer/releases/latest/download/PAM-Analyzer-linux-x86_64.AppImage)
 * Linux (aarch64): [PAM-Analyzer-linux-aarch64.AppImage](https://github.com/kenwer/pam-analyzer/releases/latest/download/PAM-Analyzer-linux-aarch64.AppImage)
 
-Note: On any supported OS you can also easily run PAM Analyzer from source using `uv run poe run`
+On any supported OS you can also easily run PAM Analyzer from source using `uv run poe run`
 
 
 ## Features
@@ -62,21 +59,7 @@ Note: On any supported OS you can also easily run PAM Analyzer from source using
 
 
 ## Usage
-Download the installer for your platform from the [Download](#download) section.
-
-- **macOS**: open the DMG and drag `PAM Analyzer` into `Applications`. The app is not notarized by Apple, so the first launch shows "PAM Analyzer Not Opened". Select `Done`, open `System Settings > Privacy & Security`, select `Open Anyway`, then open the app again and confirm.
-- **Windows**: run the setup. The installer is not code-signed, so SmartScreen shows "Windows protected your PC" the first time. Select `More info`, then `Run anyway`. The app installs for the current user only, needs no admin rights, and appears in the Start menu.
-- **Linux**: make the AppImage executable (`chmod +x PAM-Analyzer-linux-*.AppImage`) and run it. Where FUSE is unavailable, for example in a container, run it with `APPIMAGE_EXTRACT_AND_RUN=1`.
-
-**Updates**: at every start the app checks for updates. When a newer version is available, the info at the status bar offers to download it in the background. Once downloaded, select `Install and relaunch` to install it. `Help > Check for Updates...` checks on demand. Because the app is not signed, macOS asks again for access to folders such as removable drives after each update.
-
-Versions up to 0.8.x shipped as zip and tar.gz archives. Delete the old app after installing a newer version. On Windows and Linux they also left an unpack cache of about 1.6 GB per version behind, which newer versions remove on their first launch.
-
 Upon first launch, use `New Project` and pick (or create) the folder that will hold your data such as recordings and detection CSVs. The app marks it as a project by writing a `pam-analyzer.toml` settings file into it. Then create at least one campaign in the `Campaigns` panel (audio import from SD cards is also handled there), run species detection in the `BirdNET` panel, and review detections in the `Examine` panel. More details are in the workflow section below.
-
-### Migrating legacy projects
-If you used an older version of PAM Analyzer that stored projects as `.pamproj` files, use **File > Open Legacy Project File…** to select the `.pamproj` file. The app will offer to migrate it: detection CSVs are moved into their campaign folders, and the old file is kept as `.bak`. If the audio recordings folder moved since the project was created, a folder picker lets you relocate it. When opening a project folder that contains a `.pamproj` file, migration is offered automatically.
-
 
 ## Workflow
 The application is organized into four panels that map to the steps of a typical PAM analysis workflow.
@@ -318,81 +301,26 @@ PAM Analyzer runs the following models on the CPU through the [`birdnet`](https:
 BirdNET v2.4 uses the geographic model of its own generation for [region filtering](#region-filtering), while BirdNET v3.0 and Perch share BirdNET v3.0's geo model.
 
 ### Species names
-Each model names species under its own taxonomy. BirdNET v2.4 follows an older eBird list, Perch follows iNaturalist and eBird, and BirdNET v3.0 follows [BirdNET+ Taxonomy](https://birdnet.cornell.edu/taxonomy/) v0.5, which uses [AviList](https://www.avilist.org) for birds. So the Northern Goshawk is `Astur gentilis` in v3.0 where v2.4 calls it `Accipiter gentilis`, and the Common Reed Bunting is `Schoeniclus schoeniclus` where v2.4 says `Emberiza schoeniclus`.
+Species names of every model follow [BirdNET+ Taxonomy](https://birdnet.cornell.edu/taxonomy/) v0.5 ([CSV/JSON download](https://birdnet.cornell.edu/taxonomy/api/download/zip)), so a species has the same name no matter which model detected it. BirdNET v3.0 already uses this taxonomy. Detections from BirdNET v2.4 and Perch 2.0 are translated to it:
+- Species with an outdated scientific name get the current one, e.g. `Emberiza schoeniclus` becomes `Schoeniclus schoeniclus`.
+- Species the taxonomy lumps together are reported as one, e.g. BirdNET v2.4's separate redpoll species are all reported as `Acanthis flammea`.
+- Common names in all languages are taken from the taxonomy for species BirdNET v3.0 also detects.
+- Species the taxonomy splits, or does not list, keep the name the model gives them.
 
-**Detections are written under the names of BirdNET+ Taxonomy v0.5, whichever model produced them.** Each engine's labels are mapped through a bundled table (`infrastructure/data/species_aliases.tsv`, generated from the taxonomy) as they leave the model, so the same bird appears under one spelling across all three engines and sorts together in the Examine grid. Common names in every language come from the same taxonomy, for the species BirdNET v3.0 also detects. Other classes keep the common name their model prints, and Perch, which prints none, shows the scientific name. The `Model` column still records which engine produced each row.
+Species lists accept both the old and the current name, e.g. `Accipiter gentilis` and `Astur gentilis` match the same species.
 
-The mapping also follows species the taxonomy merged (lumps). Where two species that BirdNET v2.4 still tells apart became one, such as the redpolls `Acanthis hornemanni` and `Acanthis cabaret` in `Acanthis flammea`, both v2.4 classes are written as the merged species, and a segment where both fire yields one row with the stronger detection. Splits are not mapped, because an older name covers several current species: v2.4's `Trachyphonus purpuratus` stays as it is. Names the taxonomy does not list, such as most of Perch's insects and its sound events, also keep the model's spelling.
+### Confidence scores
+The `Confidence` column is the model's score for a species in one window, from 0 to 1. It is not the probability that the detection is correct, and the same value can mean different things for different species and models.
 
-Species lists work the same way. A name you type is mapped through the same table before it is matched, so `Accipiter gentilis` and `Astur gentilis` both match whichever model runs. Spellings of the retired v3.0 developer preview are mapped too.
+- **BirdNET v2.4 and v3.0**: the score as the model computes it at the default sensitivity, so it matches other BirdNET tools at their default settings.
+- **Perch 2.0**: Perch has no 0 to 1 score of its own. PAM Analyzer converts its raw output, calibrated so that Perch keeps about the same detections as BirdNET v2.4 at the same threshold. Perch thresholds from other tools or publications do not carry over.
 
-### Perch confidence
-Perch's classification head emits raw logits, not probabilities, and they do not sit around zero the way BirdNET v2.4's do. Silence alone lands near +4.5 and real ambient noise higher still, so a plain sigmoid would report every window's top classes at about 0.99. The runner subtracts a fixed offset of 11.2 before the sigmoid, so the `Confidence` column means roughly what it means for the BirdNET runners. The **Min confidence** setting is translated into logit space the same way, so a threshold you set applies as you would expect.
+The **Min confidence** setting uses the same scale as the column.
 
 ### Region filtering
 In location mode the runner filters detections against a per-week species list from the geographic model of the same generation as the acoustic model, so both sides speak the same taxonomy. For v3.0 the overlap is 10,927 names, so **782 acoustic classes have no geographic entry and are always dropped in location mode**: mostly narrowly-distributed birds, insects and frogs. The 16 non-animal sound classes are the exception: they do not depend on location, so they pass the filter everywhere.
 
 To keep those detections, run in species-list mode, which applies no regional filter, or add the specific names to the must-have box in location mode. The debug log reports the split per campaign, for example `birdnet: per-week species filter dropped 412 row(s): 402 out-of-region, 10 absent from the model's axis entirely. 1391 kept`.
-
-
-## Troubleshooting
-The application writes a rotating debug log (`pam-analyzer.log`, capped at 1 MB with one backup) to the platform's standard log directory:
-
-- **Windows**: `%LOCALAPPDATA%\PAM Analyzer\Logs\pam-analyzer.log`
-- **macOS**: `~/Library/Logs/PAM Analyzer/pam-analyzer.log`
-- **Linux**: `~/.local/state/PAM Analyzer/log/pam-analyzer.log`
-
-The easiest way to locate it is **Help > Debug > Open Log Folder** in the app.
-
-Downloaded models are kept across updates in the app's data folder. The Windows uninstaller deletes them. On macOS and Linux, delete the folder by hand to free the space:
-- **Windows**: `%LOCALAPPDATA%\PAM Analyzer\models`
-- **macOS**: `~/Library/Application Support/PAM Analyzer/models`
-- **Linux**: `~/.local/share/PAM Analyzer/models`
-
-**Help > Debug > Open Models Folder** opens it, and **Help > Debug > Open Install Folder** opens the folder the app is installed in.
-
-### Changing the log level
-**Help > Debug > Log Level** sets how much detail the app records: `Debug`, `Info`,
-`Warning`, `Error` or `Critical`. New installs start at `Warning`. The change takes effect immediately and is remembered for the next launch.
-
-Log output goes to `pam-analyzer.log` and, when the app is started from a
-terminal, to that terminal as well.
-
-#### Overriding the level from the environment
-Setting the `PAM_LOG_LEVEL` environment variable to a level name overrides the
-menu for that run.
-
-**macOS**, from the folder you unpacked the app bundle into:
-```sh
-PAM_LOG_LEVEL=DEBUG "pam-analyzer-<version>-macos-arm64.app/Contents/MacOS/pam-analyzer"
-```
-Double-clicking the app or starting it with `open` will not pass the
-variable through, because those go via LaunchServices rather than your shell.
-
-**Windows**, in PowerShell:
-```powershell
-$env:PAM_LOG_LEVEL = "DEBUG"
-.\pam-analyzer-<version>-windows-x86_64.exe
-```
-The `.\` prefix is required. PowerShell does not run programs from the current directory
-without it.
-
-**Linux**:
-```sh
-PAM_LOG_LEVEL=DEBUG ./pam-analyzer-<version>-linux-x86_64
-```
-
-
-## Privacy policy
-PAM Analyzer does not collect or store any user data. Your projects, recordings, settings and logs stay on your computer, and nothing is sent to the developer.
-
-The program contacts these services, and no others:
-
-* GitHub, to check for a newer release at startup. Turn this off with Help > Check for Updates at Startup. Help > Check for Updates... still checks on request.
-* Zenodo (BirdNET) or Hugging Face (Perch), to download an analysis engine's model files the first time you run that engine.
-* OpenStreetMap, to load map tiles while a campaign's location map is shown.
-
-It does not transfer any other information. See the privacy statements of [GitHub](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement), [Zenodo](https://about.zenodo.org/privacy-policy/), [Hugging Face](https://huggingface.co/privacy) and the [OpenStreetMap Foundation](https://osmfoundation.org/wiki/Privacy_Policy) for what they record.
 
 
 ## Changelog
@@ -439,4 +367,4 @@ If you use PAM Analyzer in your work, you can [cite](CITATION.cff) it:
 ```
 
 ## License
-This project is licensed under the AGPL-3.0 license. See the LICENSE file for the full text.
+This project is licensed under the AGPL-3.0 license. See the [LICENSE](LICENSE) file for the full text.
