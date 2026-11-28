@@ -89,6 +89,7 @@ select = [
 
 [tool.pyright]
 include = ["src", "tests"]
+exclude = ["src/**/ui_*.py", "src/**/*_rc.py"]
 # Full checking reports false positives from the PySide6 stubs, so only rules that are clean today are enabled
 typeCheckingMode = "off"
 reportRedeclaration = "error"
@@ -107,7 +108,7 @@ profile = { cmd = "py-spy record -o spectrogram_profile.svg -- python -m pam_ana
 test = { cmd = "pytest", deps = ["compile-qt"], help = "Compile UI/resources, then run all tests" }
 test-fast = { cmd = "pytest -m 'not slow'", deps = ["compile-qt"], help = "Compile UI/resources, then run only fast tests" }
 test-slow = { cmd = "pytest -m slow", deps = ["compile-qt"], help = "Compile UI/resources, then run only the slow model tests" }
-lint = { sequence = ["ruff check src tests scripts", "pyright"], default_item_type = "cmd", help = "Run the ruff linter and the pyright type checker" }
+lint = { sequence = ["ruff check src tests scripts", "pyright"], default_item_type = "cmd", deps = ["compile-qt"], help = "Run the ruff linter and the pyright type checker" }
 fmt = { cmd = "ruff format src tests", help = "Run the ruff formatter" }
 install-hooks = { cmd = "git config core.hooksPath .githooks", help = "Point git at the repo's tracked hooks (pre-commit runs lint, pre-push runs test-fast)" }
 build = { cmd = "uv run --script scripts/build.py", help = "Compile a standalone distributable for the current platform" }
