@@ -4,6 +4,7 @@
 ### Changed
 - The update dialog lists the changes of every release since the installed version.
 - [Dev] pyright type-checks `src` and `tests` in standard mode.
+- [Dev] `poe lint` also runs ty through `uv check`.
 
 ## [0.11.3] - 2026-11-24
 ### Fixed
