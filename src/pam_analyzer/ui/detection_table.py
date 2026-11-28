@@ -433,6 +433,7 @@ class DetectionTable(QWidget):
         self._present(row_id, detection, autoplay=True)
 
     def _present(self, row_id: int, detection: Detection, *, autoplay: bool) -> None:
+        assert self._model is not None
         self._current_detection = detection
         self._current_row = (self._model.store, row_id)
         file_path = (
@@ -461,6 +462,7 @@ class DetectionTable(QWidget):
 
     def _context_detections_for(self, row_id: int, current: Detection) -> list[tuple[float, float, str]]:
         """Return (start_s, end_s, label) for the other visible detections in the same file."""
+        assert self._model is not None
         rows = self._model.rows_in_file(current.file, row_id).select(
             "Start_Time", "End_Time", "Species", "Scientific_Name", "ARU", "Confidence"
         )
@@ -628,7 +630,8 @@ class DetectionTable(QWidget):
             menu.addSeparator()
             open_folder = menu.addAction("Open Audio File Folder")
             open_folder.setEnabled(path is not None and path.parent.is_dir())
-            open_folder.triggered.connect(lambda: open_in_file_manager(path.parent))
+            if path is not None:
+                open_folder.triggered.connect(lambda: open_in_file_manager(path.parent))
             for action in self._row_menu_actions:
                 action.setEnabled(count > 0)
                 menu.addAction(action)
@@ -636,6 +639,7 @@ class DetectionTable(QWidget):
 
     def _audio_path(self, index: QModelIndex) -> Path | None:
         """Path of the audio file behind the row of *index*, or None when it names no file."""
+        assert self._model is not None
         file = self._model.value_at(self._table.mapToSourceRow(index.row()), "File")
         if not file:
             return None

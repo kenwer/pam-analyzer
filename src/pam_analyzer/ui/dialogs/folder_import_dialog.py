@@ -41,8 +41,13 @@ class FolderImportDialog(QDialog):
     def _on_item_changed(self, _item: QTableWidgetItem) -> None:
         self._validate()
 
+    def _card_name(self, row: int) -> str:
+        item = self.ui.card_table.item(row, 0)
+        assert item is not None
+        return item.text().strip()
+
     def _validate(self) -> None:
-        names = [self.ui.card_table.item(row, 0).text().strip() for row in range(self.ui.card_table.rowCount())]
+        names = [self._card_name(row) for row in range(self.ui.card_table.rowCount())]
 
         error = ""
         for name in names:
@@ -63,7 +68,7 @@ class FolderImportDialog(QDialog):
     def result_cards(self) -> list[DetectedCard]:
         renamed = []
         for row, card in enumerate(self._cards):
-            new_name = self.ui.card_table.item(row, 0).text().strip()
+            new_name = self._card_name(row)
             renamed.append(dataclasses.replace(card, name=new_name))
         return renamed
 

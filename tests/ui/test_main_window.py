@@ -250,7 +250,7 @@ def _window_running_analysis(qtbot, tmp_path: Path, load_project, runner: FakeRu
     Project(folder=tmp_path).save()
     load_project(w._app_state, tmp_path)
     w._birdnet_panel._start_run()
-    qtbot.waitUntil(lambda: w._birdnet_panel._thread.isRunning())
+    qtbot.waitUntil(lambda: (thread := w._birdnet_panel._thread) is not None and thread.isRunning())
     w.show()
     return w
 
@@ -261,6 +261,7 @@ def stuck_analysis(qtbot, tmp_path: Path, load_project, confirm_stop):
     runner = _StuckRunner()
     w = _window_running_analysis(qtbot, tmp_path, load_project, runner)
     thread = w._birdnet_panel._thread
+    assert thread is not None
     yield w, runner.release
     runner.release.set()
     if shiboken6.isValid(thread):  # the panel deletes it once the run ends
@@ -309,7 +310,8 @@ def test_declining_the_quit_prompt_keeps_the_analysis_running(
     assert not w.close()
 
     assert w.isVisible()
-    assert w._birdnet_panel._thread.isRunning()
+    thread = w._birdnet_panel._thread
+    assert thread is not None and thread.isRunning()
     w._birdnet_panel.request_shutdown()
 
 
@@ -325,6 +327,7 @@ def stuck_load(window: MainWindow, tmp_path: Path, monkeypatch):
     monkeypatch.setattr(project_load_worker, "load_project", _stuck_load)
     window._start_project_load(tmp_path)
     thread = window._project_load_thread
+    assert thread is not None
     yield release
     release.set()
     if shiboken6.isValid(thread):  # the window deletes it once the load ends
@@ -391,7 +394,9 @@ def test_deleting_a_closed_window_stops_the_spectrogram_render_thread(qtbot) -> 
     # Not qtbot.addWidget: the window's C++ side is deleted here, so qtbot's own
     # close at teardown would hit a deleted object.
     w = make_main_window()
-    render_thread = w.findChild(SpectrogramWidget)._thread
+    spectrogram = w.findChild(SpectrogramWidget)
+    assert spectrogram is not None
+    render_thread = spectrogram._thread
     assert w.close()
 
     shiboken6.delete(w)

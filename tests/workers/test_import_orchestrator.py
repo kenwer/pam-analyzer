@@ -69,6 +69,7 @@ def test_a_new_session_starts_its_card_once_the_cancelled_one_finishes(
 
     qtbot.waitUntil(lambda: importer.imported == ["CardA", "CardB"])
     card_b_thread = orchestrator._thread
+    assert card_b_thread is not None
     orchestrator.stop_watching()
     card_b_thread.wait()
 

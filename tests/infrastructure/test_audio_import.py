@@ -483,6 +483,12 @@ def _flacs(dest: Path) -> list[Path]:
     return sorted(dest.rglob("*.flac"))
 
 
+def _guano(path: Path) -> guano.GuanoFile:
+    gf = read_guano(path)
+    assert gf is not None
+    return gf
+
+
 def test_import_transcodes_wav_to_flac_losslessly(tmp_path: Path):
     card, dest = tmp_path / "card", tmp_path / "dest"
     card.mkdir()
@@ -663,7 +669,7 @@ def test_import_songmeter_buckets_by_guano_and_copies_summary(tmp_path: Path):
     # Bucketed by the GUANO timestamp (not the mtime fallback, not week 1).
     [flac] = _flacs(dest)
     assert flac.parent.name == f"week_{birdnet_week(ts):02d}"
-    assert read_guano(flac).get("Timestamp") == ts  # metadata survived transcode
+    assert _guano(flac).get("Timestamp") == ts  # metadata survived transcode
     assert (dest / "2MM30692_Summary.txt").exists()  # sidecar at the card-folder root
 
 
@@ -710,7 +716,7 @@ def test_import_synthesizes_guano_from_the_filename(tmp_path: Path):
 
     _run(AudioImporter(), _card(card), [src], dest)
 
-    gf = read_guano(_flacs(dest)[0])
+    gf = _guano(_flacs(dest)[0])
     assert gf.get("Timestamp") == datetime(2025, 5, 8, 22, 29, 46)
     assert gf.get("Original Filename") == src.name
     assert gf.get("PAM|Timestamp Source") == "filename"
@@ -727,7 +733,7 @@ def test_import_without_guano_or_stamp_uses_mtime_minus_duration(tmp_path: Path)
 
     [flac] = _flacs(dest)
     assert flac.parent.name == "week_01"  # Jan 8 would be week 2
-    gf = read_guano(flac)
+    gf = _guano(flac)
     assert gf.get("Timestamp") == datetime(2026, 1, 7, 23, 59, 59, 500_000)
     assert gf.get("PAM|Timestamp Source") == "mtime"
 
@@ -758,7 +764,7 @@ def test_import_ignores_a_utc_offset_present_only_in_guano(tmp_path: Path):
     result = _run(AudioImporter(), _card(card), [src], dest)
 
     assert result.warnings == ()
-    assert read_guano(_flacs(dest)[0]).get("Timestamp") == ts  # recorder block kept verbatim
+    assert _guano(_flacs(dest)[0]).get("Timestamp") == ts  # recorder block kept verbatim
 
 
 def test_import_warns_when_guano_names_another_original_file(tmp_path: Path):
@@ -783,7 +789,7 @@ def test_import_adds_a_timestamp_to_recorder_guano_that_lacks_one(tmp_path: Path
 
     _run(AudioImporter(), _card(card), [src], dest)
 
-    gf = read_guano(_flacs(dest)[0])
+    gf = _guano(_flacs(dest)[0])
     assert gf.get("Make") == "Open Acoustic Devices"
     assert gf.get("Timestamp") == datetime(2025, 5, 8, 22, 29, 46)
     assert gf.get("PAM|Timestamp Source") == "filename"

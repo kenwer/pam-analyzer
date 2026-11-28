@@ -9,6 +9,7 @@ from pam_analyzer.domain.audio_import import (
     CardQueue,
     DetectedCard,
     ImportSource,
+    ResolvedTime,
     TimeSource,
     birdnet_week,
     date_range_from_stems,
@@ -60,8 +61,14 @@ _CEST = timezone(timedelta(hours=2))
 _STEM = "242A26056487DFA3_20250508_222946"
 
 
+def _resolve(guano_time: datetime | None, stem: str, mtime_start: datetime | None = None) -> ResolvedTime:
+    resolved = resolve_recording_time(guano_time, stem, mtime_start)
+    assert resolved is not None
+    return resolved
+
+
 def test_resolve_prefers_guano_and_drops_its_offset_without_converting():
-    resolved = resolve_recording_time(datetime(2025, 5, 8, 22, 29, 46, tzinfo=_CEST), _STEM)
+    resolved = _resolve(datetime(2025, 5, 8, 22, 29, 46, tzinfo=_CEST), _STEM)
 
     assert resolved.time == datetime(2025, 5, 8, 22, 29, 46)
     assert resolved.time.tzinfo is None
@@ -70,7 +77,7 @@ def test_resolve_prefers_guano_and_drops_its_offset_without_converting():
 
 
 def test_resolve_flags_guano_and_filename_wall_clocks_that_differ():
-    resolved = resolve_recording_time(datetime(2025, 5, 8, 23, 29, 46, tzinfo=_CEST), _STEM)
+    resolved = _resolve(datetime(2025, 5, 8, 23, 29, 46, tzinfo=_CEST), _STEM)
 
     assert resolved.time == datetime(2025, 5, 8, 23, 29, 46)  # GUANO still wins
     assert resolved.filename_conflict
@@ -79,8 +86,8 @@ def test_resolve_flags_guano_and_filename_wall_clocks_that_differ():
 def test_resolve_falls_back_to_filename_then_mtime():
     start = datetime(2025, 5, 8, 22, 0, 0)
 
-    from_name = resolve_recording_time(None, _STEM, start)
-    from_mtime = resolve_recording_time(None, "no_stamp", start)
+    from_name = _resolve(None, _STEM, start)
+    from_mtime = _resolve(None, "no_stamp", start)
 
     assert (from_name.time, from_name.source) == (datetime(2025, 5, 8, 22, 29, 46), TimeSource.FILENAME)
     assert (from_mtime.time, from_mtime.source) == (start, TimeSource.MTIME)

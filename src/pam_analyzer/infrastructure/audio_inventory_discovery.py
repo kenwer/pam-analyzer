@@ -179,7 +179,7 @@ def _walk_campaigns(campaign_dirs: list[Path], pool: ThreadPoolExecutor) -> dict
         for card_entry in card_entries:
             by_week: dict[int, list[Path]] = {}
             for week_entry in week_dirs_by_card[card_entry]:
-                week_num = int(_WEEK_DIRNAME.match(week_entry.name).group(1))
+                week_num = int(week_entry.name.removeprefix("week_"))
                 files = sorted((f for f in week_children[week_entry] if is_audio[f]), key=lambda e: e.name)
                 by_week[week_num] = [Path(f.path) for f in files]
             loose_files = sorted((f for f in loose_by_card[card_entry] if is_audio[f]), key=lambda e: e.name)

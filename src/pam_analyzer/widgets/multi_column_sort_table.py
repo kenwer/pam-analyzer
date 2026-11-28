@@ -64,7 +64,7 @@ class _MultiSortProxy(QSortFilterProxyModel):
         new_cols = {c for c, _ in self._priority}
 
         data_model = self._data_model()
-        if hasattr(data_model, "sort_by_priority"):
+        if data_model is not None and hasattr(data_model, "sort_by_priority"):
             data_model.sort_by_priority(priority)
             self.sort(-1)  # data already ordered; proxy passes through
         else:

@@ -15,7 +15,7 @@ import pytest
 from pam_analyzer.domain import Campaign, FilterMode, Project
 from pam_analyzer.infrastructure import resolve_audio_sizes
 from pam_analyzer.ui.app_state import AppState
-from tests.conftest import stop_worker_threads
+from tests.conftest import campaign_of, stop_worker_threads
 
 
 @pytest.fixture
@@ -56,7 +56,7 @@ def test_open_leaves_sizes_pending_then_swap_resolves_them(
         state.apply_resolved_audio_sizes(project_folder, sized)
 
     assert state.audio_inventory.sizes_pending is False
-    assert state.audio_inventory.for_campaign("alpha").total_bytes == 4096
+    assert campaign_of(state.audio_inventory, "alpha").total_bytes == 4096
 
 
 def test_resolve_pending_audio_sizes_runs_the_real_worker(
@@ -73,7 +73,7 @@ def test_resolve_pending_audio_sizes_runs_the_real_worker(
         state.resolve_pending_audio_sizes(project_folder, pending)
 
     assert state.audio_inventory.sizes_pending is False
-    assert state.audio_inventory.for_campaign("alpha").total_bytes == 4096
+    assert campaign_of(state.audio_inventory, "alpha").total_bytes == 4096
 
 
 def test_stale_result_for_other_folder_is_dropped(
@@ -100,4 +100,4 @@ def test_apply_loaded_project_auto_resolves_sizes(
 
     qtbot.waitUntil(lambda: not state.audio_inventory.sizes_pending, timeout=5000)
 
-    assert state.audio_inventory.for_campaign("alpha").total_bytes == 4096
+    assert campaign_of(state.audio_inventory, "alpha").total_bytes == 4096

@@ -8,6 +8,7 @@ hands the map back to with_sizes. These cover that transform in isolation.
 from pathlib import Path
 
 from pam_analyzer.domain import AudioInventory, CampaignInventory, CardInventory, WeekInventory
+from tests.conftest import campaign_of
 
 
 def _week(week: int, *names: str) -> WeekInventory:
@@ -44,7 +45,7 @@ def test_with_sizes_fills_totals_bottom_up():
     sized = _pending().with_sizes(sizes)
 
     assert sized.sizes_pending is False
-    alpha = sized.for_campaign("alpha")
+    alpha = campaign_of(sized, "alpha")
     assert alpha.total_bytes == 7500  # sum of both cards
     assert alpha.cards[0].total_bytes == 7000  # MSD-X: 1000 + 2000 + 4000
     assert alpha.cards[0].weeks[0].file_sizes == (1000, 2000)
@@ -56,5 +57,5 @@ def test_with_sizes_treats_missing_file_as_zero():
     the same as the on-disk stat's OSError fallback."""
     sized = _pending().with_sizes({Path("a.wav"): 1000})  # only one of four known
 
-    week = sized.for_campaign("alpha").cards[0].weeks[0]
+    week = campaign_of(sized, "alpha").cards[0].weeks[0]
     assert week.file_sizes == (1000, 0)

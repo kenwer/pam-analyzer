@@ -16,7 +16,7 @@ import soundfile as sf
 from PySide6.QtCore import QCoreApplication, QObject, QThread
 from PySide6.QtQuickWidgets import QQuickWidget
 
-from pam_analyzer.domain import ModelInfo
+from pam_analyzer.domain import AudioInventory, CampaignInventory, ModelInfo
 from pam_analyzer.domain.audio_import import CardImportResult, DetectedCard, ImportSource
 from pam_analyzer.infrastructure import AudioImporter
 from pam_analyzer.infrastructure.birdnet_2_4_runner import MODEL_KEY as MODEL_KEY_V2_4
@@ -80,6 +80,12 @@ class ImporterUntilCancelled(AudioImporter):
             card=card, files_copied=0, files_skipped=0, bytes_copied=0, elapsed=0.0,
             error=CardImportResult.CANCELLED, dest_dir=None,
         )
+
+
+def campaign_of(inventory: AudioInventory, name: str) -> CampaignInventory:
+    campaign = inventory.for_campaign(name)
+    assert campaign is not None
+    return campaign
 
 
 def folder_card(root: Path, name: str) -> DetectedCard:

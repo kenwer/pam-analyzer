@@ -20,6 +20,7 @@ from pam_analyzer.workers.audio_inventory_refresher import (
     AudioInventoryRefresher,
     AudioRefreshWorker,
 )
+from tests.conftest import campaign_of
 
 
 @pytest.fixture
@@ -60,9 +61,9 @@ def test_worker_run_emits_pending_tree_then_sized(qtbot, project_dir: Path) -> N
     assert pending_folder == project_dir == sized_folder
     # Same structure both times. Only the sizes differ.
     assert pending_inv.sizes_pending is True
-    assert pending_inv.for_campaign("alpha").file_count == 2
+    assert campaign_of(pending_inv, "alpha").file_count == 2
     assert sized_inv.sizes_pending is False
-    assert sized_inv.for_campaign("alpha").total_bytes == 3072
+    assert campaign_of(sized_inv, "alpha").total_bytes == 3072
 
 
 def test_worker_cancelled_run_emits_nothing(qtbot, project_dir: Path) -> None:
@@ -114,7 +115,7 @@ def test_refresh_emits_pending_then_sized(qtbot, project_dir: Path) -> None:
 
     assert received[0].sizes_pending is True
     assert received[1].sizes_pending is False
-    assert received[1].for_campaign("alpha").total_bytes == 3072
+    assert campaign_of(received[1], "alpha").total_bytes == 3072
 
 
 def test_refresh_given_inventory_emits_sized_once(qtbot) -> None:

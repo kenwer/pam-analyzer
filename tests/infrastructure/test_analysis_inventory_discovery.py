@@ -45,6 +45,8 @@ def test_a_comment_spanning_lines_counts_as_one_detection(tmp_path: Path) -> Non
         'Species,Comment\r\nRobin,"first line\nsecond line"\r\nCrow,\r\n', encoding="utf-8", newline=""
     )
 
-    (entry,) = discover_analysis_inventory(tmp_path).campaigns
+    inventory = discover_analysis_inventory(tmp_path)
+    assert inventory is not None
+    (entry,) = inventory.campaigns
 
     assert entry.detection_count == 2

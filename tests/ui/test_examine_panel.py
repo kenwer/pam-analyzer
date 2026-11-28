@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 from PySide6.QtCore import QCoreApplication, QItemSelectionModel, QModelIndex, QPoint, Qt, QTimer
-from PySide6.QtGui import QKeySequence
+from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -33,9 +33,14 @@ from tests.conftest import DEFAULT_MODEL_KEY
 from tests.ui.conftest import make_main_window
 
 
+def _detection(panel: ExaminePanel, row: int) -> Detection:
+    detection = panel._model.detection_at(row)
+    assert detection is not None
+    return detection
+
+
 def _visible(panel: ExaminePanel) -> list[Detection]:
-    model = panel._model
-    return [model.detection_at(r) for r in range(model.rowCount())]
+    return [_detection(panel, r) for r in range(panel._model.rowCount())]
 
 _HEADERS = [
     "Campaign",
@@ -396,7 +401,7 @@ def test_edit_verified_marks_row_dirty(panel: ExaminePanel) -> None:
     idx = panel._model.index(0, col)
     assert panel._model.setData(idx, "true")
     assert len(panel._detections._dirty) == 1
-    assert panel._model.detection_at(0).verified.value == "true"
+    assert _detection(panel, 0).verified.value == "true"
 
 
 def test_autosave_debounces_and_persists(qtbot, panel: ExaminePanel, project) -> None:
@@ -518,7 +523,9 @@ def test_single_click_opens_the_dropdown_of_an_unselected_row(qtbot, panel: Exam
     qtbot.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=view.visualRect(verified).center())
     qtbot.waitUntil(lambda: isinstance(QApplication.activePopupWidget(), QWidget))
     assert isinstance(view.indexWidget(verified), QComboBox)
-    QApplication.activePopupWidget().close()
+    popup = QApplication.activePopupWidget()
+    assert popup is not None
+    popup.close()
     QCoreApplication.processEvents()
 
 
@@ -785,7 +792,9 @@ def test_export_snippets_cancel_stops_the_loop(
         nonlocal calls
         calls += 1
         if calls == 2:
-            panel.window().findChild(QProgressDialog).cancel()
+            progress = panel.window().findChild(QProgressDialog)
+            assert progress is not None
+            progress.cancel()
 
     monkeypatch.setattr("pam_analyzer.ui.panels.examine_panel.extract_snippet", cancelling_extract)
     _trigger_export_action(panel, "Export audio snippets")
@@ -1047,6 +1056,7 @@ def test_column_menu_no_qaction_error(panel: ExaminePanel) -> None:
     # Close the popup in the next event-loop tick so exec() unblocks.
     QTimer.singleShot(0, lambda: (w := QApplication.activePopupWidget()) and w.close())
     detection_table._show_column_menu(QPoint(100, 10))
+    assert detection_table._model is not None
     assert detection_table._model.columnCount() > 1
 
 
@@ -1133,7 +1143,8 @@ def test_reload_does_not_reselect_an_unrelated_row(qtbot, panel: ExaminePanel) -
 
 def test_context_detections_are_other_visible_rows_in_the_same_file(panel: ExaminePanel) -> None:
     model = panel._model
-    row_id, current = model.row_id_at(0), model.detection_at(0)
+    row_id, current = model.row_id_at(0), _detection(panel, 0)
+    assert row_id is not None
     ctx = panel.ui.detections_table._context_detections_for(row_id, current)
     expected = [
         (d.start_time, d.end_time)
@@ -1163,15 +1174,22 @@ def _row_menu(panel: ExaminePanel, row: int, column: str):
     return panel.ui.detections_table._build_row_menu(view.model().index(row, panel._model.index_of(column)))
 
 
-def _menu_action(menu, text: str):
+def _find_action(menu: QMenu, text: str) -> QAction | None:
     for action in menu.actions():
         if action.text() == text:
             return action
-        if action.menu() is not None:
-            found = _menu_action(action.menu(), text)
+        submenu = action.menu()
+        if isinstance(submenu, QMenu):
+            found = _find_action(submenu, text)
             if found is not None:
                 return found
     return None
+
+
+def _menu_action(menu: QMenu, text: str) -> QAction:
+    action = _find_action(menu, text)
+    assert action is not None
+    return action
 
 
 def _clipboard() -> str:
@@ -1267,7 +1285,7 @@ def test_context_menu_copies_the_audio_file_path(panel: ExaminePanel, project: P
     _quiet(panel, monkeypatch)
     _select_rows(panel, [0])
     _menu_action(_row_menu(panel, 0, "ARU"), "Copy File Path").trigger()
-    assert _clipboard() == str(project.folder / panel._model.detection_at(0).file)
+    assert _clipboard() == str(project.folder / _detection(panel, 0).file)
 
 
 def test_context_menu_opens_the_audio_file_folder(panel: ExaminePanel, project: Project, monkeypatch) -> None:
@@ -1276,7 +1294,7 @@ def test_context_menu_opens_the_audio_file_folder(panel: ExaminePanel, project: 
     monkeypatch.setattr("pam_analyzer.ui.detection_table.open_in_file_manager", opened.append)
     _select_rows(panel, [0])
     _menu_action(_row_menu(panel, 0, "ARU"), "Open Audio File Folder").trigger()
-    assert opened == [(project.folder / panel._model.detection_at(0).file).parent]
+    assert opened == [(project.folder / _detection(panel, 0).file).parent]
 
 
 def test_open_audio_file_folder_is_disabled_when_the_folder_is_missing(
@@ -1385,7 +1403,7 @@ def test_context_menu_exports_only_the_selected_rows_as_snippets(
     _select_rows(panel, [0, 2])
     _menu_action(_row_menu(panel, 0, "ARU"), "Export Selected as Audio Snippets…").trigger()
 
-    assert starts == [panel._model.detection_at(0).start_time, panel._model.detection_at(2).start_time]
+    assert starts == [_detection(panel, 0).start_time, _detection(panel, 2).start_time]
     [(kind, _title, text, _kwargs)] = toasts
     assert kind == "success"
     assert "2 snippets" in text
