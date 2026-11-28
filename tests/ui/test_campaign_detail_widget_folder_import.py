@@ -41,27 +41,34 @@ def _write_wav(path: Path) -> None:
     sf.write(path, audio, SR, subtype="PCM_16")
 
 
+class _DropEvent(QDropEvent):
+    """A QDropEvent that keeps its QMimeData alive.
+
+    QDropEvent doesn't take Python ownership of the mime data, so without a
+    kept reference it gets garbage collected once the event is built, and
+    event.mimeData() then dereferences a dangling pointer (segfault) the
+    moment dropEvent() calls it.
+    """
+
+    def __init__(self, mime: QMimeData) -> None:
+        super().__init__(
+            QPointF(0, 0),
+            Qt.DropAction.CopyAction,
+            mime,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        self.mime = mime
+
+
 def _drop_event(paths: list[Path]) -> QDropEvent:
     """A QDropEvent carrying *paths* as local file URLs, for feeding straight
     into CampaignDetailWidget.dropEvent() without simulating a real mouse drag
     (real DnD simulation is flaky under pytest-qt/offscreen).
-
-    The QMimeData is stashed on the event as _mime: QDropEvent doesn't take
-    Python ownership of it, so without a kept reference it gets garbage
-    collected as soon as this function returns, and event.mimeData() then
-    dereferences a dangling pointer (segfault) the moment dropEvent() calls it.
     """
     mime = QMimeData()
     mime.setUrls([QUrl.fromLocalFile(str(p)) for p in paths])
-    event = QDropEvent(
-        QPointF(0, 0),
-        Qt.DropAction.CopyAction,
-        mime,
-        Qt.MouseButton.LeftButton,
-        Qt.KeyboardModifier.NoModifier,
-    )
-    event._mime = mime  # type: ignore[attr-defined]
-    return event
+    return _DropEvent(mime)
 
 
 @pytest.fixture

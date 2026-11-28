@@ -16,7 +16,16 @@ import soundfile as sf
 from PySide6.QtCore import QCoreApplication, QObject, QThread
 from PySide6.QtQuickWidgets import QQuickWidget
 
-from pam_analyzer.domain import AnalysisRunResult, AudioInventory, CampaignInventory, ModelInfo, RunStatus
+from pam_analyzer.domain import (
+    AnalysisProgress,
+    AnalysisRunResult,
+    AnalysisSettings,
+    AudioInventory,
+    Campaign,
+    CampaignInventory,
+    ModelInfo,
+    RunStatus,
+)
 from pam_analyzer.domain.audio_import import (
     CardImportResult,
     ConflictChoice,
@@ -74,7 +83,14 @@ class FakeRunner:
     def available_locales(self) -> list[str]:
         return ["en"]
 
-    def run(self, **kwargs) -> AnalysisRunResult:
+    def run(
+        self,
+        *,
+        campaigns: list[Campaign],
+        settings: AnalysisSettings,
+        preferred_lang: str,
+        progress: AnalysisProgress,
+    ) -> AnalysisRunResult:
         return AnalysisRunResult(status=RunStatus.COMPLETED)
 
 

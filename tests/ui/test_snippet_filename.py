@@ -1,6 +1,7 @@
 """Tests for the file names of exported audio snippets."""
 
 import unicodedata
+from dataclasses import replace
 
 import pytest
 
@@ -12,21 +13,21 @@ _BASE = "CmpRot2_Zollhauser-Bach-Riedlingen__ID_106__Long-eared_Owl__20260501_05
 
 
 def _detection(**overrides) -> Detection:
-    fields = {
-        "campaign": "CmpRot2_Zollhauser-Bach-Riedlingen",
-        "aru": "ID 106",
-        "week": None,
-        "species": "Long-eared Owl",
-        "scientific_name": "Asio otus",
-        "confidence": 0.8731,
-        "start_time": 12.0,
-        "end_time": 15.0,
-        "rank": None,
-        "file": "ID 106/week_19/rec.flac",
-        "recording_time": "2026-05-01 05:30:00",
-        "model": "BirdNET-2.4",
-    }
-    return Detection(**(fields | overrides))
+    detection = Detection(
+        campaign="CmpRot2_Zollhauser-Bach-Riedlingen",
+        aru="ID 106",
+        week=None,
+        species="Long-eared Owl",
+        scientific_name="Asio otus",
+        confidence=0.8731,
+        start_time=12.0,
+        end_time=15.0,
+        rank=None,
+        file="ID 106/week_19/rec.flac",
+        recording_time="2026-05-01 05:30:00",
+        model="BirdNET-2.4",
+    )
+    return replace(detection, **overrides)
 
 
 def _name(**overrides) -> str:

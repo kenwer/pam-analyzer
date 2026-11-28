@@ -22,6 +22,7 @@ import pytest
 
 from pam_analyzer.domain import AnalysisSettings, Campaign, FilterMode
 from pam_analyzer.infrastructure.base_analysis_runner import BaseAnalysisRunner, ParsedRow
+from pam_analyzer.infrastructure.birdnet_taxonomy import TaxonomyServices
 from pam_analyzer.infrastructure.model_store import ModelPackage
 from tests.conftest import FAKE_MODEL_INFO
 
@@ -31,7 +32,7 @@ _BORROWED_AXIS = frozenset({"Allowed bird", "Known bird"})
 _OWN_AXIS = _BORROWED_AXIS | {"Sound event"}
 
 
-class _FakeTaxonomy:
+class _FakeTaxonomy(TaxonomyServices):
     def locale_label_map(self, lang: str) -> dict[str, str]:
         return {}
 
@@ -43,6 +44,12 @@ class _FakeTaxonomy:
 
     def available_locales(self) -> tuple[str, ...]:
         return ("en_us",)
+
+    def _label_entries(self, lang: str) -> list[str]:  # pragma: no cover
+        raise AssertionError("the label lookups are stubbed")
+
+    def _load_geo_model(self) -> None:  # pragma: no cover
+        raise AssertionError("the geo lookup is stubbed")
 
 
 class _FakeResult:
@@ -74,7 +81,7 @@ class _AxisStubRunner(BaseAnalysisRunner):
 
     model_key = "Stub-1.0"
     log_prefix = "stub"
-    taxonomy = _FakeTaxonomy()  # type: ignore[assignment]
+    taxonomy = _FakeTaxonomy()
     package = ModelPackage(FAKE_MODEL_INFO, lambda: ())
 
     def __init__(self, rows: list[str]) -> None:

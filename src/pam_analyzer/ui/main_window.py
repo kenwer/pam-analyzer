@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from .. import __version__
-from ..domain import AnalysisRunner, logging_setup, paths, shared_locales
+from ..domain import AnalysisRunner, Project, logging_setup, paths, shared_locales
 from ..domain.audio_import import ImportSource
 from ..infrastructure import (
     AudioRootNotFound,
@@ -491,7 +491,7 @@ class MainWindow(QMainWindow):
         self._rebuild_recent_menu()
 
     def _on_log_level_chosen(self, action: QAction) -> None:
-        level = action.data()
+        level = int(action.data())
         self._settings.log_level = logging.getLevelName(level)
         logging_setup.set_level(level)
 
@@ -580,14 +580,13 @@ class MainWindow(QMainWindow):
 
     # state reactions
 
-    def _on_project_changed(self, project: object) -> None:
+    def _on_project_changed(self, project: Project | None) -> None:
         self._refresh_action_state(project)
         if project is None:
             self.setWindowTitle(f"PAM Analyzer {__version__}")
             self._show_welcome()
         else:
-            name = project.name  # type: ignore[attr-defined]
-            self.setWindowTitle(f"PAM Analyzer {__version__} - {name}")
+            self.setWindowTitle(f"PAM Analyzer {__version__} - {project.name}")
             self._show_tabs()
 
     def _show_welcome(self) -> None:

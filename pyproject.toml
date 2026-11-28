@@ -92,6 +92,10 @@ include = ["src", "tests"]
 exclude = ["src/**/ui_*.py", "src/**/*_rc.py"]
 typeCheckingMode = "standard"
 
+[tool.ty.analysis]
+# Only the build group installs nuitka, and only build.py loads this plugin
+allowed-unresolved-imports = ["nuitka.**"]
+
 [tool.poe.tasks]
 compile-ui = { cmd = "python scripts/compile_ui.py", help = "Compile Qt Designer .ui files to ui_*.py modules" }
 compile-qrc = { cmd = "python scripts/compile_qrc.py", help = "Compile Qt resource files to *_rc.py modules" }

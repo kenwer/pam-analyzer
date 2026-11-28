@@ -32,4 +32,4 @@ def disable_item_hover(view: QAbstractItemView) -> None:
     """
     style = NoHoverProxyStyle()
     view.setStyle(style)
-    view._no_hover_style = style  # pyright: ignore[reportAttributeAccessIssue]  intentional retention
+    view._no_hover_style = style  # type: ignore  intentional retention

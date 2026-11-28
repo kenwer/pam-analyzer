@@ -26,6 +26,7 @@ from pam_analyzer.domain import (
 from pam_analyzer.domain.analysis_run_result import CampaignRunResult
 from pam_analyzer.infrastructure import base_analysis_runner
 from pam_analyzer.infrastructure.base_analysis_runner import BaseAnalysisRunner, _common_names, _SegmentRanker
+from pam_analyzer.infrastructure.birdnet_taxonomy import TaxonomyServices
 from pam_analyzer.infrastructure.http_download import DownloadError
 from pam_analyzer.infrastructure.model_store import Artifact, ModelPackage
 from tests.infrastructure.conftest import Route
@@ -275,8 +276,17 @@ def test_english_column_falls_back_to_the_emitted_name() -> None:
     assert commons == {"en_us": "Eurasian Blackbird", "de": ""}
 
 
-class _FakeTaxonomy:
+class _FakeTaxonomy(TaxonomyServices):
     """The three taxonomy lookups _run_campaign makes, without any label download."""
+
+    def available_locales(self) -> tuple[str, ...]:
+        return ("en_us",)
+
+    def _label_entries(self, lang: str) -> list[str]:  # pragma: no cover
+        raise AssertionError("the label lookups are stubbed")
+
+    def _load_geo_model(self) -> None:  # pragma: no cover
+        raise AssertionError("the geo lookup is stubbed")
 
     def known_species_scientific(self) -> frozenset[str]:
         return frozenset({"Parus major", "Turdus merula"})
@@ -310,7 +320,7 @@ class _RowLoopRunner(BaseAnalysisRunner):
 
     model_key = "Stub-1.0"
     log_prefix = "stub"
-    taxonomy = _FakeTaxonomy()  # type: ignore[assignment]
+    taxonomy = _FakeTaxonomy()
     package = ModelPackage(_STUB_INFO, lambda: (), lambda: None)
 
     def __init__(self, rows: list[dict[str, Any]]) -> None:

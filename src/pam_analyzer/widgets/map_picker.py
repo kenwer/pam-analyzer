@@ -12,10 +12,13 @@ if TYPE_CHECKING:
 
 
 class _MapRoot(Protocol):
-    """The signals map_picker.qml declares on its root item."""
+    """The signals and functions map_picker.qml declares on its root item."""
 
     locationPicked: SignalInstance
     zoomChanged: SignalInstance
+
+    def clearMarker(self) -> None: ...
+    def setMarker(self, lat: float, lon: float, zoom: float) -> None: ...
 
 
 _ZOOM_KEY = "map/zoom_level"
@@ -90,7 +93,7 @@ class MapPickerWidget(QWidget):
         self._settings.setValue(_ZOOM_KEY, zoom)
 
     def _saved_zoom(self) -> float:
-        return float(self._settings.value(_ZOOM_KEY, _DEFAULT_ZOOM))  # type: ignore[arg-type]
+        return cast(float, self._settings.value(_ZOOM_KEY, _DEFAULT_ZOOM, type=float))
 
     def set_location(self, lat: float, lon: float) -> None:
         self._marker = (lat, lon)
@@ -101,10 +104,10 @@ class MapPickerWidget(QWidget):
         self._apply_marker()
 
     def _apply_marker(self) -> None:
-        root = self._qw.rootObject() if self._qw is not None else None
+        root = cast("_MapRoot | None", self._qw.rootObject()) if self._qw is not None else None
         if not root:
             return
         if self._marker is None:
-            root.clearMarker()  # type: ignore[attr-defined]
+            root.clearMarker()
         else:
-            root.setMarker(*self._marker, self._saved_zoom())  # type: ignore[attr-defined]
+            root.setMarker(*self._marker, self._saved_zoom())

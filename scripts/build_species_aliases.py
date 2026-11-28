@@ -28,7 +28,7 @@ import textwrap
 import urllib.request
 import zipfile
 from collections import Counter, defaultdict
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -118,7 +118,7 @@ def parse_supplement(text: str) -> dict[str, Bridge]:
 
 
 def derive_pairs(
-    taxonomy: Taxonomy, axes: dict[str, Iterable[str]], supplement: dict[str, Bridge]
+    taxonomy: Taxonomy, axes: Mapping[str, Iterable[str]], supplement: dict[str, Bridge]
 ) -> tuple[dict[str, str], dict[str, list[str]]]:
     """Pairs for every axis label that is not an accepted name, plus the unresolved labels per axis.
 

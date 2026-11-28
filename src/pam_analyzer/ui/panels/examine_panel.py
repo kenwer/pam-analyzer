@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QWidgetAction,
 )
 
-from ...domain import Campaign, Detection, DetectionStore, SpreadKey, VerifiedState
+from ...domain import Campaign, Detection, DetectionStore, Project, SpreadKey, VerifiedState
 from ...infrastructure import extract_snippet
 from ..app_state import AppState
 from ..models.detections_table_model import DetectionsTableModel
@@ -249,12 +249,10 @@ class ExaminePanel(QWidget):
 
     # state observers
 
-    def _on_project_changed(self, project: object) -> None:
+    def _on_project_changed(self, project: Project | None) -> None:
         self.flush_pending_edits()
-        loaded = project is not None
-        self._set_controls_enabled(loaded)
-        audio_root = project.folder if loaded else None  # type: ignore[union-attr]
-        self.ui.detections_table.setAudioRoot(audio_root)
+        self._set_controls_enabled(project is not None)
+        self.ui.detections_table.setAudioRoot(project.folder if project is not None else None)
         # Sync padding spinboxes + audio player from the new project.
         before = float(getattr(project, "snippet_padding_before", 0.0) or 0.0)
         after = float(getattr(project, "snippet_padding_after", 0.0) or 0.0)
