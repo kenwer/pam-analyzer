@@ -3,6 +3,7 @@
 ## [Unreleased]
 ### Changed
 - The update dialog lists the changes of every release since the installed version.
+- [Dev] pyright type-checks `src` and `tests` in standard mode.
 
 ## [0.11.3] - 2026-11-24
 ### Fixed

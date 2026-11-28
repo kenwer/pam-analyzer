@@ -46,7 +46,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Literal
 
-from birdnet import MODEL_PRECISION_FP32, AcousticModelV2_4, GeoModelV2_4
+from birdnet import MODEL_PRECISION_FP32, MODEL_PRECISIONS, AcousticModelV2_4, GeoModelV2_4
 from birdnet.core.backends import (
     OnnxBackend,
     VersionedAcousticBackendProtocol,
@@ -102,7 +102,7 @@ class AcousticOnnxBackendFP32V2_4(OnnxBackend, VersionedAcousticBackendProtocol)
         return SEGMENT_SIZE_SAMPLES
 
     @classmethod
-    def precision(cls) -> str:
+    def precision(cls) -> MODEL_PRECISIONS:
         return MODEL_PRECISION_FP32
 
 
@@ -126,7 +126,7 @@ class GeoOnnxBackendFP32V2_4(OnnxBackend, VersionedGeoBackendProtocol):
         return GEO_INPUT_FEATURES
 
     @classmethod
-    def precision(cls) -> str:
+    def precision(cls) -> MODEL_PRECISIONS:
         return MODEL_PRECISION_FP32
 
     @classmethod

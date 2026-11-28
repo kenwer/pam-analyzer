@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from PySide6.QtCore import QModelIndex, Qt, QTimer
+from PySide6.QtCore import QModelIndex, QPersistentModelIndex, Qt, QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QStyledItemDelegate,
@@ -38,7 +38,7 @@ class ComboDelegate(QStyledItemDelegate):
         self,
         parent: QWidget,
         option: QStyleOptionViewItem,
-        index: QModelIndex,
+        index: QModelIndex | QPersistentModelIndex,
     ) -> QWidget:
         del option, index
         combo = QComboBox(parent)
@@ -60,7 +60,7 @@ class ComboDelegate(QStyledItemDelegate):
         self.commitData.emit(editor)
         self.closeEditor.emit(editor)
 
-    def setEditorData(self, editor: QWidget, index: QModelIndex) -> None:
+    def setEditorData(self, editor: QWidget, index: QModelIndex | QPersistentModelIndex) -> None:
         if not isinstance(editor, QComboBox):
             return
         value = "" if index.data(Qt.ItemDataRole.EditRole) is None else str(index.data(Qt.ItemDataRole.EditRole))
@@ -68,14 +68,14 @@ class ComboDelegate(QStyledItemDelegate):
         editor.setCurrentIndex(pos if pos >= 0 else 0)
 
     def setModelData(
-        self, editor: QWidget, model, index: QModelIndex
+        self, editor: QWidget, model, index: QModelIndex | QPersistentModelIndex
     ) -> None:
         if not isinstance(editor, QComboBox):
             return
         model.setData(index, editor.currentText(), Qt.ItemDataRole.EditRole)
 
     def updateEditorGeometry(
-        self, editor: QWidget, option: QStyleOptionViewItem, index: QModelIndex
+        self, editor: QWidget, option: QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex
     ) -> None:
         editor.setGeometry(option.rect)
 

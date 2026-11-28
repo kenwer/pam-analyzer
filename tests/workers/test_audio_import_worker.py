@@ -1,8 +1,15 @@
 """AudioImportWorker.run() eject-safety: only ever eject genuinely SD-sourced cards."""
 
+from collections.abc import Callable
 from pathlib import Path
 
-from pam_analyzer.domain.audio_import import CardImportResult, DetectedCard, ImportSource
+from pam_analyzer.domain.audio_import import (
+    CardImportResult,
+    ConflictChoice,
+    DetectedCard,
+    ImportProgress,
+    ImportSource,
+)
 from pam_analyzer.infrastructure import AudioImporter
 from pam_analyzer.workers.audio_import_worker import AudioImportWorker
 from tests.conftest import FakeScanner
@@ -12,7 +19,18 @@ class FakeImporter(AudioImporter):
     def __init__(self, result: CardImportResult) -> None:
         self._result = result
 
-    def import_card(self, **_kwargs) -> CardImportResult:
+    def import_card(
+        self,
+        card: DetectedCard,
+        files: list[Path],
+        dest_dir: Path,
+        resolutions: dict[str, ConflictChoice],
+        identical: tuple[str, ...],
+        *,
+        progress: Callable[[ImportProgress], None],
+        is_cancelled: Callable[[], bool],
+        clear_after: bool,
+    ) -> CardImportResult:
         return self._result
 
 

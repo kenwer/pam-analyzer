@@ -63,9 +63,10 @@ class TestColumns:
     def test_setters_mutate_detection(self):
         d = _sample_detection()
         by_name = {c.name: c for c in schema.COLUMNS}
-        by_name["Verified"].set(d, "uncertain")
-        by_name["Corrected_Species"].set(d, "Turdus pilaris")
-        by_name["Comment"].set(d, "second opinion")
+        for name, value in [("Verified", "uncertain"), ("Corrected_Species", "Turdus pilaris"), ("Comment", "second opinion")]:
+            setter = by_name[name].set
+            assert setter is not None
+            setter(d, value)
         assert d.verified is VerifiedState.UNCERTAIN
         assert d.corrected_species == "Turdus pilaris"
         assert d.comment == "second opinion"

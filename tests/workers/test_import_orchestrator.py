@@ -22,7 +22,7 @@ def campaign(tmp_path: Path) -> Campaign:
 
 
 class _ListingFails(AudioImporter):
-    def list_card_files(self, folder: Path) -> list[Path]:
+    def list_card_files(self, card_root: Path) -> list[Path]:
         raise OSError("card unplugged")
 
 

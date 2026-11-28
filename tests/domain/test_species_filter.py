@@ -110,6 +110,7 @@ def test_location_mode_reads_must_haves_through_the_port_but_not_region() -> Non
     )
 
     allowed = resolved.allowed_for(Path("ARU/week_10/a.wav"))
+    assert allowed is not None
     # The must-have text went through the port.
     assert {"Accipiter gentilis", "Astur gentilis"} <= allowed
     # The regional list is left on BirdNET's axis: the port's region

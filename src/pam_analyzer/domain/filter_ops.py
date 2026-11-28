@@ -492,7 +492,7 @@ class IsAnyOf(FilterOperator):
         return pl.col(col).cast(pl.String).str.to_lowercase().is_in([v.casefold() for v in values])
 
 
-class _DateTimeOperator(FilterOperator):
+class _DateTimeOperator[T](FilterOperator):
     """Date/time op against an ISO datetime cell. Inert on non-DATETIME columns.
     The scalar form parses each cell string. The polars form reads the pre-parsed
     helper column. An unparseable filter is inactive (keeps everything). A valid
@@ -519,16 +519,16 @@ class _DateTimeOperator(FilterOperator):
         return self._expr(col, target)
 
     @abstractmethod
-    def _parse_target(self, text: str): ...
+    def _parse_target(self, text: str) -> T | None: ...
 
     @abstractmethod
-    def _cmp(self, cell: datetime, target) -> bool: ...
+    def _cmp(self, cell: datetime, target: T) -> bool: ...
 
     @abstractmethod
-    def _expr(self, col: str, target) -> pl.Expr: ...
+    def _expr(self, col: str, target: T) -> pl.Expr: ...
 
 
-class OnDate(_DateTimeOperator):
+class OnDate(_DateTimeOperator[date]):
     op, label = FilterOp.ON_DATE, "On date..."
 
     def _parse_target(self, text):
@@ -541,7 +541,7 @@ class OnDate(_DateTimeOperator):
         return pl.col(date_helper_col(col)) == target
 
 
-class BeforeDate(_DateTimeOperator):
+class BeforeDate(_DateTimeOperator[date]):
     op, label = FilterOp.BEFORE_DATE, "Before date..."
 
     def _parse_target(self, text):
@@ -554,7 +554,7 @@ class BeforeDate(_DateTimeOperator):
         return pl.col(date_helper_col(col)) < target
 
 
-class AfterDate(_DateTimeOperator):
+class AfterDate(_DateTimeOperator[date]):
     op, label = FilterOp.AFTER_DATE, "After date..."
 
     def _parse_target(self, text):
@@ -567,7 +567,7 @@ class AfterDate(_DateTimeOperator):
         return pl.col(date_helper_col(col)) > target
 
 
-class DateRange(_DateTimeOperator):
+class DateRange(_DateTimeOperator[tuple[date, date]]):
     op, label = FilterOp.DATE_RANGE, "Date range..."
 
     def _parse_target(self, text):
@@ -583,7 +583,7 @@ class DateRange(_DateTimeOperator):
         return (d >= lo) & (d <= hi)
 
 
-class TimeOfDayRange(_DateTimeOperator):
+class TimeOfDayRange(_DateTimeOperator[tuple[time, time]]):
     op, label = FilterOp.TIME_OF_DAY_RANGE, "Time of day..."
 
     def _parse_target(self, text):

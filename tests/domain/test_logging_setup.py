@@ -181,6 +181,7 @@ def test_the_buffer_renders_a_traceback_and_drops_the_frames():
     buffer.emit(record)
 
     assert record.exc_info is None
+    assert record.exc_text is not None
     assert "ValueError: boom" in record.exc_text
 
 

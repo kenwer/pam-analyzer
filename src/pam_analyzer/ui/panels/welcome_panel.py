@@ -10,7 +10,7 @@ AppSettings and the open/create handlers.
 
 from pathlib import Path
 
-from PySide6.QtCore import QMimeData, QModelIndex, QPoint, QRect, QSize, Qt, Signal
+from PySide6.QtCore import QMimeData, QModelIndex, QPersistentModelIndex, QPoint, QRect, QSize, Qt, Signal
 from PySide6.QtGui import (
     QDragEnterEvent,
     QDragLeaveEvent,
@@ -174,7 +174,7 @@ class _RecentProjectDelegate(QStyledItemDelegate):
         self._name_font = QFont()
         self._name_font.setBold(True)
 
-    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex) -> None:
         path_str = index.data(Qt.ItemDataRole.UserRole)
         if not isinstance(path_str, str):
             super().paint(painter, option, index)
@@ -209,7 +209,7 @@ class _RecentProjectDelegate(QStyledItemDelegate):
         painter.drawText(path_rect, Qt.AlignmentFlag.AlignCenter, paths.contract_user_path(path_str))
         painter.restore()
 
-    def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex) -> QSize:
+    def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex) -> QSize:
         path_str = index.data(Qt.ItemDataRole.UserRole)
         if not isinstance(path_str, str):
             return super().sizeHint(option, index)

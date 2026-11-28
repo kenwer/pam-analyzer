@@ -262,7 +262,7 @@ def _layer_weights(group: object) -> dict[str, np.ndarray]:
     if not isinstance(group, h5py.Group):
         raise ValueError(f"layer weights are not an HDF5 group: {group}")
     # h5py returns these as bytes or str depending on how the file was written
-    paths = [w.decode() if isinstance(w, bytes) else w for w in group.attrs["weight_names"]]
+    paths = [w.decode() if isinstance(w, bytes) else w for w in np.asarray(group.attrs["weight_names"])]
     return {path.split("/")[-1].split(":")[0]: np.asarray(group[path]) for path in paths}
 
 

@@ -4,6 +4,7 @@ import threading
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any
 
 import pytest
 
@@ -35,7 +36,7 @@ class FakeServer:
 
 def _handler(server_state: FakeServer) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
-        def log_message(self, *_args) -> None:
+        def log_message(self, format: str, *args: Any) -> None:
             pass
 
         def do_GET(self) -> None:

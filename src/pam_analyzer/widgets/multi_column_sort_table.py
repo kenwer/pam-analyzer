@@ -11,6 +11,7 @@ from PySide6.QtCore import (
     QItemSelectionModel,
     QModelIndex,
     QObject,
+    QPersistentModelIndex,
     QSize,
     QSortFilterProxyModel,
     Qt,
@@ -121,7 +122,7 @@ class _MultiSortProxy(QSortFilterProxyModel):
                 return int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         return super().headerData(section, orientation, role)
 
-    def lessThan(self, left: QModelIndex, right: QModelIndex) -> bool:
+    def lessThan(self, left: QModelIndex | QPersistentModelIndex, right: QModelIndex | QPersistentModelIndex) -> bool:
         """Return whether *left* should sort before *right*.
 
         Iterates over the configured sort keys in priority order.  Numeric

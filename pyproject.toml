@@ -90,13 +90,7 @@ select = [
 [tool.pyright]
 include = ["src", "tests"]
 exclude = ["src/**/ui_*.py", "src/**/*_rc.py"]
-# Full checking reports false positives from the PySide6 stubs, so only rules that are clean today are enabled
-typeCheckingMode = "off"
-reportRedeclaration = "error"
-reportCallIssue = "error"
-reportOptionalMemberAccess = "error"
-reportAttributeAccessIssue = "error"
-reportArgumentType = "error"
+typeCheckingMode = "standard"
 
 [tool.poe.tasks]
 compile-ui = { cmd = "python scripts/compile_ui.py", help = "Compile Qt Designer .ui files to ui_*.py modules" }

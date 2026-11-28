@@ -41,7 +41,7 @@ from functools import cache
 from importlib.resources import files
 from pathlib import Path
 
-from birdnet import MODEL_PRECISION_FP32, AcousticModelPerchV2
+from birdnet import MODEL_PRECISION_FP32, MODEL_PRECISIONS, AcousticModelPerchV2
 from birdnet.core.backends import OnnxBackend, VersionedAcousticBackendProtocol
 from birdnet.utils.local_data import get_birdnet_app_data_folder
 
@@ -102,7 +102,7 @@ class AcousticOnnxBackendFP32PerchV2(OnnxBackend, VersionedAcousticBackendProtoc
         return SEGMENT_SIZE_SAMPLES
 
     @classmethod
-    def precision(cls) -> str:
+    def precision(cls) -> MODEL_PRECISIONS:
         return MODEL_PRECISION_FP32
 
 

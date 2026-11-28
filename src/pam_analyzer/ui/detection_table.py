@@ -11,7 +11,17 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import polars as pl
-from PySide6.QtCore import QAbstractProxyModel, QItemSelectionModel, QLocale, QModelIndex, QPoint, Qt, QTimer, Signal
+from PySide6.QtCore import (
+    QAbstractProxyModel,
+    QItemSelectionModel,
+    QLocale,
+    QModelIndex,
+    QPersistentModelIndex,
+    QPoint,
+    Qt,
+    QTimer,
+    Signal,
+)
 from PySide6.QtGui import QAction, QGuiApplication, QKeySequence, QPainter, QPalette, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -78,7 +88,7 @@ class _PlayDelegate(QStyledItemDelegate):
     def set_playing_file(self, path: str) -> None:
         self._playing_file = path
 
-    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex) -> None:
         # Draw selection / hover background
         self.initStyleOption(option, index)
         option.text = ""
@@ -101,7 +111,7 @@ class _PlayDelegate(QStyledItemDelegate):
         painter.drawText(option.rect, Qt.AlignmentFlag.AlignCenter, icon)
         painter.restore()
 
-    def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex):
+    def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex):
         hint = super().sizeHint(option, index)
         hint.setWidth(28)
         return hint
@@ -568,7 +578,9 @@ class DetectionTable(QWidget):
         checks every cell of every row.
         """
         rows: set[int] = set()
-        for selected in self._table.selectionModel().selection():
+        selection = self._table.selectionModel().selection()
+        for i in range(selection.count()):
+            selected = selection.at(i)
             rows.update(range(selected.top(), selected.bottom() + 1))
         return sorted(rows)
 
@@ -593,6 +605,8 @@ class DetectionTable(QWidget):
         entries that need no row.
         """
         menu = QMenu(self)
+        count = 0
+        path: Path | None = None
         if index.isValid() and self._model is not None:
             count = len(self._selected_view_rows())
             rows = "Row" if count == 1 else f"{count} Rows"

@@ -100,11 +100,12 @@ def _column(
     """
     if get is None:
         get = attrgetter(attr)
+    set_: Callable[[Detection, str], None] | None = None
     if annotation:
-        def set_(d: Detection, value: str) -> None:
+        def setter(d: Detection, value: str) -> None:
             setattr(d, attr, parse(value))
-    else:
-        set_ = None
+
+        set_ = setter
     return ColumnSpec(name, get, set_, kind, annotation, attr, parse)
 
 
@@ -145,7 +146,7 @@ CORE_FIELDS: frozenset[str] = frozenset(COLUMN_NAMES)
 NUMERIC_DEFAULT_ZERO: frozenset[str] = frozenset(c.name for c in COLUMNS if c.parse is _to_float)
 
 # Polars type of each schema column in a loaded detections frame
-FRAME_DTYPES: dict[str, pl.DataType] = {c.name: pl.Float64 if c.numeric else pl.String for c in COLUMNS}
+FRAME_DTYPES: dict[str, type[pl.DataType]] = {c.name: pl.Float64 if c.numeric else pl.String for c in COLUMNS}
 
 _LOCALE_COLUMN_PREFIX = "Species_"
 

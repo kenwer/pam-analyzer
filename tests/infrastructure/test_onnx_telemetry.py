@@ -13,6 +13,7 @@ import sys
 import textwrap
 from pathlib import Path
 
+from birdnet import MODEL_PRECISIONS
 from birdnet.core.backends import BackendLoader, OnnxBackend
 
 from pam_analyzer.infrastructure import onnx_telemetry
@@ -65,8 +66,25 @@ def test_the_onnx_backend_accepts_the_carrier_kwarg(tmp_path) -> None:
     """The lib builds each backend with the kwargs, so the carrier must not break that."""
 
     class _Backend(OnnxBackend):
-        prediction_out_idx = encoding_out_idx = probe_input_size_samples = None
-        supports_encoding = precision = None
+        @classmethod
+        def prediction_out_idx(cls) -> int:
+            return 0
+
+        @classmethod
+        def encoding_out_idx(cls) -> int | None:
+            return None
+
+        @classmethod
+        def probe_input_size_samples(cls) -> int:
+            return 0
+
+        @classmethod
+        def supports_encoding(cls) -> bool:
+            return False
+
+        @classmethod
+        def precision(cls) -> MODEL_PRECISIONS:
+            return "fp32"
 
     model = onnx_telemetry.disable_in_workers(_FakeModel())
 

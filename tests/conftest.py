@@ -17,7 +17,13 @@ from PySide6.QtCore import QCoreApplication, QObject, QThread
 from PySide6.QtQuickWidgets import QQuickWidget
 
 from pam_analyzer.domain import AnalysisRunResult, AudioInventory, CampaignInventory, ModelInfo, RunStatus
-from pam_analyzer.domain.audio_import import CardImportResult, DetectedCard, ImportSource
+from pam_analyzer.domain.audio_import import (
+    CardImportResult,
+    ConflictChoice,
+    DetectedCard,
+    ImportProgress,
+    ImportSource,
+)
 from pam_analyzer.infrastructure import AudioImporter
 from pam_analyzer.infrastructure.birdnet_2_4_runner import MODEL_KEY as MODEL_KEY_V2_4
 from pam_analyzer.infrastructure.birdnet_3_0_runner import MODEL_KEY as MODEL_KEY_V3_0
@@ -93,7 +99,18 @@ class ImporterUntilCancelled(AudioImporter):
         super().__init__()
         self.imported: list[str] = []
 
-    def import_card(self, *, card: DetectedCard, is_cancelled, **kwargs) -> CardImportResult:
+    def import_card(
+        self,
+        card: DetectedCard,
+        files: list[Path],
+        dest_dir: Path,
+        resolutions: dict[str, ConflictChoice],
+        identical: tuple[str, ...],
+        *,
+        progress: Callable[[ImportProgress], None],
+        is_cancelled: Callable[[], bool],
+        clear_after: bool,
+    ) -> CardImportResult:
         self.imported.append(card.name)
         wait_until_cancelled(is_cancelled)
         return CardImportResult(
