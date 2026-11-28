@@ -43,6 +43,9 @@ jobs:
         with:
           models-cache-key: ${{ needs.models.outputs.cache-key }}
 
+      - name: Lint
+        run: uv run poe lint
+
       - name: Run tests
         timeout-minutes: 15
         uses: ./.github/actions/run-tests
