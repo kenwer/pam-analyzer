@@ -130,8 +130,9 @@ def test_model_emits_one_score_per_label() -> None:
 def test_batching_does_not_change_scores() -> None:
     """A window scores the same alone as inside a batch.
 
-    The runner opens its session with batch_size=8, so the batch axis has to be
-    genuinely dynamic rather than a fixed dimension the export baked in.
+    The runner sends one window at a time, but batch_size is a session option,
+    so the batch axis has to stay dynamic rather than a fixed dimension the
+    export baked in.
     """
     backend = _load_backend()
     rng = np.random.default_rng(0)

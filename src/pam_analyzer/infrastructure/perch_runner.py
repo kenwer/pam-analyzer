@@ -193,6 +193,11 @@ class PerchRunner(BaseAnalysisRunner):
 
         n_workers is set rather than left at the lib's default of one worker
         per core, so that each worker's session gets THREADS_PER_WORKER threads.
+
+        batch_size is 1 because a two-thread worker ran 93-97 seg/s at batch 1
+        against 83-85 at batch 8 and 82-83 at batch 2 (246 files, 14 cores),
+        at the same memory. The lib only splits batches into rows for
+        single-threaded workers, so this runner has to ask for it.
         """
         return model.predict_session(
             default_confidence_threshold=_perch_logit_threshold(settings.min_conf),
@@ -202,7 +207,7 @@ class PerchRunner(BaseAnalysisRunner):
             apply_sigmoid=False,
             n_producers=1,
             n_workers=workers_for(THREADS_PER_WORKER),
-            batch_size=8,
+            batch_size=1,
             show_stats="progress",
             progress_callback=on_stats,
             max_n_files=files_total,

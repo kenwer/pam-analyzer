@@ -29,18 +29,10 @@ from typing import Any, ClassVar
 
 from ..domain import AnalysisSettings, ModelInfo
 from . import birdnet_2_4_convert, birdnet_2_4_taxonomy, birdnet_3_0_taxonomy
-from ._analysis_helpers import workers_for
 from .base_analysis_runner import BaseAnalysisRunner
 from .model_store import Artifact, ModelPackage
 
 MODEL_KEY = "BirdNET-2.4"
-
-# v2.4 runs fastest on half as many workers as the machine has cores, two
-# onnxruntime threads each. Over 243 one-minute files on 14 cores that measured
-# 334-362 seg/s at 4.3 GiB against 293-310 seg/s at 8.8 GiB for the lib's
-# default of one single-threaded worker per core. v3.0 lands the other way and
-# keeps the default.
-THREADS_PER_WORKER = 2
 
 
 def _artifacts() -> tuple[Artifact, ...]:
@@ -126,8 +118,12 @@ class Birdnet24Runner(BaseAnalysisRunner):
         most 7 classes clear the threshold in any one segment. It would hold at
         25, and stays at 50 to keep one cap across all three runners.
 
-        n_workers is set rather than left at the lib's default of one worker
-        per core, so that each worker's session gets THREADS_PER_WORKER threads.
+        n_workers stays at the lib's default of one single-threaded worker per
+        physical core, the same split as v3.0. Since birdnet 1.6.0 such a worker
+        runs its batch one row at a time. On 246 files and 14 cores that
+        measured 501-517 seg/s at 5.2 GiB against 390-404 seg/s at 3.0 GiB for
+        half as many workers with two threads each, the split this runner used
+        before.
         """
         return model.predict_session(
             default_confidence_threshold=settings.min_conf,
@@ -137,7 +133,7 @@ class Birdnet24Runner(BaseAnalysisRunner):
             apply_sigmoid=True,
             sigmoid_sensitivity=1.0,
             n_producers=1,
-            n_workers=workers_for(THREADS_PER_WORKER),
+            n_workers=None,
             batch_size=8,
             show_stats="progress",
             progress_callback=on_stats,

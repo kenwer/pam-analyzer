@@ -1,4 +1,4 @@
-"""Tests for workers_for, the worker split the v2.4 and Perch runners share.
+"""Tests for workers_for, the worker split the Perch runner uses.
 
 Both properties fail silently: every detection stays the same and only
 throughput or memory moves.
@@ -10,17 +10,13 @@ import psutil
 import pytest
 from birdnet.core.backends import cpu_threads_per_worker
 
-from pam_analyzer.infrastructure import birdnet_2_4_runner, perch_runner
+from pam_analyzer.infrastructure import perch_runner
 from pam_analyzer.infrastructure._analysis_helpers import workers_for
 
-RUNNER_SPLITS = pytest.mark.parametrize(
-    "threads",
-    [birdnet_2_4_runner.THREADS_PER_WORKER, perch_runner.THREADS_PER_WORKER],
-    ids=["v2.4", "perch"],
-)
+RUNNER_SPLITS = pytest.mark.parametrize("threads", [perch_runner.THREADS_PER_WORKER], ids=["perch"])
 
 # The minimum, an odd count (CI runners have shipped with 3 physical cores),
-# an exact multiple of both splits, and a developer machine
+# an exact multiple of the split, and a developer machine
 CORE_COUNTS = pytest.mark.parametrize("cores", [1, 3, 4, 14], indirect=True)
 
 

@@ -125,8 +125,7 @@ class Birdnet30Runner(BaseAnalysisRunner):
         (fewer if memory runs short), and the lib gives each session
         cores // n_workers threads, so one each. v3.0 measured fastest that way,
         losing about 20% on a cold machine when the same threads were regrouped
-        into fewer, wider workers. v2.4 prefers the opposite split and sets its
-        own, which is why the two runners differ here.
+        into fewer, wider workers. v2.4 keeps the same default.
         """
         return model.predict_session(
             default_confidence_threshold=settings.min_conf,

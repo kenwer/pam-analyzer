@@ -146,7 +146,9 @@ def test_acoustic_batching_does_not_change_scores(acoustic, reference) -> None:
     """A window scores the same whether analysed alone or inside a batch.
 
     The runner opens its session with batch_size=8 while the reference is a
-    single window, so the batch axis has to be genuinely dynamic. The TFLite
+    single window. A worker with more than one thread, which the lib gives
+    each worker when memory caps their number, runs the whole batch at once,
+    so the batch axis has to be genuinely dynamic. The TFLite
     graph it replaced was pinned to batch 1 and resized by the interpreter,
     which ONNX has no equivalent for.
     """
