@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import polars as pl
-from PySide6.QtCore import QItemSelectionModel, QLocale, QModelIndex, QPoint, Qt, QTimer, Signal
+from PySide6.QtCore import QAbstractProxyModel, QItemSelectionModel, QLocale, QModelIndex, QPoint, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QGuiApplication, QKeySequence, QPainter, QPalette, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -88,7 +88,8 @@ class _PlayDelegate(QStyledItemDelegate):
             style.drawControl(QStyle.ControlElement.CE_ItemViewItem, option, painter, widget)
 
         # Determine icon based on whether this row's file is playing
-        table = option.widget  # MultiColumnSortTable
+        table = option.widget
+        assert isinstance(table, MultiColumnSortTable)
         src_row = table.mapToSourceRow(index.row())
         file = self._model.value_at(src_row, "File") if self._model else None
         playing = bool(file) and bool(self._playing_file) and file == self._playing_file
@@ -500,6 +501,7 @@ class DetectionTable(QWidget):
             store, row_id = self._current_row
             src_row = self._model.visible_row_of(row_id) if store is self._model.store else None
             if src_row is not None:
+                assert isinstance(proxy, QAbstractProxyModel)
                 proxy_index = proxy.mapFromSource(self._model.index(src_row, 0))
                 self._suppressing_row_change = True
                 try:

@@ -3,9 +3,11 @@ from __future__ import (
 )
 
 from collections.abc import Iterable
+from typing import Protocol, runtime_checkable
 
 from PySide6.QtCore import (
     QAbstractItemModel,
+    QAbstractProxyModel,
     QItemSelectionModel,
     QModelIndex,
     QObject,
@@ -24,12 +26,17 @@ from PySide6.QtWidgets import (
 # SortKey: a (column_index, sort_order) pair used throughout this module.
 type SortKey = tuple[int, Qt.SortOrder]
 
-_ARROWS: dict[Qt.SortOrder, str] = {Qt.AscendingOrder: "↑", Qt.DescendingOrder: "↓"}
+_ARROWS: dict[Qt.SortOrder, str] = {Qt.SortOrder.AscendingOrder: "↑", Qt.SortOrder.DescendingOrder: "↓"}
 
 
 def _toggled(order: Qt.SortOrder) -> Qt.SortOrder:
     """Toggle order between ascending and descending."""
-    return Qt.DescendingOrder if order == Qt.AscendingOrder else Qt.AscendingOrder
+    return Qt.SortOrder.DescendingOrder if order == Qt.SortOrder.AscendingOrder else Qt.SortOrder.AscendingOrder
+
+
+@runtime_checkable
+class _SortsByPriority(Protocol):
+    def sort_by_priority(self, priority: list[SortKey]) -> None: ...
 
 
 class _MultiSortProxy(QSortFilterProxyModel):
@@ -64,13 +71,13 @@ class _MultiSortProxy(QSortFilterProxyModel):
         new_cols = {c for c, _ in self._priority}
 
         data_model = self._data_model()
-        if data_model is not None and hasattr(data_model, "sort_by_priority"):
+        if isinstance(data_model, _SortsByPriority):
             data_model.sort_by_priority(priority)
             self.sort(-1)  # data already ordered; proxy passes through
         else:
             # Fallback: Qt proxy sort via lessThan.
             if priority:
-                self.sort(0, Qt.AscendingOrder)
+                self.sort(0, Qt.SortOrder.AscendingOrder)
                 self.invalidate()
             else:
                 self.sort(-1)
@@ -79,7 +86,7 @@ class _MultiSortProxy(QSortFilterProxyModel):
         # (newly sorted, newly unsorted, or rank/direction shifted).
         affected = old_cols | new_cols
         for col in affected:
-            self.headerDataChanged.emit(Qt.Horizontal, col, col)
+            self.headerDataChanged.emit(Qt.Orientation.Horizontal, col, col)
 
     def _data_model(self):
         """Walk through any proxy chain to return the underlying data model."""
@@ -91,7 +98,7 @@ class _MultiSortProxy(QSortFilterProxyModel):
             src = inner
         return src
 
-    def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.DisplayRole):
+    def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.ItemDataRole.DisplayRole):
         """Return the header label, decorated with the sort rank for sorted columns.
 
         Vertical headers return sequential 1-based row numbers in display
@@ -100,18 +107,18 @@ class _MultiSortProxy(QSortFilterProxyModel):
         report a left-aligned text alignment so the title text stays put
         when the suffix is added or removed (matches AG Grid).
         """
-        if orientation == Qt.Vertical and role == Qt.DisplayRole:
+        if orientation == Qt.Orientation.Vertical and role == Qt.ItemDataRole.DisplayRole:
             return section + 1
-        if orientation == Qt.Horizontal:
-            if role == Qt.DisplayRole:
+        if orientation == Qt.Orientation.Horizontal:
+            if role == Qt.ItemDataRole.DisplayRole:
                 base = super().headerData(section, orientation, role)
                 for rank, (col, order) in enumerate(self._priority):
                     if col == section:
                         suffix = f"{rank + 1}{_ARROWS[order]}"
                         return f"{base}  {suffix}" if base else suffix
                 return base
-            if role == Qt.TextAlignmentRole:
-                return int(Qt.AlignLeft | Qt.AlignVCenter)
+            if role == Qt.ItemDataRole.TextAlignmentRole:
+                return int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         return super().headerData(section, orientation, role)
 
     def lessThan(self, left: QModelIndex, right: QModelIndex) -> bool:
@@ -123,8 +130,8 @@ class _MultiSortProxy(QSortFilterProxyModel):
         """
         src = self.sourceModel()
         for col, order in self._priority:
-            ldata = src.data(src.index(left.row(), col), Qt.DisplayRole)
-            rdata = src.data(src.index(right.row(), col), Qt.DisplayRole)
+            ldata = src.data(src.index(left.row(), col), Qt.ItemDataRole.DisplayRole)
+            rdata = src.data(src.index(right.row(), col), Qt.ItemDataRole.DisplayRole)
             if ldata is None and rdata is None:
                 cmp = 0
             elif ldata is None:
@@ -137,7 +144,7 @@ class _MultiSortProxy(QSortFilterProxyModel):
                 except (ValueError, TypeError):
                     cmp = (str(ldata) > str(rdata)) - (str(ldata) < str(rdata))
             if cmp != 0:
-                return (cmp < 0) if order == Qt.AscendingOrder else (cmp > 0)
+                return (cmp < 0) if order == Qt.SortOrder.AscendingOrder else (cmp > 0)
         return False
 
 
@@ -194,12 +201,11 @@ class _MultiSortHeaderView(QHeaderView):
         proxy = self.model()
         if proxy is None:
             return base
-        get_source = getattr(proxy, "sourceModel", None)
-        src_model = get_source() if callable(get_source) else None
+        src_model = proxy.sourceModel() if isinstance(proxy, QAbstractProxyModel) else None
         if src_model is None:
             return base
-        decorated = str(proxy.headerData(logical_index, Qt.Horizontal, Qt.DisplayRole) or "")
-        plain = str(src_model.headerData(logical_index, Qt.Horizontal, Qt.DisplayRole) or "")
+        decorated = str(proxy.headerData(logical_index, Qt.Orientation.Horizontal, Qt.ItemDataRole.DisplayRole) or "")
+        plain = str(src_model.headerData(logical_index, Qt.Orientation.Horizontal, Qt.ItemDataRole.DisplayRole) or "")
         fm = self.fontMetrics()
         reservation = fm.horizontalAdvance(self._SUFFIX_TEMPLATE)
         already_counted = fm.horizontalAdvance(decorated) - fm.horizontalAdvance(plain)
@@ -253,7 +259,7 @@ class MultiColumnSortTable(QTableView):
         self._proxy = _MultiSortProxy(self)
         super().setModel(self._proxy)
 
-        self._header = _MultiSortHeaderView(Qt.Horizontal, self)
+        self._header = _MultiSortHeaderView(Qt.Orientation.Horizontal, self)
         self.setHorizontalHeader(self._header)
         self._header.setSelectionModel(QItemSelectionModel(self._proxy, self._header))
         self._header.setSectionsMovable(True)
@@ -300,6 +306,9 @@ class MultiColumnSortTable(QTableView):
         self._priority = list(priority)
         self._apply_sort()
 
+    def horizontalHeader(self) -> _MultiSortHeaderView:
+        return self._header
+
     def mapToSourceRow(self, proxy_row: int) -> int:
         """Return the source-model row index for a row in the view."""
         src_idx = self._proxy.mapToSource(self._proxy.index(proxy_row, 0))
@@ -322,20 +331,20 @@ class MultiColumnSortTable(QTableView):
             None,
         )
 
-        if modifiers & Qt.ShiftModifier:
+        if modifiers & Qt.KeyboardModifier.ShiftModifier:
             # Shift+click: add column, or toggle direction if already present.
             if existing is not None:
                 col, order = self._priority[existing]
                 self._priority[existing] = (col, _toggled(order))
             else:
-                self._priority.append((logical_index, Qt.AscendingOrder))
+                self._priority.append((logical_index, Qt.SortOrder.AscendingOrder))
         else:
             # Plain click: single-column sort. Toggle direction if already the sole key.
             if existing == 0 and len(self._priority) == 1:
                 col, order = self._priority[0]
                 self._priority = [(col, _toggled(order))]
             else:
-                self._priority = [(logical_index, Qt.AscendingOrder)]
+                self._priority = [(logical_index, Qt.SortOrder.AscendingOrder)]
 
         self._apply_sort()
 

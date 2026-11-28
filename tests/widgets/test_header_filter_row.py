@@ -25,7 +25,7 @@ def test_filter_row_follows_columns_resized_to_contents(qtbot) -> None:
     qtbot.wait(10)
     table.resizeColumnsToContents()
 
-    model.setHeaderData(1, Qt.Horizontal, "B with a much longer header")
+    model.setHeaderData(1, Qt.Orientation.Horizontal, "B with a much longer header")
     table.resizeColumnsToContents()
 
     header = table.horizontalHeader()

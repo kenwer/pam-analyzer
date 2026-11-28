@@ -44,9 +44,9 @@ _AUTOSAVE_DEBOUNCE_MS = 500
 # current model at apply time, so an entry referring to a column the model
 # doesn't expose is silently dropped.
 _DEFAULT_SORT_PRIORITY: list[tuple[str, Qt.SortOrder]] = [
-    ("ARU", Qt.AscendingOrder),
-    ("Species", Qt.AscendingOrder),
-    ("Confidence", Qt.DescendingOrder),
+    ("ARU", Qt.SortOrder.AscendingOrder),
+    ("Species", Qt.SortOrder.AscendingOrder),
+    ("Confidence", Qt.SortOrder.DescendingOrder),
 ]
 
 # Spread choices as (label, key, tooltip). The None key ranks the whole group together.

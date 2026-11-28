@@ -311,21 +311,21 @@ class DetectionsTableModel(QAbstractTableModel):
     def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: B008
         return 0 if parent.isValid() else len(self._columns)
 
-    def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.DisplayRole) -> Any:
-        if role != Qt.DisplayRole:
+    def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+        if role != Qt.ItemDataRole.DisplayRole:
             return None
-        if orientation == Qt.Horizontal and 0 <= section < len(self._columns):
+        if orientation == Qt.Orientation.Horizontal and 0 <= section < len(self._columns):
             header = self._columns[section].name
             # The play column is rendered by a delegate; show no header text.
             return "" if header == "_play" else header
-        if orientation == Qt.Vertical:
+        if orientation == Qt.Orientation.Vertical:
             return section + 1
         return None
 
-    def data(self, index: QModelIndex, role: int = Qt.DisplayRole) -> Any:
+    def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
         if not index.isValid():
             return None
-        if role not in (Qt.DisplayRole, Qt.EditRole):
+        if role not in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
             return None
         row, col = index.row(), index.column()
         if not (0 <= row < len(self._visible) and 0 <= col < len(self._columns)):
@@ -335,16 +335,16 @@ class DetectionsTableModel(QAbstractTableModel):
         value = self._store.frame.get_column(self._columns[col].name)[self._visible[row]]
         return "" if value is None else value
 
-    def flags(self, index: QModelIndex) -> Qt.ItemFlags:
+    def flags(self, index: QModelIndex) -> Qt.ItemFlag:
         flags = super().flags(index)
         if not index.isValid():
             return flags
         if self._columns[index.column()].editable:
-            flags |= Qt.ItemIsEditable
+            flags |= Qt.ItemFlag.ItemIsEditable
         return flags
 
-    def setData(self, index: QModelIndex, value: Any, role: int = Qt.EditRole) -> bool:
-        if role != Qt.EditRole or not index.isValid():
+    def setData(self, index: QModelIndex, value: Any, role: int = Qt.ItemDataRole.EditRole) -> bool:
+        if role != Qt.ItemDataRole.EditRole or not index.isValid():
             return False
         col = self._columns[index.column()]
         if not col.editable:
@@ -368,7 +368,7 @@ class DetectionsTableModel(QAbstractTableModel):
         except ValueError:
             return False
         col = self.index_of(name)
-        self.dataChanged.emit(self.index(first, col), self.index(last, col), [Qt.DisplayRole, Qt.EditRole])
+        self.dataChanged.emit(self.index(first, col), self.index(last, col), [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
         return True
 
     # MultiColumnSortTable fast path

@@ -57,7 +57,7 @@ class _FakeRunner:
         return AnalysisRunResult(status=RunStatus.COMPLETED)
 
 
-def _runners() -> dict[str, object]:
+def _runners() -> dict[str, _FakeRunner]:
     """Both shipped engines, in the order the real app registers them.
 
     The first key is the panel's default selection, so keeping v3.0 first
@@ -68,6 +68,12 @@ def _runners() -> dict[str, object]:
         DEFAULT_MODEL_KEY: _FakeRunner(DEFAULT_MODEL_KEY),
         ALT_MODEL_KEY: _FakeRunner(ALT_MODEL_KEY),
     }
+
+
+def _fake_runner(panel: BirdNetPanel) -> _FakeRunner:
+    runner = panel._runner
+    assert isinstance(runner, _FakeRunner)
+    return runner
 
 
 def _make_panel(state: AppState, runners: dict[str, object] | None = None) -> BirdNetPanel:
@@ -317,7 +323,7 @@ def test_run_over_reviewed_detections_runs_when_confirmed(
     asked, answers = questions
     answers[0] = QMessageBox.StandardButton.Yes
     _select_campaign(panel, "__all__")
-    panel._runner.release.set()
+    _fake_runner(panel).release.set()
 
     panel.ui.run_button.click()
 
@@ -337,7 +343,7 @@ def test_run_does_not_ask_without_reviews_of_the_selected_model(
     _write_reviewed_csv(campaigns[0].folder, ALT_MODEL_KEY, ["true"])
     asked, _ = questions
     _select_campaign(panel, "alpha")
-    panel._runner.release.set()
+    _fake_runner(panel).release.set()
 
     panel.ui.run_button.click()
 
@@ -596,7 +602,7 @@ def test_run_download_updates_the_progress_page(panel: BirdNetPanel):
 
 
 def test_info_refreshes_after_run(panel: BirdNetPanel):
-    runner = panel._runner
+    runner = _fake_runner(panel)
     runner.download_bytes = 5 * 1024 * 1024
     panel._refresh_model_status()
     assert panel._model_status.status_label.text().startswith("Model not downloaded")
@@ -645,7 +651,7 @@ def test_download_link_downloads_in_the_background(qtbot, missing_panel: BirdNet
     qtbot.waitUntil(lambda: _status(missing_panel) == "Downloading model 3 / 10 MB", timeout=5000)
     assert missing_panel.ui.model_combo.isEnabled()
     assert missing_panel._model_status.action_button.text() == "Cancel"
-    missing_panel._runner.release.set()
+    _fake_runner(missing_panel).release.set()
     qtbot.waitUntil(lambda: _status(missing_panel) == "", timeout=5000)
     assert missing_panel._model_status.action_button.isHidden()
 
@@ -671,9 +677,9 @@ def test_cancel_link_stops_the_download(qtbot, missing_panel: BirdNetPanel):
 
 
 def test_failed_download_toasts_and_offers_the_link_again(qtbot, missing_panel: BirdNetPanel, toasts):
-    missing_panel._runner.download_error = "huggingface.co answered 503 Service Unavailable."
+    _fake_runner(missing_panel).download_error = "huggingface.co answered 503 Service Unavailable."
     missing_panel._model_status.downloadRequested.emit()
-    missing_panel._runner.release.set()
+    _fake_runner(missing_panel).release.set()
     qtbot.waitUntil(lambda: bool(toasts), timeout=5000)
     [(kind, title, text, _kwargs)] = toasts
     assert kind == "warning"
@@ -691,7 +697,7 @@ def test_run_takes_over_a_background_download(qtbot, missing_panel: BirdNetPanel
     qtbot.waitUntil(lambda: not missing_panel._downloads.labels(), timeout=5000)
     expected = f"Downloading {DEFAULT_MODEL_KEY} model  ·  3 / 10 MB"
     qtbot.waitUntil(lambda: missing_panel.ui.progress_label.text() == expected, timeout=5000)
-    missing_panel._runner.release.set()
+    _fake_runner(missing_panel).release.set()
     qtbot.waitUntil(lambda: not missing_panel.is_busy(), timeout=5000)
 
 

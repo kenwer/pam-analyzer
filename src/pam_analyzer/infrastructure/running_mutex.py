@@ -47,6 +47,8 @@ def other_instance_running() -> bool:
 def _kernel32():
     import ctypes
 
+    # Tells the type checkers that WinDLL exists here, the callers only reach this on Windows
+    assert sys.platform == "win32"
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel32.CreateMutexW.restype = ctypes.c_void_p
     kernel32.OpenMutexW.restype = ctypes.c_void_p

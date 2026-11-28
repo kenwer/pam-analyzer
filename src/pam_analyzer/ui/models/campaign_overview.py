@@ -30,10 +30,9 @@ def _muted() -> str:
     to a fixed grey when no application exists, which is how the formatting
     tests import this module.
     """
-    app = QApplication.instance()
-    if app is None:
+    if QApplication.instance() is None:
         return "rgba(136, 136, 136, 255)"
-    colour = app.palette().color(QPalette.ColorRole.PlaceholderText)
+    colour = QApplication.palette().color(QPalette.ColorRole.PlaceholderText)
     return f"rgba({colour.red()}, {colour.green()}, {colour.blue()}, {colour.alpha()})"
 
 

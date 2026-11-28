@@ -1122,7 +1122,7 @@ def test_edit_then_sort_sees_new_value(panel: ExaminePanel) -> None:
     last = panel._model.rowCount() - 1
     target = panel._model.row_id_at(last)
     assert panel._model.setData(panel._model.index(last, col), "aaa")
-    panel._model.sort_by_priority([(col, Qt.DescendingOrder)])
+    panel._model.sort_by_priority([(col, Qt.SortOrder.DescendingOrder)])
     assert panel._model.row_id_at(0) == target
 
 

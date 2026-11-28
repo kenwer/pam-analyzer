@@ -95,6 +95,7 @@ typeCheckingMode = "off"
 reportRedeclaration = "error"
 reportCallIssue = "error"
 reportOptionalMemberAccess = "error"
+reportAttributeAccessIssue = "error"
 
 [tool.poe.tasks]
 compile-ui = { cmd = "python scripts/compile_ui.py", help = "Compile Qt Designer .ui files to ui_*.py modules" }

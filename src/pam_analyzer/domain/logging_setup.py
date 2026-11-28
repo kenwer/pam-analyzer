@@ -13,6 +13,7 @@ timings.
 import logging
 import logging.handlers
 from collections import deque
+from dataclasses import dataclass
 from pathlib import Path
 
 BUFFER_CAPACITY = 2000
@@ -28,6 +29,12 @@ _level = logging.WARNING
 _locked = False
 
 
+@dataclass(slots=True)
+class _BufferedRecord:
+    record: logging.LogRecord
+    written: bool
+
+
 class RingBufferHandler(logging.Handler):
     """Holds recent records so a lower level can replay the ones not yet written.
 
@@ -37,7 +44,7 @@ class RingBufferHandler(logging.Handler):
 
     def __init__(self, capacity: int = BUFFER_CAPACITY) -> None:
         super().__init__(level=logging.DEBUG)
-        self._records: deque[logging.LogRecord] = deque(maxlen=capacity)
+        self._records: deque[_BufferedRecord] = deque(maxlen=capacity)
         self._floor = logging.CRITICAL
 
     def set_floor(self, level: int) -> None:
@@ -50,8 +57,7 @@ class RingBufferHandler(logging.Handler):
             # lifetime. Render it now and drop the reference.
             record.exc_text = logging.Formatter().formatException(record.exc_info)
             record.exc_info = None
-        record.pam_written = record.levelno >= self._floor
-        self._records.append(record)
+        self._records.append(_BufferedRecord(record, written=record.levelno >= self._floor))
 
     def replay_to(self, handler: logging.Handler) -> None:
         """Write every buffered record the handler's level accepts and the log lacks.
@@ -59,10 +65,10 @@ class RingBufferHandler(logging.Handler):
         Handler.handle does not check the level itself, so the comparison is
         made here.
         """
-        for record in list(self._records):
-            if not record.pam_written and record.levelno >= handler.level:
-                handler.handle(record)
-                record.pam_written = True
+        for entry in list(self._records):
+            if not entry.written and entry.record.levelno >= handler.level:
+                handler.handle(entry.record)
+                entry.written = True
 
 
 def configure(log_file: Path, level: int, *, locked: bool = False) -> None:

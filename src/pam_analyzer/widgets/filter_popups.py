@@ -227,11 +227,14 @@ class SetPopup(QWidget):
         self.applyRequested.emit("; ".join(self.checked_values()))
 
 
+type FilterPopup = SingleDatePopup | DateRangePopup | TimeRangePopup | SetPopup
+
+
 def create_popup(
     op: FilterOp,
     current_text: str,
     values_provider: Callable[[], list[str]] | None = None,
-) -> QWidget | None:
+) -> FilterPopup | None:
     """Build the editor popup for *op*, prefilled from *current_text*.
 
     Returns None for ops without a popup editor.
@@ -249,7 +252,7 @@ def create_popup(
 
 
 def show_filter_popup(
-    widget: QWidget,
+    widget: FilterPopup,
     anchor: QWidget,
     on_apply: Callable[[str], None],
 ) -> None:

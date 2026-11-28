@@ -1,14 +1,22 @@
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, cast
 
-from PySide6.QtCore import QSettings, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import QSettings, QTimer, QUrl, Signal, SignalInstance, Slot
 from PySide6.QtGui import QShowEvent
 from PySide6.QtNetwork import QSslSocket
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 if TYPE_CHECKING:
     from PySide6.QtQuickWidgets import QQuickWidget
+
+
+class _MapRoot(Protocol):
+    """The signals map_picker.qml declares on its root item."""
+
+    locationPicked: SignalInstance
+    zoomChanged: SignalInstance
+
 
 _ZOOM_KEY = "map/zoom_level"
 _DEFAULT_ZOOM = 10.0
@@ -52,7 +60,7 @@ class MapPickerWidget(QWidget):
         qw = QQuickWidget()  # No parent yet, see showEvent()
         qw.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
         qw.setSource(QUrl.fromLocalFile(str(_resolve_qml_path())))
-        root = qw.rootObject()
+        root = cast("_MapRoot | None", qw.rootObject())
         if root:
             root.locationPicked.connect(self._on_location_picked)
             root.zoomChanged.connect(self._on_zoom_changed)

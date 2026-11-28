@@ -62,13 +62,13 @@ class _StubRunner(BaseAnalysisRunner):
 
     model_key = "Stub-1.0"
     log_prefix = "stub"
+    package = ModelPackage(_STUB_INFO, lambda: (), lambda: None)
 
-    def __init__(self, fail_on: str | None = None, artifacts: tuple[Artifact, ...] = ()) -> None:
+    def __init__(self, fail_on: str | None = None) -> None:
         self.ran: list[str] = []
         self.events: list[str] = []
         self._fail_on = fail_on
         self.loaded = False
-        self.package = ModelPackage(_STUB_INFO, lambda: artifacts, lambda: self.events.append("prepare"))
 
     def _load_model(self) -> Any:
         self.loaded = True
@@ -200,9 +200,19 @@ def _served_artifact(server, tmp_path: Path, path: str = "/w.onnx") -> Artifact:
     )
 
 
+def _serving(*artifacts: Artifact) -> _StubRunner:
+    """A stub runner whose package downloads *artifacts* and records its prepare step."""
+
+    class _ServingRunner(_StubRunner):
+        package = ModelPackage(_STUB_INFO, lambda: artifacts, lambda: runner.events.append("prepare"))
+
+    runner = _ServingRunner()
+    return runner
+
+
 def test_install_model_downloads_and_prepares_without_loading(tmp_path: Path, local_http_server) -> None:
     artifact = _served_artifact(local_http_server, tmp_path)
-    runner = _StubRunner(artifacts=(artifact,))
+    runner = _serving(artifact)
     assert runner.missing_download_bytes() == len(_WEIGHTS)
     calls: list[tuple[int, int]] = []
     runner.install_model(lambda done, total: calls.append((done, total)), lambda: False)
@@ -215,12 +225,12 @@ def test_failed_install_names_the_engine(tmp_path: Path, local_http_server) -> N
     artifact = _served_artifact(local_http_server, tmp_path)
     local_http_server.routes["/w.onnx"] = Route(b"", status=503)
     with pytest.raises(DownloadError, match=r"^Downloading Stub 1\.0 failed: .*503.*\. Check the internet"):
-        _StubRunner(artifacts=(artifact,)).install_model(lambda *_: None, lambda: False)
+        _serving(artifact).install_model(lambda *_: None, lambda: False)
 
 
 def test_run_does_not_download(tmp_path: Path, local_http_server) -> None:
     """The worker installs the model first, so run() goes straight to loading it."""
-    runner = _StubRunner(artifacts=(_served_artifact(local_http_server, tmp_path),))
+    runner = _serving(_served_artifact(local_http_server, tmp_path))
     result = _run(runner, _campaigns(tmp_path, ["a"]), _CountingProgress())
     assert result.status is RunStatus.COMPLETED
     assert runner.events == ["load"]

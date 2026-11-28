@@ -13,7 +13,7 @@ from PySide6.QtCore import QCoreApplication, QSettings, Qt, QThread
 from PySide6.QtGui import QCloseEvent
 
 from pam_analyzer.domain import AnalysisRunResult, RunStatus
-from pam_analyzer.infrastructure import AudioImporter
+from pam_analyzer.infrastructure import AudioImporter, ProjectLoadResult
 from pam_analyzer.ui import toasts as toasts_module
 from pam_analyzer.ui.app_state import AppState
 from pam_analyzer.ui.main_window import MainWindow
@@ -118,9 +118,10 @@ def load_project(qtbot):
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
 
-        outcome: dict[str, object] = {}
-        worker.succeeded.connect(lambda result: outcome.__setitem__("result", result))
-        worker.failed.connect(lambda message: outcome.__setitem__("error", message))
+        loaded: list[ProjectLoadResult] = []
+        errors: list[str] = []
+        worker.succeeded.connect(lambda result: loaded.append(result))
+        worker.failed.connect(lambda message: errors.append(message))
         # DirectConnection: quit() runs inline on the worker thread as run()
         # returns, so exec() (entered right after) sees the quit request
         # immediately instead of blocking on the test's event loop.
@@ -133,9 +134,9 @@ def load_project(qtbot):
         worker.deleteLater()
         thread.deleteLater()
 
-        if "error" in outcome:
-            raise RuntimeError(outcome["error"])
-        result = outcome["result"]
+        if errors:
+            raise RuntimeError(errors[0])
+        (result,) = loaded
         state.apply_loaded_project(
             result.project, result.campaigns, result.audio_inventory, result.analysis_inventory
         )

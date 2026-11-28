@@ -63,7 +63,7 @@ class ComboDelegate(QStyledItemDelegate):
     def setEditorData(self, editor: QWidget, index: QModelIndex) -> None:
         if not isinstance(editor, QComboBox):
             return
-        value = "" if index.data(Qt.EditRole) is None else str(index.data(Qt.EditRole))
+        value = "" if index.data(Qt.ItemDataRole.EditRole) is None else str(index.data(Qt.ItemDataRole.EditRole))
         pos = editor.findText(value)
         editor.setCurrentIndex(pos if pos >= 0 else 0)
 
@@ -72,7 +72,7 @@ class ComboDelegate(QStyledItemDelegate):
     ) -> None:
         if not isinstance(editor, QComboBox):
             return
-        model.setData(index, editor.currentText(), Qt.EditRole)
+        model.setData(index, editor.currentText(), Qt.ItemDataRole.EditRole)
 
     def updateEditorGeometry(
         self, editor: QWidget, option: QStyleOptionViewItem, index: QModelIndex

@@ -32,6 +32,18 @@ class UpdateState(Enum):
     READY = auto()
 
 
+class _WorkerThread(ReadOnlyThread):
+    """A thread that holds its worker.
+
+    Python alone owns the worker and frees it with the thread, once that has
+    finished. A worker.deleteLater would race that from the worker thread.
+    """
+
+    def __init__(self, worker: QObject, parent: QObject) -> None:
+        super().__init__(parent)
+        self.worker = worker
+
+
 class UpdateController(QObject):
     def __init__(
         self,
@@ -139,11 +151,8 @@ class UpdateController(QObject):
         if self._apply_on_exit and self._install is not None and self._payload is not None:
             self._install.apply(self._payload)
 
-    def _start(self, worker: QObject, *done: SignalInstance) -> ReadOnlyThread:
-        thread = ReadOnlyThread(self)
-        # Python alone owns the worker and frees it with the thread, once that
-        # has finished. A worker.deleteLater would race that from the worker thread.
-        thread.worker = worker
+    def _start(self, worker: UpdateCheckWorker | UpdateDownloadWorker, *done: SignalInstance) -> ReadOnlyThread:
+        thread = _WorkerThread(worker, self)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         for signal in done:

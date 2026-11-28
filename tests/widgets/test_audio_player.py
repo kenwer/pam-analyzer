@@ -76,7 +76,7 @@ def _panel_with_player(qtbot, monkeypatch) -> tuple[AudioPlayerPanel, _FfmpegLik
     qtbot.addWidget(panel)
     monkeypatch.setattr(panel._spectrogram, "set_audio", lambda *args, **kwargs: None)
     player = _FfmpegLikePlayer(panel)
-    panel._player = player
+    monkeypatch.setattr(panel, "_player", player)
     return panel, player
 
 

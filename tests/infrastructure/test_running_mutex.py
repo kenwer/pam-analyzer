@@ -12,6 +12,7 @@ _SYNCHRONIZE = 0x00100000
 def test_mutex_is_visible_while_held_and_gone_after_close() -> None:
     import ctypes
 
+    assert sys.platform == "win32"
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel32.OpenMutexW.restype = ctypes.c_void_p
     kernel32.CloseHandle.argtypes = [ctypes.c_void_p]

@@ -228,7 +228,7 @@ class SpectrogramWidget(QWidget):
         if seq != self._render_seq:
             return  # superseded by a newer request
         h, w = rgba.shape[:2]
-        self._pixmap = QPixmap.fromImage(QImage(rgba.data, w, h, QImage.Format_RGBA8888).copy())
+        self._pixmap = QPixmap.fromImage(QImage(rgba.data, w, h, QImage.Format.Format_RGBA8888).copy())
         self._total_s = total_s
         self.update()
 

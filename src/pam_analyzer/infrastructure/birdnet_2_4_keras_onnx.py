@@ -264,6 +264,8 @@ def build(h5_path: Path, output_layer: str) -> onnx.ModelProto:
     with h5py.File(h5_path, "r") as f:
         config = json.loads(f.attrs["model_config"])["config"]
         weights_root = f["model_weights"]
+        if not isinstance(weights_root, h5py.Group):
+            raise ValueError("model_weights is not an HDF5 group")
         b = GraphBuilder()
         tensors: dict[str, str] = {}
         ((input_layer, *_),) = config["input_layers"]
