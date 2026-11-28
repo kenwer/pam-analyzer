@@ -104,8 +104,10 @@ def _drop_counts(caplog: pytest.LogCaptureFixture) -> tuple[int, int]:
     """(out-of-region, not-on-axis) as the run's drop summary reported them."""
     for record in caplog.records:
         if "species filter dropped" in str(record.msg):
-            _, _total, out_of_region, not_on_axis, _kept = record.args  # type: ignore[misc]
-            return int(out_of_region), int(not_on_axis)
+            assert isinstance(record.args, tuple)
+            _, _total, out_of_region, not_on_axis, _kept = record.args
+            assert isinstance(out_of_region, int) and isinstance(not_on_axis, int)
+            return out_of_region, not_on_axis
     raise AssertionError("no drop-summary log record was emitted")
 
 

@@ -47,6 +47,7 @@ import shutil
 import tempfile
 import zipfile
 from pathlib import Path
+from typing import overload
 
 import h5py
 import numpy as np
@@ -90,7 +91,7 @@ class GraphBuilder:
         self._names.add(candidate)
         return candidate
 
-    def const(self, name: str, value: np.ndarray) -> str:
+    def const(self, name: str, value: np.ndarray | np.generic) -> str:
         name = self._unique(name)
         self.initializers.append(numpy_helper.from_array(np.ascontiguousarray(value), name))
         return name
@@ -150,11 +151,15 @@ def _spatial(cfg: dict, h: int, w: int, kernel: list[int], strides: list[int]) -
     return out_h, out_w, [top, left, bottom, right]
 
 
-def _hertz_to_mel(f: np.ndarray) -> np.ndarray:
+@overload
+def _hertz_to_mel(f: np.float32) -> np.float32: ...
+@overload
+def _hertz_to_mel(f: np.ndarray) -> np.ndarray: ...
+def _hertz_to_mel(f):
     return np.float32(1127.0) * np.log(np.float32(1.0) + f / np.float32(700.0))
 
 
-def _linspace(start: float, stop: float, num: int) -> np.ndarray:
+def _linspace(start: float | np.float32, stop: float | np.float32, num: int) -> np.ndarray:
     """tf.linspace's float32 arithmetic, which np.linspace rounds differently."""
     start, stop = np.float32(start), np.float32(stop)
     step = (stop - start) / np.float32(num - 1)
@@ -250,10 +255,12 @@ def _mdata(b: GraphBuilder, cfg: dict, x: str) -> str:
     return b.op("Concat", [lat, lon, week], name, (3 * k,), axis=1)
 
 
-def _layer_weights(group: h5py.Group | None) -> dict[str, np.ndarray]:
+def _layer_weights(group: object) -> dict[str, np.ndarray]:
     """A layer's weights keyed by short name (kernel, bias, gamma, ...)."""
     if group is None:
         return {}
+    if not isinstance(group, h5py.Group):
+        raise ValueError(f"layer weights are not an HDF5 group: {group}")
     # h5py returns these as bytes or str depending on how the file was written
     paths = [w.decode() if isinstance(w, bytes) else w for w in group.attrs["weight_names"]]
     return {path.split("/")[-1].split(":")[0]: np.asarray(group[path]) for path in paths}
@@ -262,7 +269,10 @@ def _layer_weights(group: h5py.Group | None) -> dict[str, np.ndarray]:
 def build(h5_path: Path, output_layer: str) -> onnx.ModelProto:
     """Translate one Keras functional model into an ONNX graph returning output_layer."""
     with h5py.File(h5_path, "r") as f:
-        config = json.loads(f.attrs["model_config"])["config"]
+        model_config = f.attrs["model_config"]
+        if not isinstance(model_config, str | bytes):
+            raise ValueError("model_config is not a JSON string")
+        config = json.loads(model_config)["config"]
         weights_root = f["model_weights"]
         if not isinstance(weights_root, h5py.Group):
             raise ValueError("model_weights is not an HDF5 group")

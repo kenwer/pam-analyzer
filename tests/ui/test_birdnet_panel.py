@@ -2,12 +2,14 @@
 
 import dataclasses
 import threading
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
 
 from pam_analyzer.domain import (
     AnalysisProgressSnapshot,
+    AnalysisRunner,
     AnalysisRunResult,
     Campaign,
     CampaignRunResult,
@@ -47,7 +49,7 @@ class _FakeRunner:
             raise DownloadError(self.download_error)
         self.download_bytes = 0
 
-    def count_audio_files(self, _path: Path) -> int:
+    def count_audio_files(self, campaign_dir: Path) -> int:
         return 0
 
     def available_locales(self) -> list[str]:
@@ -76,7 +78,7 @@ def _fake_runner(panel: BirdNetPanel) -> _FakeRunner:
     return runner
 
 
-def _make_panel(state: AppState, runners: dict[str, object] | None = None) -> BirdNetPanel:
+def _make_panel(state: AppState, runners: Mapping[str, AnalysisRunner] | None = None) -> BirdNetPanel:
     """A panel with its own download controller, as the main window would hand it one."""
     downloads = ModelDownloads()
     p = BirdNetPanel(state, _runners() if runners is None else runners, downloads)

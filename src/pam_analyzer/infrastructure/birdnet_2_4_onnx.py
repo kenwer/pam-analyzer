@@ -44,7 +44,7 @@ catches a lib upgrade moving them.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from birdnet import MODEL_PRECISION_FP32, AcousticModelV2_4, GeoModelV2_4
 from birdnet.core.backends import (
@@ -134,7 +134,7 @@ class GeoOnnxBackendFP32V2_4(OnnxBackend, VersionedGeoBackendProtocol):
         return GEO_YEAR_ROUND_WEEK_INPUTS
 
 
-def model_path(kind: str) -> Path:
+def model_path(kind: Literal["acoustic", "geo"]) -> Path:
     """Where the converted weights live, for 'acoustic' or 'geo'.
 
     Resolved through the lib's own path helper so the converted files sit in
@@ -144,7 +144,7 @@ def model_path(kind: str) -> Path:
     return get_model_path(kind, "2.4", "onnx", MODEL_PRECISION)
 
 
-def labels(kind: str, lang: str):
+def labels(kind: Literal["acoustic", "geo"], lang: str):
     """The species list for one model and locale, as the lib's OrderedSet.
 
     Read the way the lib reads its official labels: one entry per model

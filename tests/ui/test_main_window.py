@@ -17,11 +17,12 @@ from pam_analyzer.workers import audio_inventory_refresher, project_load_worker
 from tests.conftest import (
     DEFAULT_MODEL_KEY,
     FAKE_MODEL_INFO,
+    FakeRunner,
     ImporterUntilCancelled,
     folder_card,
     wait_until_cancelled,
 )
-from tests.ui.conftest import FakeRunner, RecordingWindow, make_main_window
+from tests.ui.conftest import RecordingWindow, make_main_window
 
 
 @pytest.fixture

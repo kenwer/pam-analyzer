@@ -107,7 +107,7 @@ def _disk_usage(inventories: list[CampaignInventory]) -> str:
 def _stats(inv: CampaignInventory | CardInventory) -> str:
     unit = "file" if inv.file_count == 1 else "files"
     text = f"{inv.file_count:,} {unit}"
-    if not inv.size_pending:
+    if inv.total_bytes is not None:
         text += f" &middot; {format_bytes(inv.total_bytes)}"
     dates = _format_range(inv.date_range)
     if dates:

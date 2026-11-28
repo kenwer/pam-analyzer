@@ -61,7 +61,8 @@ class AnalysisRunner(Protocol):
     # on output CSV filenames so multiple model runs can coexist in one
     # campaign directory, and as the per-row Model column value so the
     # repo can route edits back to the right file.
-    model_key: str
+    @property
+    def model_key(self) -> str: ...
 
     @property
     def model_info(self) -> ModelInfo: ...

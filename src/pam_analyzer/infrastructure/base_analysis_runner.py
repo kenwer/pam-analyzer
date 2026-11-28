@@ -150,7 +150,7 @@ class BaseAnalysisRunner(ABC):
     may override _parse_row.
     """
 
-    model_key: ClassVar[str]
+    model_key: str
     log_prefix: ClassVar[str]
     taxonomy: ClassVar[TaxonomyServices]  # The label axis, geo filter and locale set of the model this runner loads
     package: ClassVar[ModelPackage]  # The files this engine downloads on its first run

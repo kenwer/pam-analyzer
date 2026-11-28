@@ -12,6 +12,6 @@ def read_qresource_text(path: str) -> str:
     if not qfile.open(QIODeviceBase.OpenModeFlag.ReadOnly | QIODeviceBase.OpenModeFlag.Text):
         return ""
     try:
-        return bytes(qfile.readAll()).decode("utf-8")
+        return bytes(qfile.readAll().data()).decode("utf-8")
     finally:
         qfile.close()

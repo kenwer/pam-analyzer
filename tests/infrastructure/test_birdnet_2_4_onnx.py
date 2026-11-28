@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import pickle
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 import pytest
@@ -66,7 +67,7 @@ def reference() -> dict[str, np.ndarray]:
         return {k: data[k] for k in data.files}
 
 
-def _load_backend(kind: str):
+def _load_backend(kind: Literal["acoustic", "geo"]):
     """Instantiate one of our backends the way BackendLoader does."""
     backend_type = (
         onnx_v2_4.AcousticOnnxBackendFP32V2_4 if kind == "acoustic" else onnx_v2_4.GeoOnnxBackendFP32V2_4

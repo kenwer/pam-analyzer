@@ -101,7 +101,7 @@ def _campaigns(tmp_path: Path, names: list[str]) -> list[Campaign]:
     return out
 
 
-def _run(runner: _StubRunner, campaigns: list[Campaign], progress: _CountingProgress):
+def _run(runner: BaseAnalysisRunner, campaigns: list[Campaign], progress: _CountingProgress):
     return runner.run(
         campaigns=campaigns,
         settings=AnalysisSettings(),

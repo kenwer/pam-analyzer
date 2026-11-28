@@ -9,13 +9,14 @@ tests/infrastructure/test_project_loader.py.
 from pathlib import Path
 
 import pam_analyzer.workers.project_load_worker as project_load_worker_module
+from pam_analyzer.domain import AudioInventory, Project
 from pam_analyzer.infrastructure import ProjectLoadResult
 from pam_analyzer.workers.project_load_worker import ProjectLoadWorker
 
 
 def test_run_emits_succeeded_with_bundle_result(monkeypatch, tmp_path: Path, qtbot) -> None:
     sentinel = ProjectLoadResult(
-        project=object(), campaigns=[], audio_inventory=object(), analysis_inventory=None
+        project=Project(folder=tmp_path), campaigns=[], audio_inventory=AudioInventory(), analysis_inventory=None
     )
     monkeypatch.setattr(
         project_load_worker_module, "load_project", lambda *_args, **_kwargs: sentinel

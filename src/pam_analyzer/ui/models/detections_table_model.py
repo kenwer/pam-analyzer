@@ -18,7 +18,7 @@ from collections.abc import Callable
 from typing import Any
 
 import polars as pl
-from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
+from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, Qt
 
 from ...domain import Detection, DetectionStore, SpreadKey
 from ...domain.detection_schema import COLUMNS as _SCHEMA_COLUMNS
@@ -83,7 +83,7 @@ __all__ = ["COLUMNS_BY_NAME", "DEFAULT_HIDDEN_COLUMNS", "NUMERIC_COLUMNS", "PLAY
 class DetectionsTableModel(QAbstractTableModel):
     """Table model over a DetectionStore, with column filters, a max-per cap and sort."""
 
-    def __init__(self, parent: object = None) -> None:
+    def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         # Active column list. Starts as the static set. set_store() may extend
         # it with one column per Species_<locale> column in the store frame, so

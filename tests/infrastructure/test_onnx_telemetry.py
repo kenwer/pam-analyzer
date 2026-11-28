@@ -11,6 +11,7 @@ import pickle
 import subprocess
 import sys
 import textwrap
+from pathlib import Path
 
 from birdnet.core.backends import BackendLoader, OnnxBackend
 
@@ -38,7 +39,7 @@ def test_unpickling_a_worker_payload_disables_telemetry_in_a_fresh_process() -> 
     model = onnx_telemetry.disable_in_workers(_FakeModel())
     payload = pickle.dumps(
         BackendLoader(
-            model_path=None,
+            model_path=Path("unused.onnx"),
             backend_type=OnnxBackend,
             backend_kwargs=model.backend_kwargs,
         )

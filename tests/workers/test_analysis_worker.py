@@ -45,13 +45,16 @@ class FakeRunner:
         self.install_raises = install_raises
         self.calls: list[dict] = []
 
+    def missing_download_bytes(self) -> int:
+        return 0
+
     def install_model(self, progress, cancelled) -> None:
         progress(1, 2)
         if self.install_raises is not None:
             # A fresh instance per call: a stored one would keep its traceback, and the worker with it, alive
             raise self.install_raises("example.org answered 503.")
 
-    def count_audio_files(self, _path: Path) -> int:
+    def count_audio_files(self, campaign_dir: Path) -> int:
         return 0
 
     def available_locales(self) -> list[str]:

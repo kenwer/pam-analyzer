@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path, PureWindowsPath
-from typing import ClassVar
+from typing import ClassVar, Protocol
 
 # Digit boundaries, so a recorder serial ending in digits can't donate the
 # first half of a false match like "64876836_202605".
@@ -25,6 +25,11 @@ class DetectedCard:
     mountpoint: Path
     device: str
     source: ImportSource = ImportSource.SD_CARD
+
+
+class SdCardScanner(Protocol):
+    def scan(self, name_pattern: str) -> list[DetectedCard]: ...
+    def eject(self, card: DetectedCard) -> None: ...
 
 
 class ConflictChoice(Enum):

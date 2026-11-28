@@ -192,6 +192,16 @@ def _is_blank(value: object) -> bool:
     return value is None or value == ""
 
 
+def _cell_number(value: object) -> float | None:
+    """A cell as a number, or None when it is blank or holds no number."""
+    if _is_blank(value) or not isinstance(value, int | float | str):
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
 class FilterOperator(ABC):
     """One filter operator: identity, menu metadata, and both matching forms.
 
@@ -303,12 +313,8 @@ class Equals(FilterOperator):
                 target = float(text)
             except ValueError:
                 return True
-            if _is_blank(value):
-                return False
-            try:
-                return float(value) == target
-            except (TypeError, ValueError):
-                return False
+            v = _cell_number(value)
+            return v is not None and v == target
         if value is None:
             return False
         return str(value).casefold() == text.casefold()
@@ -332,12 +338,8 @@ class NotEquals(FilterOperator):
                 target = float(text)
             except ValueError:
                 return True
-            if _is_blank(value):
-                return False
-            try:
-                return float(value) != target
-            except (TypeError, ValueError):
-                return False
+            v = _cell_number(value)
+            return v is not None and v != target
         if value is None:
             return False
         return str(value).casefold() != text.casefold()
@@ -366,13 +368,8 @@ class _NumericOperator(FilterOperator):
             target = float(text)
         except ValueError:
             return True
-        if _is_blank(value):
-            return False
-        try:
-            v = float(value)
-        except (TypeError, ValueError):
-            return False
-        return self._num(v, target)
+        v = _cell_number(value)
+        return v is not None and self._num(v, target)
 
     def _to_polars(self, col, text, kind):
         if kind is not ColumnKind.NUMERIC:
@@ -439,11 +436,8 @@ class InRange(FilterOperator):
         rng = _parse_range(text)
         if rng is None:
             return True
-        if _is_blank(value):
-            return False
-        try:
-            v = float(value)
-        except (TypeError, ValueError):
+        v = _cell_number(value)
+        if v is None:
             return False
         lo, hi = rng
         return lo <= v <= hi

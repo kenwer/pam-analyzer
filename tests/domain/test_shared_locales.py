@@ -2,9 +2,10 @@
 the shipped models can localize into, not the union."""
 
 from pam_analyzer.domain import shared_locales
+from tests.conftest import FakeRunner as _BaseFakeRunner
 
 
-class FakeRunner:
+class FakeRunner(_BaseFakeRunner):
     def __init__(self, locales: list[str]) -> None:
         self._locales = locales
 

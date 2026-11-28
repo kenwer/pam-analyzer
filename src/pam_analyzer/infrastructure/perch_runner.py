@@ -110,7 +110,7 @@ class PerchRunner(BaseAnalysisRunner):
     files, so a Perch run and a BirdNET run can coexist on one campaign.
     """
 
-    model_key: ClassVar[str] = MODEL_KEY
+    model_key: str = MODEL_KEY
     log_prefix: ClassVar[str] = "perch"
     taxonomy = birdnet_3_0_taxonomy.TAXONOMY
     package: ClassVar[ModelPackage] = ModelPackage(

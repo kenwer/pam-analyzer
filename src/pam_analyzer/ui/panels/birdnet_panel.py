@@ -2,6 +2,7 @@
 
 import html
 from collections import Counter
+from collections.abc import Mapping
 from enum import Enum, IntEnum, auto
 from pathlib import Path
 
@@ -70,7 +71,7 @@ class BirdNetPanel(QWidget):
     def __init__(
         self,
         app_state: AppState,
-        runners: dict[str, AnalysisRunner],
+        runners: Mapping[str, AnalysisRunner],
         downloads: ModelDownloads,
         parent: QWidget | None = None,
     ) -> None:

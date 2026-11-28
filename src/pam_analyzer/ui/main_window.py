@@ -1,6 +1,7 @@
 import logging
 import sys
 import time
+from collections.abc import Mapping
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, QTimer, QUrl
@@ -51,7 +52,7 @@ class MainWindow(QMainWindow):
     def __init__(
         self,
         app_state: AppState,
-        analysis_runners: dict[str, AnalysisRunner],
+        analysis_runners: Mapping[str, AnalysisRunner],
         import_orchestrator: ImportOrchestrator,
         settings: AppSettings,
         parent: QWidget | None = None,

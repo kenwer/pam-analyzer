@@ -104,6 +104,8 @@ def model_artifact(kind: Literal["acoustic", "geo"]) -> Artifact:
     else:
         from birdnet.geo.models.v3_0.onnx import models
     info = models[MODEL_PRECISION]
+    if info.sha256 is None:
+        raise ValueError(f"birdnet pins no sha256 for its v3.0 {kind} model")
     return Artifact(
         id=f"birdnet-3.0-{kind}",
         url=info.dl_url,

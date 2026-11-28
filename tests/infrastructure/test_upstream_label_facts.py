@@ -17,6 +17,8 @@ Marked slow like the other tests that reach the model's label files.
 
 from __future__ import annotations
 
+from typing import Literal
+
 import pytest
 
 from pam_analyzer.infrastructure import birdnet_2_4_onnx, birdnet_3_0_taxonomy
@@ -32,7 +34,7 @@ def _classes_shadowed_by_a_sibling(labels: set[str]) -> set[str]:
     return {n for n in labels if canonical(n) != n and canonical(n) in labels}
 
 
-def _v3_0_raw_scientific_names(kind: str) -> set[str]:
+def _v3_0_raw_scientific_names(kind: Literal["acoustic", "geo"]) -> set[str]:
     """Read from the label file, because TaxonomyServices canonicalises every
     name before handing it over.
     """
@@ -82,7 +84,7 @@ def test_v3_sound_classes_pass_the_location_filter() -> None:
 
 @pytest.mark.slow
 @pytest.mark.parametrize("kind", ["acoustic", "geo"])
-def test_v2_4_polish_labels_keep_every_class(kind: str) -> None:
+def test_v2_4_polish_labels_keep_every_class(kind: Literal["acoustic", "geo"]) -> None:
     """Upstream's v2.4 pl.txt repeats one line, at the position of Lichmera limbata.
 
     Labels pair with model outputs by position, so a reader that dropped the

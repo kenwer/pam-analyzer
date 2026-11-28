@@ -476,7 +476,7 @@ class CampaignDetailWidget(QWidget):
             self._inventory_model.set_campaign(None)
             return
         n = campaign_inv.file_count
-        size = SIZE_PENDING if campaign_inv.size_pending else format_bytes(campaign_inv.total_bytes)
+        size = SIZE_PENDING if campaign_inv.total_bytes is None else format_bytes(campaign_inv.total_bytes)
         cards = len(campaign_inv.cards)
         self.ui.inventory_label.setText(
             f"Audio inventory:  {cards} ARU{'s' if cards != 1 else ''}  ·  {n:,} files  ·  {size}"

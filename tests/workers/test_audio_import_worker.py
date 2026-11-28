@@ -3,11 +3,12 @@
 from pathlib import Path
 
 from pam_analyzer.domain.audio_import import CardImportResult, DetectedCard, ImportSource
+from pam_analyzer.infrastructure import AudioImporter
 from pam_analyzer.workers.audio_import_worker import AudioImportWorker
 from tests.conftest import FakeScanner
 
 
-class FakeImporter:
+class FakeImporter(AudioImporter):
     def __init__(self, result: CardImportResult) -> None:
         self._result = result
 

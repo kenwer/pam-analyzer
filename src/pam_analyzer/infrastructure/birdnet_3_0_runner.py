@@ -44,7 +44,7 @@ class Birdnet30Runner(BaseAnalysisRunner):
     TXT files.
     """
 
-    model_key: ClassVar[str] = MODEL_KEY
+    model_key: str = MODEL_KEY
     log_prefix: ClassVar[str] = "birdnet"
     taxonomy = birdnet_3_0_taxonomy.TAXONOMY
     package: ClassVar[ModelPackage] = ModelPackage(

@@ -34,8 +34,9 @@ from ..domain.audio_import import (
     ConflictChoice,
     DetectedCard,
     ImportSource,
+    SdCardScanner,
 )
-from ..infrastructure import AudioImporter, PsutilSdCardScanner
+from ..infrastructure import AudioImporter
 from .audio_import_worker import AudioImportWorker
 
 _log = logging.getLogger(__name__)
@@ -62,7 +63,7 @@ class ImportOrchestrator(QObject):
     def __init__(
         self,
         importer: AudioImporter,
-        scanner: PsutilSdCardScanner,
+        scanner: SdCardScanner,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
@@ -144,6 +145,7 @@ class ImportOrchestrator(QObject):
         files = self._pending_files
         campaign_dir = self._pending_campaign_dir
         identical = self._pending_identical
+        assert card is not None and files is not None and campaign_dir is not None
         self._pending_files = None
         self._pending_campaign_dir = None
         self._pending_identical = ()

@@ -4,8 +4,8 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal, Slot
 
-from ..domain.audio_import import ConflictChoice, DetectedCard, ImportSource
-from ..infrastructure import AudioImporter, PsutilSdCardScanner
+from ..domain.audio_import import ConflictChoice, DetectedCard, ImportSource, SdCardScanner
+from ..infrastructure import AudioImporter
 
 
 class AudioImportWorker(QObject):
@@ -16,7 +16,7 @@ class AudioImportWorker(QObject):
     def __init__(
         self,
         service: AudioImporter,
-        scanner: PsutilSdCardScanner,
+        scanner: SdCardScanner,
         card: DetectedCard,
         files: list[Path],
         dest_dir: Path,

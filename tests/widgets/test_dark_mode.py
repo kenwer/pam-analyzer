@@ -14,7 +14,7 @@ responds to the palette at all does not depend on the style.
 
 import pytest
 from PySide6.QtGui import QColor, QPalette, QStandardItem, QStandardItemModel
-from PySide6.QtWidgets import QLineEdit, QPushButton
+from PySide6.QtWidgets import QLineEdit, QPushButton, QWidget
 
 from pam_analyzer.widgets.audio_player import AudioPlayerPanel
 from pam_analyzer.widgets.header_filter_row import HeaderFilterRow
@@ -70,7 +70,7 @@ def theme(qapp, qtbot):
     original = qapp.palette()
 
     def _both(build):
-        painted: dict[str, list[QColor]] = {}
+        painted: dict[str, list[QColor | None]] = {}
         for index, palette in enumerate((LIGHT, DARK)):
             qapp.setPalette(palette)
             root, targets = build()
@@ -95,7 +95,7 @@ def _build_line_edit(style: str = ""):
 def _build_player():
     panel = AudioPlayerPanel()
     panel.resize(240, 70)
-    targets = {"panel": panel}
+    targets: dict[str, QWidget] = {"panel": panel}
     for button in panel.findChildren(QPushButton):
         button.resize(32, 24)
         targets[f"button {button.text()!r}"] = button

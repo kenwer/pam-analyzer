@@ -16,7 +16,7 @@ import soundfile as sf
 from PySide6.QtCore import QCoreApplication, QObject, QThread
 from PySide6.QtQuickWidgets import QQuickWidget
 
-from pam_analyzer.domain import AudioInventory, CampaignInventory, ModelInfo
+from pam_analyzer.domain import AnalysisRunResult, AudioInventory, CampaignInventory, ModelInfo, RunStatus
 from pam_analyzer.domain.audio_import import CardImportResult, DetectedCard, ImportSource
 from pam_analyzer.infrastructure import AudioImporter
 from pam_analyzer.infrastructure.birdnet_2_4_runner import MODEL_KEY as MODEL_KEY_V2_4
@@ -50,6 +50,26 @@ def wait_until_cancelled(is_cancelled: Callable[[], bool]) -> bool:
             return False
         time.sleep(0.01)
     return True
+
+
+class FakeRunner:
+    model_key = DEFAULT_MODEL_KEY
+    model_info = FAKE_MODEL_INFO
+
+    def missing_download_bytes(self) -> int:
+        return 0
+
+    def install_model(self, progress, cancelled) -> None:
+        pass
+
+    def count_audio_files(self, campaign_dir: Path) -> int:
+        return 0
+
+    def available_locales(self) -> list[str]:
+        return ["en"]
+
+    def run(self, **kwargs) -> AnalysisRunResult:
+        return AnalysisRunResult(status=RunStatus.COMPLETED)
 
 
 class FakeScanner:

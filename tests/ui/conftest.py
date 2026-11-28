@@ -12,34 +12,13 @@ import pytest
 from PySide6.QtCore import QCoreApplication, QSettings, Qt, QThread
 from PySide6.QtGui import QCloseEvent
 
-from pam_analyzer.domain import AnalysisRunResult, RunStatus
 from pam_analyzer.infrastructure import AudioImporter, ProjectLoadResult
 from pam_analyzer.ui import toasts as toasts_module
 from pam_analyzer.ui.app_state import AppState
 from pam_analyzer.ui.main_window import MainWindow
 from pam_analyzer.ui.settings import AppSettings
 from pam_analyzer.workers import ImportOrchestrator, ProjectLoadWorker
-from tests.conftest import DEFAULT_MODEL_KEY, FAKE_MODEL_INFO, FakeScanner
-
-
-class FakeRunner:
-    model_key = DEFAULT_MODEL_KEY
-    model_info = FAKE_MODEL_INFO
-
-    def missing_download_bytes(self) -> int:
-        return 0
-
-    def install_model(self, progress, cancelled) -> None:
-        pass
-
-    def count_audio_files(self, _path: Path) -> int:
-        return 0
-
-    def available_locales(self) -> list[str]:
-        return ["en"]
-
-    def run(self, **kwargs) -> AnalysisRunResult:
-        return AnalysisRunResult(status=RunStatus.COMPLETED)
+from tests.conftest import DEFAULT_MODEL_KEY, FakeRunner, FakeScanner
 
 
 class RecordingWindow(MainWindow):
