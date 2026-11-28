@@ -23,6 +23,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # Every uv command fails on a uv.lock that is out of date instead of re-locking
+  UV_LOCKED: "1"
+
 # The Test workflow runs the suite on every push to master and on pull
 # requests, so a release is built from a tested commit. The bundle carries no
 # models, so nothing here needs the models cache.
@@ -107,7 +111,7 @@ jobs:
           ref: ${{ inputs.upload_release_assets }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v9.0.0
+        uses: astral-sh/setup-uv@v10.4.0
 
       - name: Install system dependencies
         # What a desktop Linux has and a bare runner lacks: Qt's system libs,

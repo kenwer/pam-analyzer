@@ -348,6 +348,7 @@ def _prepare_venv(python: Path, build_env: dict[str, str]) -> str:
     run(
         [
             'uv', 'sync',
+            '--locked',
             '--python', str(python),
             '--no-default-groups',
             '--group', 'build',

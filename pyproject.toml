@@ -45,6 +45,8 @@ build = [
 ]
 
 [tool.uv]
+# uv refuses to run on an older release. setup-uv in CI installs the newest one matching this
+required-version = ">=0.13"
 # Ignore system Pythons, so every build bundles the uv-managed Python that .python-version names
 python-preference = "only-managed"
 

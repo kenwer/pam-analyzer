@@ -14,6 +14,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # Every uv command fails on a uv.lock that is out of date instead of re-locking
+  UV_LOCKED: "1"
+
 jobs:
   models:
     name: Prewarm models
@@ -66,7 +70,7 @@ jobs:
 
       - name: Install uv
         if: steps.models-cache.outputs.cache-hit != 'true'
-        uses: astral-sh/setup-uv@v9.0.0
+        uses: astral-sh/setup-uv@v10.4.0
 
       - name: Prewarm models
         if: steps.models-cache.outputs.cache-hit != 'true'
